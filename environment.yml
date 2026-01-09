@@ -1,0 +1,7 @@
+name: libra_sparging
+channels:
+  - conda-forge
+dependencies:
+  - fenics-dolfinx
+  - matplotlib
+  - pyvista
