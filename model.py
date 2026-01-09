@@ -11,7 +11,28 @@ from dolfinx import log
 
 log.set_log_level(log.LogLevel.INFO)
 
-mesh = dolfinx.mesh.create_interval(MPI.COMM_WORLD, 1000, points=[0, 1])
+tank_height = 1
+K_S = 1  # solubility of breeder
+D = 0.001  # breeder diffusivity
+
+source_term = 0.01  # mol/m3/s generation term
+
+u_b = 100  # m/s bubble rise velocity
+d_b = 0.01  # m bubble diameter
+
+P = 10000.0  # total gas pressure  # TODO should be 7 PSIG - differential at the top
+h_l = ((D * u_b) / (ufl.pi * d_b)) ** 0.5  # mass transport coefficient
+
+R = 8.314  # J/mol/K
+T = 900  # K temperature
+epsislon_g = 0.4  # gas void fraction  # TODO from correlations
+a = 6 * epsislon_g / d_b  # specific interfacial area
+
+E_g = 0.2 * D**2 * u_b  # gas phase diffusivity (dispersion coefficient)
+
+
+# MESH AND FUNCTION SPACES
+mesh = dolfinx.mesh.create_interval(MPI.COMM_WORLD, 1000, points=[0, tank_height])
 fdim = mesh.topology.dim - 1
 cg_el = basix.ufl.element("Lagrange", mesh.basix_cell(), degree=1, shape=(2,))
 
@@ -27,39 +48,41 @@ c_T_n, y_T2_n = ufl.split(u_n)
 
 dt = 0.2
 
-vel_x = 1.0
+vel_x = u_b
 vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
 
-K_S = 1  # solubility of breeder
-D = 0.001
-P = 1  # total gas pressure
-h_l = 0.1  # mass transport coefficient
+
 EPS = 1e-16
 
-gen = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1.0))  # generation term (neutrons)
+gen = dolfinx.fem.Constant(
+    mesh, PETSc.ScalarType(source_term)
+)  # generation term (neutrons)
+
+
+# VARIATIONAL FORMULATION
 
 # mass transfer rate
-J = h_l * (c_T - K_S * (P * y_T2 + EPS) ** 0.5)
+J = a * h_l * (c_T - K_S * (P * y_T2 + EPS))
 
 F = 0  # variational formulation
 
 # transient terms
-F += ((c_T - c_T_n) / dt) * v_c * ufl.dx + ((y_T2 - y_T2_n) / dt) * v_y * ufl.dx
-
+F += ((c_T - c_T_n) / dt) * v_c * ufl.dx
+F += 1 / (R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
 # diffusion/dispersion terms
 F += D * ufl.dot(ufl.grad(c_T), ufl.grad(v_c)) * ufl.dx
-F += ufl.dot(ufl.grad(y_T2), ufl.grad(v_y)) * ufl.dx
+F += epsislon_g * E_g * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y)) * ufl.dx
 
 
 # mass exchange (coupling term)
-F += J * v_c * ufl.dx - 0.5 * J * v_y * ufl.dx
+F += J * v_c * ufl.dx - J * v_y * ufl.dx
 
 # Generation term in the breeder
 F += -gen * v_c * ufl.dx
 
 # advection of gas
-F += ufl.inner(ufl.dot(ufl.grad(y_T2), vel), v_y) * ufl.dx
+F += 1 / (R * T) * ufl.inner(ufl.dot(ufl.grad(P * y_T2), vel), v_y) * ufl.dx
 
 
 # BOUNDARY CONDITIONS
