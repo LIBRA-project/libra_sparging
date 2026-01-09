@@ -11,28 +11,36 @@ from dolfinx import log
 
 log.set_log_level(log.LogLevel.INFO)
 
-tank_height = 1
-K_S = 1  # solubility of breeder
-D = 0.001  # breeder diffusivity
+avogadro_number = 6.022e23  # 1/mol
 
-source_term = 0.01  # mol/m3/s generation term
+tank_height = 1  # m
+tank_diameter = 0.5  # m
+K_S = 1e20 / avogadro_number  # solubility of breeder mol/m3/Pa
+diffusivity = 1e-9  # breeder diffusivity  m2/s
 
-u_b = 100  # m/s bubble rise velocity
-d_b = 0.01  # m bubble diameter
 
-P = 10000.0  # total gas pressure  # TODO should be 7 PSIG - differential at the top
-h_l = ((D * u_b) / (ufl.pi * d_b)) ** 0.5  # mass transport coefficient
+source_term = 0.001  # mol/m3/s generation term
+
+u_b = 0.3  # m/s bubble velocity
+d_b = 0.002  # m bubble diameter
+
+P = 151988  # total gas pressure  # TODO should be 7 PSIG - differential at the top
+h_l = (
+    (diffusivity * u_b) / (ufl.pi * d_b)
+) ** 0.5  # mass transport coefficient Higbie penetration model
 
 R = 8.314  # J/mol/K
 T = 900  # K temperature
-epsislon_g = 0.4  # gas void fraction  # TODO from correlations
-a = 6 * epsislon_g / d_b  # specific interfacial area
+epsilon_g = 0.03  # gas void fraction  # TODO from correlations
+epsilon_l = 1 - epsilon_g  # liquid void fraction
+a = 6 * epsilon_g / d_b  # specific interfacial area
 
-E_g = 0.2 * D**2 * u_b  # gas phase diffusivity (dispersion coefficient)
-
+# FIXME is this homogeneous?
+E_g = 0.2 * tank_diameter**2 * u_b  # gas phase diffusivity (dispersion coefficient)
+E_l = diffusivity  # liquid phase diffusivity  # FIXME
 
 # MESH AND FUNCTION SPACES
-mesh = dolfinx.mesh.create_interval(MPI.COMM_WORLD, 1000, points=[0, tank_height])
+mesh = dolfinx.mesh.create_interval(MPI.COMM_WORLD, 10000, points=[0, tank_height])
 fdim = mesh.topology.dim - 1
 cg_el = basix.ufl.element("Lagrange", mesh.basix_cell(), degree=1, shape=(2,))
 
@@ -67,12 +75,12 @@ J = a * h_l * (c_T - K_S * (P * y_T2 + EPS))
 F = 0  # variational formulation
 
 # transient terms
-F += ((c_T - c_T_n) / dt) * v_c * ufl.dx
-F += 1 / (R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
+F += epsilon_l * ((c_T - c_T_n) / dt) * v_c * ufl.dx
+F += epsilon_g * 1 / (R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
 # diffusion/dispersion terms
-F += D * ufl.dot(ufl.grad(c_T), ufl.grad(v_c)) * ufl.dx
-F += epsislon_g * E_g * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y)) * ufl.dx
+F += epsilon_l * E_l * ufl.dot(ufl.grad(c_T), ufl.grad(v_c)) * ufl.dx
+F += epsilon_g * E_g * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y)) * ufl.dx
 
 
 # mass exchange (coupling term)
@@ -90,7 +98,7 @@ gas_inlet_facets = dolfinx.mesh.locate_entities_boundary(
     mesh, fdim, lambda x: np.isclose(x[0], 0.0)
 )
 gas_outlet_facets = dolfinx.mesh.locate_entities_boundary(
-    mesh, fdim, lambda x: np.isclose(x[0], 1.0)
+    mesh, fdim, lambda x: np.isclose(x[0], tank_height)
 )
 bc1 = dolfinx.fem.dirichletbc(
     dolfinx.fem.Constant(mesh, 0.0),
