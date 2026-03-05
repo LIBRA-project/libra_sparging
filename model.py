@@ -11,26 +11,36 @@ from dolfinx import log
 
 log.set_log_level(log.LogLevel.INFO)
 
+# -- Physical constants -- 
 avogadro_number = 6.022e23  # 1/mol
+R = 8.314  # J/mol/K
 
+# -- input --
+
+# - Geometry -
 tank_height = 1  # m
 tank_diameter = 0.5  # m
-K_S = 1e20 / avogadro_number  # solubility of breeder mol/m3/Pa
+# - Material properties -
+K_S = 1e20 / avogadro_number  # solubility of breeder mol/m3/Pa -> TODO find litterature value 
 diffusivity = 1e-9  # breeder diffusivity  m2/s
-
-
+# - Operating conditions -
 source_term = 0.001  # mol/m3/s generation term
+P = 151988  # total gas pressure  # TODO should be 7 PSIG - differential at the top
+T = 900  # K temperature
+n_g = 0.19 # inlet gas flow [mol/s] 
 
+# -- derived parameters --
 u_b = 0.3  # m/s bubble velocity
 d_b = 0.002  # m bubble diameter
 
-P = 151988  # total gas pressure  # TODO should be 7 PSIG - differential at the top
+# - correlations for FLiBe properties -
+rho_l = 2245 - 0.424 * (T - 272.15) # density [kg/m3] of Li2BeF4 breeder, Vidrio 2022
+
+
 h_l = (
     (diffusivity * u_b) / (ufl.pi * d_b)
 ) ** 0.5  # mass transport coefficient Higbie penetration model
 
-R = 8.314  # J/mol/K
-T = 900  # K temperature
 epsilon_g = 0.03  # gas void fraction  # TODO from correlations
 epsilon_l = 1 - epsilon_g  # liquid void fraction
 a = 6 * epsilon_g / d_b  # specific interfacial area
