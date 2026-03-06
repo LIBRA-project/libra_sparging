@@ -20,9 +20,7 @@ R = 8.314  # J/mol/K
 # - Geometry -
 tank_height = 1  # m
 tank_diameter = 0.5  # m
-# - Material properties -
-K_S = 1e20 / avogadro_number  # solubility of breeder mol/m3/Pa -> TODO find litterature value 
-diffusivity = 1e-9  # breeder diffusivity  m2/s
+
 # - Operating conditions -
 source_term = 0.001  # mol/m3/s generation term
 P = 151988  # total gas pressure  # TODO should be 7 PSIG - differential at the top
@@ -34,7 +32,14 @@ u_b = 0.3  # m/s bubble velocity
 d_b = 0.002  # m bubble diameter
 
 # - correlations for FLiBe properties -
-rho_l = 2245 - 0.424 * (T - 272.15) # density [kg/m3] of Li2BeF4 breeder, Vidrio 2022
+rho_l = 2245 - 0.424 * (T - 272.15) # density [kg/m3] of Li2BeF4, Vidrio 2022
+
+mu_l = 0.116e-3 * np.exp(3755/T) # dynamic viscosity [Pa.s] of Li2BeF4, Cantor 1968
+nu_l = mu_l / rho_l  # kinematic viscosity [m2/s] of Li2BeF4
+
+diffusivity = 9.3e-7 * np.exp(-42e3/(R*T))  # diffusivity of T in Li2BeF4 [m2/s], Calderoni 2008
+
+K_S = 7.9e-2 * np.exp(-35e3 / (R*T)) # solubility of T in Li2BeF4 [mol/m3/Pa], Calderoni 2008
 
 
 h_l = (
