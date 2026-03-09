@@ -14,22 +14,20 @@ log.set_log_level(log.LogLevel.INFO)
 # -- Physical constants -- 
 avogadro_number = 6.022e23  # 1/mol
 R = 8.314  # J/mol/K
+g = 9.81  # m/s2, gravity acceleration
 
 # -- input --
 
 # - Geometry -
 tank_height = 1  # m
-tank_diameter = 0.5  # m
+D = 0.5  # m
 
 # - Operating conditions -
 source_term = 0.001  # mol/m3/s generation term
 P = 151988  # total gas pressure  # TODO should be 7 PSIG - differential at the top
+P_top = 151988 # Pa, gas pressure at the top of the tank
 T = 900  # K temperature
-n_g = 0.19 # inlet gas flow [mol/s] 
-
-# -- derived parameters --
-u_b = 0.3  # m/s bubble velocity
-d_b = 0.002  # m bubble diameter
+flow_g = 0.19 # inlet gas flow [mol/s] 
 
 # - correlations for FLiBe properties -
 rho_l = 2245 - 0.424 * (T - 272.15) # density [kg/m3] of Li2BeF4, Vidrio 2022
@@ -41,9 +39,21 @@ diffusivity = 9.3e-7 * np.exp(-42e3/(R*T))  # diffusivity of T in Li2BeF4 [m2/s]
 
 K_S = 7.9e-2 * np.exp(-35e3 / (R*T)) # solubility of T in Li2BeF4 [mol/m3/Pa], Calderoni 2008
 
+sigma_l = (260 - 0.12 * (T - 272.15)) * 1e-3 # surface tension of FLiBe [N/m], Cantor 1968
+
+# - derived parameters -
+P_0 = P_top + rho_l * 9.81 * tank_height  # gas inlet pressure, from hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
+u_g0 = flow_g * R * T / (P_0 * np.pi * (D/2)**2)  # m/s bubble velocity
+d_b = 0.002  # m bubble diameter, TODO
+
+# - dimensionless numbers for correlations -
+Bn = (g * D ** 2 * rho_l) / sigma_l  # Bond number
+Ga = (g * D ** 3) / nu_l ** 2  # Galilei number
+Sc = nu_l / diffusivity  # Schmidt number
+Fr = u_g0 / (g * D) ** 0.5  # Froude number
 
 h_l = (
-    (diffusivity * u_b) / (ufl.pi * d_b)
+    (diffusivity * u_g0) / (ufl.pi * d_b)
 ) ** 0.5  # mass transport coefficient Higbie penetration model
 
 epsilon_g = 0.03  # gas void fraction  # TODO from correlations
@@ -51,7 +61,7 @@ epsilon_l = 1 - epsilon_g  # liquid void fraction
 a = 6 * epsilon_g / d_b  # specific interfacial area
 
 # FIXME is this homogeneous?
-E_g = 0.2 * tank_diameter**2 * u_b  # gas phase diffusivity (dispersion coefficient)
+E_g = 0.2 * D**2 * u_g0  # gas phase diffusivity (dispersion coefficient)
 E_l = diffusivity  # liquid phase diffusivity  # FIXME
 
 # MESH AND FUNCTION SPACES
@@ -71,7 +81,7 @@ c_T_n, y_T2_n = ufl.split(u_n)
 
 dt = 0.2
 
-vel_x = u_b
+vel_x = u_g0
 vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
 
 
@@ -85,7 +95,7 @@ gen = dolfinx.fem.Constant(
 # VARIATIONAL FORMULATION
 
 # mass transfer rate
-J = a * h_l * (c_T - K_S * (P * y_T2 + EPS))
+J = a * h_l * (c_T - K_S * (P * y_T2 + EPS))    # TODO P shouldn't be a constant (use hydrostatic pressure profile), how to deal with this ?
 
 F = 0  # variational formulation
 
