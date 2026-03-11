@@ -21,13 +21,15 @@ g = 9.81  # m/s2, gravity acceleration
 # - Geometry -
 tank_height = 1  # m
 D = 0.5  # m
+nozzle_diameter = 0.001  # m
+nb_nozzle = 1000 # number of nozzles at bottom of the tank 
 
 # - Operating conditions -
 source_term = 0.001  # mol/m3/s generation term
 P = 151988  # total gas pressure  # TODO should be 7 PSIG - differential at the top
-P_top = 151988 # Pa, gas pressure at the top of the tank
+P_top = 151988 # Pa, gas pressure at the top of the tank (what we control in LIBRA)
 T = 900  # K temperature
-flow_g = 0.19 # inlet gas flow [mol/s] 
+flow_g_mol = 0.19 # inlet gas flow [mol/s] 
 
 # - correlations for FLiBe properties -
 rho_l = 2245 - 0.424 * (T - 272.15) # density [kg/m3] of Li2BeF4, Vidrio 2022
@@ -43,14 +45,25 @@ sigma_l = (260 - 0.12 * (T - 272.15)) * 1e-3 # surface tension of FLiBe [N/m], C
 
 # - derived parameters -
 P_0 = P_top + rho_l * 9.81 * tank_height  # gas inlet pressure, from hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
-u_g0 = flow_g * R * T / (P_0 * np.pi * (D/2)**2)  # m/s bubble velocity
-d_b = 0.002  # m bubble diameter, TODO
+flow_g_vol = flow_g_mol * R * T / P_0  # inlet gas volumetric flow rate [m3/s]
+
+
+# - correlations for bubble dynamics -
+# u_g0 = flow_g_mol * R * T / (P_0 * np.pi * (D/2)**2)  # m/s bubble velocity
+def get_d_b ():
+    nozzle_flow = flow_g_vol / nb_nozzle  # volumetric flow per nozzle [m3/s]
+    if nozzle_flow < 3e-6 or nozzle_flow > 10e-6:
+        print (f"Warning: nozzle flow {nozzle_flow*1e6:.2e} cm3/s is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)")
+    return 0.54 * (nozzle_flow * 1e6 * np.sqrt(nozzle_diameter/2 * 1e2)) ** 0.289 * 1e-2 # mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
+
+d_b = get_d_b()
+
+rho_g = P_0 * 4.003e-3 / (R * T)  # bubbles density [kg/m3], using ideal gas law for He
 
 # - dimensionless numbers for correlations -
 Bn = (g * D ** 2 * rho_l) / sigma_l  # Bond number
-Ga = (g * D ** 3) / nu_l ** 2  # Galilei number
-Sc = nu_l / diffusivity  # Schmidt number
-Fr = u_g0 / (g * D) ** 0.5  # Froude number
+Re = rho_l * u_g0 * d_b / mu_l  # Reynolds number
+
 
 h_l = (
     (diffusivity * u_g0) / (ufl.pi * d_b)
