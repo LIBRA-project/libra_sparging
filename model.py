@@ -26,7 +26,6 @@ nb_nozzle = 1000 # number of nozzles at bottom of the tank
 
 # - Operating conditions -
 source_term = 0.001  # mol/m3/s generation term
-P = 151988  # total gas pressure  # TODO should be 7 PSIG - differential at the top
 P_top = 151988 # Pa, gas pressure at the top of the tank (what we control in LIBRA)
 T = 900  # K temperature
 flow_g_mol = 0.19 # inlet gas flow [mol/s] 
@@ -83,14 +82,21 @@ def get_u_g0 (): # Clift 1978 correlation for bubble terminal velocity
 u_g0 = get_u_g0()  # bubble velocity [m/s], correlation from Clift 1978, reported by Chavez 2021
 Re = get_Re(u_g0) # update Reynolds number with the calculated bubble velocity
 
-breakpoint()
 h_l = (
     (diffusivity * u_g0) / (ufl.pi * d_b)
 ) ** 0.5  # mass transport coefficient Higbie penetration model
 
-epsilon_g = 0.03  # gas void fraction  # TODO from correlations
-epsilon_l = 1 - epsilon_g  # liquid void fraction
-a = 6 * epsilon_g / d_b  # specific interfacial area
+def get_eps():
+    eps_g = R * T / (P_0 + 4 * sigma_l / d_b) * (flow_g_mol / (np.pi * (D/2)**2 * u_g0)) # gas void fraction, from ideal gas law and Young-Laplace pressure (neglecting hydrostatic pressure variation)
+    if eps_g > 1 or eps_g < 0:
+        print (f"Warning: unphysical gas fraction: {eps_g:.2f}")
+    elif eps_g > 0.1:
+        print (f"Warning: high gas fraction: {eps_g:.2f}, models assumptions may not hold")
+    return (eps_g, 1 - eps_g)
+
+eps_g, eps_l = get_eps()
+
+a = 6 * eps_g / d_b  # specific interfacial area
 
 # FIXME is this homogeneous?
 E_g = 0.2 * D**2 * u_g0  # gas phase diffusivity (dispersion coefficient)
@@ -132,12 +138,12 @@ J = a * h_l * (c_T - K_S * (P * y_T2 + EPS))    # TODO P shouldn't be a constant
 F = 0  # variational formulation
 
 # transient terms
-F += epsilon_l * ((c_T - c_T_n) / dt) * v_c * ufl.dx
-F += epsilon_g * 1 / (R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
+F += eps_l * ((c_T - c_T_n) / dt) * v_c * ufl.dx
+F += eps_g * 1 / (R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
 # diffusion/dispersion terms
-F += epsilon_l * E_l * ufl.dot(ufl.grad(c_T), ufl.grad(v_c)) * ufl.dx
-F += epsilon_g * E_g * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y)) * ufl.dx
+F += eps_l * E_l * ufl.dot(ufl.grad(c_T), ufl.grad(v_c)) * ufl.dx
+F += eps_g * E_g * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y)) * ufl.dx
 
 
 # mass exchange (coupling term)
