@@ -59,12 +59,31 @@ def get_d_b ():
 d_b = get_d_b()
 
 rho_g = P_0 * 4.003e-3 / (R * T)  # bubbles density [kg/m3], using ideal gas law for He
+drho = rho_l - rho_g  # density difference between liquid and gas [kg/m3]
 
 # - dimensionless numbers for correlations -
-Bn = (g * D ** 2 * rho_l) / sigma_l  # Bond number
-Re = rho_l * u_g0 * d_b / mu_l  # Reynolds number
+def get_Re(u):
+    return rho_l * u * d_b / mu_l
 
+Eo = (drho * g * d_b**2) / sigma_l  # Eotvos (Bond) number
+Re = get_Re(0.25)  # Reynolds number, assuming terminal velocity of gas = 0.25 m/s (typical according to Chavez 2021)
+Mo = (drho * g * mu_l**4) / (rho_l**2 * sigma_l**3)  # Morton number
 
+def get_u_g0 (): # Clift 1978 correlation for bubble terminal velocity
+    H = 4/3 * Eo * Mo**-0.149 * (mu_l / 0.0009)**-0.14
+    print (f"H = {H}")
+    if H > 59.3:
+        J = 3.42 * H**0.441
+    elif H > 2:
+        J = 0.94 * H**0.757
+    else:
+        J = Re * Mo**0.149 + 0.857
+    return mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
+
+u_g0 = get_u_g0()  # bubble velocity [m/s], correlation from Clift 1978, reported by Chavez 2021
+Re = get_Re(u_g0) # update Reynolds number with the calculated bubble velocity
+
+breakpoint()
 h_l = (
     (diffusivity * u_g0) / (ufl.pi * d_b)
 ) ** 0.5  # mass transport coefficient Higbie penetration model
