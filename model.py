@@ -27,7 +27,7 @@ nb_nozzle = 1000 # number of nozzles at bottom of the tank
 # - Operating conditions -
 source_term = 0.001  # mol/m3/s generation term
 P_top = 151988 # Pa, gas pressure at the top of the tank (what we control in LIBRA)
-T = 900  # K temperature
+T = 600 + 278  # K temperature
 flow_g_mol = 0.19 # inlet gas flow [mol/s] 
 
 # - correlations for FLiBe properties -
@@ -48,7 +48,6 @@ flow_g_vol = flow_g_mol * R * T / P_0  # inlet gas volumetric flow rate [m3/s]
 
 
 # - correlations for bubble dynamics -
-# u_g0 = flow_g_mol * R * T / (P_0 * np.pi * (D/2)**2)  # m/s bubble velocity
 def get_d_b ():
     nozzle_flow = flow_g_vol / nb_nozzle  # volumetric flow per nozzle [m3/s]
     if nozzle_flow < 3e-6 or nozzle_flow > 10e-6:
@@ -67,6 +66,7 @@ def get_Re(u):
 Eo = (drho * g * d_b**2) / sigma_l  # Eotvos (Bond) number
 Re = get_Re(0.25)  # Reynolds number, assuming terminal velocity of gas = 0.25 m/s (typical according to Chavez 2021)
 Mo = (drho * g * mu_l**4) / (rho_l**2 * sigma_l**3)  # Morton number
+Sc = nu_l / diffusivity # Schmidt number 
 
 def get_u_g0 (): # Clift 1978 correlation for bubble terminal velocity
     H = 4/3 * Eo * Mo**-0.149 * (mu_l / 0.0009)**-0.14
@@ -77,14 +77,13 @@ def get_u_g0 (): # Clift 1978 correlation for bubble terminal velocity
         J = 0.94 * H**0.757
     else:
         J = Re * Mo**0.149 + 0.857
-    return mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
+    u_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
+    if u_g0 > 1 or u_g0 < 0.1:
+        print (f"Warning: bubble velocity {u_g0:.2f} m/s is out of the typical range")
+    return u_g0
 
 u_g0 = get_u_g0()  # bubble velocity [m/s], correlation from Clift 1978, reported by Chavez 2021
 Re = get_Re(u_g0) # update Reynolds number with the calculated bubble velocity
-
-h_l = (
-    (diffusivity * u_g0) / (ufl.pi * d_b)
-) ** 0.5  # mass transport coefficient Higbie penetration model
 
 def get_eps():
     eps_g = R * T / (P_0 + 4 * sigma_l / d_b) * (flow_g_mol / (np.pi * (D/2)**2 * u_g0)) # gas void fraction, from ideal gas law and Young-Laplace pressure (neglecting hydrostatic pressure variation)
@@ -98,6 +97,26 @@ eps_g, eps_l = get_eps()
 
 a = 6 * eps_g / d_b  # specific interfacial area
 
+def get_h_higbie():
+    h_l = (
+        (diffusivity * u_g0) / (ufl.pi * d_b)
+    ) ** 0.5  # mass transport coefficient Higbie penetration model
+    return h_l
+
+def get_h_malara(): # mass transfer coefficient [m2/s], Malara 1995
+    h_l = 2 * np.pi**2 * diffusivity / (3 * d_b)
+    return h_l
+
+def get_h_briggs(): # mass transfer coefficient [m2/s] from Sherwood number, Briggs 1970
+    Sh = 0.089 * Re**0.69 * Sc**0.33 # Sherwood number
+    h_l = Sh * diffusivity / d_b
+    return h_l
+
+h_l = get_h_higbie()
+h_l_mal = get_h_malara()
+h_l_briggs = get_h_briggs()
+
+breakpoint()
 # FIXME is this homogeneous?
 E_g = 0.2 * D**2 * u_g0  # gas phase diffusivity (dispersion coefficient)
 E_l = diffusivity  # liquid phase diffusivity  # FIXME
@@ -133,17 +152,17 @@ gen = dolfinx.fem.Constant(
 # VARIATIONAL FORMULATION
 
 # mass transfer rate
-J = a * h_l * (c_T - K_S * (P * y_T2 + EPS))    # TODO P shouldn't be a constant (use hydrostatic pressure profile), how to deal with this ?
+J = a * h_l * (c_T - K_S * (P_0 * y_T2 + EPS))    # TODO pressure shouldn't be a constant (use hydrostatic pressure profile), how to deal with this ?
 
 F = 0  # variational formulation
 
 # transient terms
 F += eps_l * ((c_T - c_T_n) / dt) * v_c * ufl.dx
-F += eps_g * 1 / (R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
+F += eps_g * 1 / (R * T) * (P_0 * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
 # diffusion/dispersion terms
 F += eps_l * E_l * ufl.dot(ufl.grad(c_T), ufl.grad(v_c)) * ufl.dx
-F += eps_g * E_g * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y)) * ufl.dx
+F += eps_g * E_g * ufl.dot(ufl.grad(P_0 * y_T2), ufl.grad(v_y)) * ufl.dx
 
 
 # mass exchange (coupling term)
@@ -153,7 +172,7 @@ F += J * v_c * ufl.dx - J * v_y * ufl.dx
 F += -gen * v_c * ufl.dx
 
 # advection of gas
-F += 1 / (R * T) * ufl.inner(ufl.dot(ufl.grad(P * y_T2), vel), v_y) * ufl.dx
+F += 1 / (R * T) * ufl.inner(ufl.dot(ufl.grad(P_0 * y_T2), vel), v_y) * ufl.dx
 
 
 # BOUNDARY CONDITIONS
