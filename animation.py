@@ -1,12 +1,23 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import gridspec
 from matplotlib.widgets import Slider, Button
 
 
 class ConcentrationAnimator:
     """Interactive animation for concentration profiles over time."""
 
-    def __init__(self, times, c_T_solutions, y_T2_solutions, x_ct, x_y):
+    def __init__(
+        self,
+        times,
+        c_T_solutions,
+        y_T2_solutions,
+        x_ct,
+        x_y,
+        c_integrated=None,
+        figsize=None,
+        hspace=0.45,
+    ):
         """
         Initialize the animator with solution data.
 
@@ -22,12 +33,21 @@ class ConcentrationAnimator:
             Spatial coordinates for total concentration
         x_y : array_like
             Spatial coordinates for y-component concentration
+        c_integrated : array_like, optional
+            Integrated concentration values over time
+        figsize : tuple, optional
+            Figure size as (width, height) in inches
+        hspace : float, optional
+            Vertical spacing between subplots
         """
         self.times = np.array(times)
         self.c_T_solutions = np.array(c_T_solutions)
         self.y_T2_solutions = np.array(y_T2_solutions)
         self.x_ct = x_ct
         self.x_y = x_y
+        self.c_integrated = c_integrated
+        self.figsize = figsize
+        self.hspace = hspace
 
         # Animation state
         self.is_animating = False
@@ -39,8 +59,22 @@ class ConcentrationAnimator:
 
     def _setup_plot(self):
         """Setup the initial plot with subplots."""
-        self.fig, self.axs = plt.subplots(2, sharex=True, figsize=(10, 8))
-        plt.subplots_adjust(bottom=0.2)  # Make room for controls
+        nrows = 3 if self.c_integrated is not None else 2
+        default_figsize = (12, 9.5) if nrows == 3 else (11, 7)
+        self.fig = plt.figure(figsize=self.figsize or default_figsize)
+        gs = gridspec.GridSpec(nrows, 1, figure=self.fig, hspace=self.hspace)
+
+        ax1 = self.fig.add_subplot(gs[0])
+        ax2 = self.fig.add_subplot(gs[1], sharex=ax1)
+        self.axs = [ax1, ax2]
+
+        if self.c_integrated is not None:
+            # Third axis intentionally has an independent x-scale (time).
+            ax3 = self.fig.add_subplot(gs[2])
+            self.axs.append(ax3)
+
+        # Leave room for slider/button and avoid subplot title/label overlap.
+        plt.subplots_adjust(left=0.1, right=0.97, top=0.94, bottom=0.2)
 
         # Create initial plots
         (self.line1,) = self.axs[0].plot(
@@ -49,22 +83,38 @@ class ConcentrationAnimator:
         (self.line2,) = self.axs[1].plot(
             self.x_y, self.y_T2_solutions[0], "r-", linewidth=2
         )
+        if self.c_integrated is not None:
+            (self.line3,) = self.axs[2].plot(
+                self.times, self.c_integrated, "g-", linewidth=2
+            )
+            (self.time_marker,) = self.axs[2].plot(
+                [self.times[0]], [self.c_integrated[0]], "ko", markersize=6
+            )
 
         # Setup axes properties
-        self.axs[0].set_ylabel("Total Concentration c_T")
-        self.axs[0].set_title(f"Total Concentration at t={self.times[0]:.1f}s")
+        self.axs[0].set_ylabel(r"$c_T \: [mol/m^3]$")
+        self.axs[0].set_title(f"Concentration profile in breeder at t={self.times[0]:.1f}s")
         self.axs[0].grid(True, alpha=0.3)
         self.axs[0].set_ylim(
             self.c_T_solutions.min() * 0.9, self.c_T_solutions.max() * 1.1
         )
 
-        self.axs[1].set_ylabel("Y-Component Concentration y_T2")
-        self.axs[1].set_xlabel("Position (x)")
-        self.axs[1].set_title(f"Y-Component Concentration at t={self.times[0]:.1f}s")
+        self.axs[1].set_ylabel(r"$y_{T2} \: [-]$")
+        self.axs[1].set_xlabel("Position along tank height [m]")
+        self.axs[1].set_title(f"T fraction in sparging gas at t={self.times[0]:.1f}s")
         self.axs[1].grid(True, alpha=0.3)
         self.axs[1].set_ylim(
             self.y_T2_solutions.min() * 0.9, self.y_T2_solutions.max() * 1.1
         )
+
+        if self.c_integrated is not None:
+            self.axs[2].set_ylabel(r"$n_T \: [mol]$")
+            self.axs[2].set_xlabel("Time (t)")
+            self.axs[2].set_title(f"Total T quantity in breeder [mol]")
+            self.axs[2].grid(True, alpha=0.3)
+            self.axs[2].set_ylim(
+                self.c_integrated.min() * 0.9, self.c_integrated.max() * 1.1
+            )
 
     def _setup_slider(self):
         """Setup the time slider."""
@@ -96,8 +146,10 @@ class ConcentrationAnimator:
         self.line2.set_ydata(self.y_T2_solutions[idx])
 
         # Update titles
-        self.axs[0].set_title(f"Total Concentration at t={self.times[idx]:.1f}s")
-        self.axs[1].set_title(f"Y-Component Concentration at t={self.times[idx]:.1f}s")
+        self.axs[0].set_title(f"Concentration profile in breeder at t={self.times[idx]:.1f}s")
+        self.axs[1].set_title(f"T fraction in sparging gas at t={self.times[idx]:.1f}s")
+        if self.c_integrated is not None:
+            self.time_marker.set_data([self.times[idx]], [self.c_integrated[idx]])
 
         self.fig.canvas.draw_idle()
 
@@ -137,7 +189,16 @@ class ConcentrationAnimator:
         plt.show()
 
 
-def create_animation(times, c_T_solutions, y_T2_solutions, x_ct, x_y):
+def create_animation(
+    times,
+    c_T_solutions,
+    y_T2_solutions,
+    x_ct,
+    x_y,
+    c_integrated=None,
+    figsize=None,
+    hspace=0.35,
+):
     """
     Convenience function to create and show animation.
 
@@ -153,12 +214,27 @@ def create_animation(times, c_T_solutions, y_T2_solutions, x_ct, x_y):
         Spatial coordinates for total concentration
     x_y : array_like
         Spatial coordinates for y-component concentration
+    c_integrated : array_like, optional
+        Integrated concentration values over time
+    figsize : tuple, optional
+        Figure size as (width, height) in inches
+    hspace : float, optional
+        Vertical spacing between subplots
 
     Returns:
     --------
     ConcentrationAnimator
         The animator instance
     """
-    animator = ConcentrationAnimator(times, c_T_solutions, y_T2_solutions, x_ct, x_y)
+    animator = ConcentrationAnimator(
+        times,
+        c_T_solutions,
+        y_T2_solutions,
+        x_ct,
+        x_y,
+        c_integrated=c_integrated,
+        figsize=figsize,
+        hspace=hspace,
+    )
     animator.show()
     return animator

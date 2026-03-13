@@ -6,7 +6,7 @@ import numpy as np
 import scipy.constants as const
 from dolfinx.fem.petsc import NonlinearProblem
 from petsc4py import PETSc
-from animation import create_animation
+
 
 from dolfinx import log
 
@@ -118,7 +118,7 @@ def compute_properties(params):
 
     return {
         "rho_l": rho_l, "sigma_l": sigma_l, "mu_l": mu_l, "nu_l": nu_l, "K_s": K_s,
-        "u_g0": u_g0, "d_b": d_b, "rho_g": rho_g,
+        "u_g0": u_g0, "d_b": d_b, "rho_g": rho_g, "P_0": P_0, "flow_g_vol": flow_g_vol,
         "eps_g": eps_g, "eps_l": eps_l, "E_l": E_l, "E_g": E_g,
         "a": a, "h_l": h_l,
         "Re": Re, "Eo": Eo, "Mo": Mo, "Sc": Sc
@@ -131,7 +131,7 @@ def solve(params):
     )
 
     # MESH AND FUNCTION SPACES
-    mesh = dolfinx.mesh.create_interval(MPI.COMM_WORLD, 10000, points=[0, tank_height])
+    mesh = dolfinx.mesh.create_interval(MPI.COMM_WORLD, 1000, points=[0, tank_height])
     fdim = mesh.topology.dim - 1
     cg_el = basix.ufl.element("Lagrange", mesh.basix_cell(), degree=1, shape=(2,))
 
@@ -147,7 +147,7 @@ def solve(params):
 
     dt = 0.2
 
-    vel_x = u_g0
+    vel_x = u_g0    # TODO velocity should vary with hydrostatic pressure 
     vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
 
 
@@ -161,7 +161,7 @@ def solve(params):
     # VARIATIONAL FORMULATION
 
     # mass transfer rate
-    J = a * h_l * (c_T - K_s * (P_0 * y_T2 + EPS))    # TODO pressure shouldn't be a constant (use hydrostatic pressure profile), how to deal with this ?
+    J = a * h_l * (c_T - K_s * (P_0 * y_T2 + EPS))    # TODO pressure shouldn't be a constant (use hydrostatic pressure profile), how to deal with this ? -> use fem.Expression ?
 
     F = 0  # variational formulation
 
@@ -230,7 +230,7 @@ def solve(params):
     # SOLVE
     t = 0
     while t < 10:
-        t += dt
+        # t += dt
         print("t:", t)
         problem.solve()
 
@@ -241,7 +241,7 @@ def solve(params):
         c_T_vals = u.x.array[ct_dofs][ct_sort_coords]
         y_T2_vals = u.x.array[y_dofs][y_sort_coords]
 
-        if t >= 5:
+        if t >= 1:
             gen.value = 0.0
 
         # store time and solution
@@ -249,5 +249,12 @@ def solve(params):
         c_T_solutions.append(c_T_vals.copy())
         y_T2_solutions.append(y_T2_vals.copy())
 
-    # Create interactive animation
-    create_animation(times, c_T_solutions, y_T2_solutions, x_ct, x_y)
+        t += dt
+
+    c_T_volume = np.zeros(len(times))
+    for i in range(len(times)):
+        c_T_volume[i] = np.trapezoid(c_T_solutions[i], x_ct)  # integrate concentration profile to get total amount of tritium in the tank at each time step
+    c_T_volume *= np.pi * (params["D"] / 2)**2  # get total amount of T in [mol]
+    return (times, c_T_solutions, y_T2_solutions, x_ct, x_y, c_T_volume)
+
+    
