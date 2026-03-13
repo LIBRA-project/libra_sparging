@@ -3,6 +3,7 @@ import dolfinx
 import basix
 import ufl
 import numpy as np
+import scipy.constants as const
 from dolfinx.fem.petsc import NonlinearProblem
 from petsc4py import PETSc
 from animation import create_animation
@@ -12,23 +13,8 @@ from dolfinx import log
 log.set_log_level(log.LogLevel.INFO)
 
 # -- Physical constants -- 
-avogadro_number = 6.022e23  # 1/mol
-R = 8.314  # J/mol/K
-g = 9.81  # m/s2, gravity acceleration
-
-# -- input --
-
-# - Geometry -
-tank_height = 1  # m
-D = 0.5  # m
-nozzle_diameter = 0.001  # m
-nb_nozzle = 1000 # number of nozzles at bottom of the tank 
-
-# - Operating conditions -
-source_term = 0.001  # mol/m3/s generation term
-P_top = 151988 # Pa, gas pressure at the top of the tank (what we control in LIBRA)
-T = 600 + 278  # K temperature
-flow_g_mol = 0.19 # inlet gas flow [mol/s] 
+R = const.R   # J/mol/K
+g = const.g   # m/s2
 
 def compute_properties(params):
     tank_height = params["tank_height"]
@@ -66,10 +52,13 @@ def compute_properties(params):
     drho = rho_l - rho_g  # density difference between liquid and gas [kg/m3]
     
     # - dimensionless numbers used in correlations -
-    def get_Re(u):
-        return rho_l * u * d_b / mu_l
+    def get_Re(u = 0.25, Re_old = 0):
+        Re = rho_l * u * d_b / mu_l
+        if Re_old != 0 and np.abs(np.log10(Re / Re_old)) > 1:   # check if Reynolds number changed by more than an order of magnitude
+            print (f"Warning: Reynolds number changed significantly from {Re_old:.2e} to {Re:.2e}, resulting bubble velocity {u:.2f} m/s might be off. Check assumed bubble velocity in initial Reynolds number calculation")
+        return Re
     Eo = (drho * g * d_b**2) / sigma_l  # Eotvos (Bond) number
-    Re = get_Re(0.25)  # Reynolds number, assuming terminal velocity of gas = 0.25 m/s (typical according to Chavez 2021)
+    Re = get_Re()  # Reynolds number, assuming velocity of gas = 0.25 m/s (typical according to Chavez 2021)
     Mo = (drho * g * mu_l**4) / (rho_l**2 * sigma_l**3)  # Morton number
     Sc = nu_l / diffusivity # Schmidt number 
 
@@ -86,9 +75,8 @@ def compute_properties(params):
         if u_g0 > 1 or u_g0 < 0.1:
             print (f"Warning: bubble velocity {u_g0:.2f} m/s is out of the typical range")
         return u_g0
-
     u_g0 = get_u_g0()  # bubble velocity [m/s], correlation from Clift 1978, reported by Chavez 2021
-    Re = get_Re(u_g0) # update Reynolds number with the calculated bubble velocity
+    Re = get_Re(u_g0, Re) # update Reynolds number with the calculated bubble velocity
 
     # - bubble volume fraction -
     def get_eps():
@@ -136,7 +124,12 @@ def compute_properties(params):
         "Re": Re, "Eo": Eo, "Mo": Mo, "Sc": Sc
     }
 
-def solve():
+def solve(params):
+    # unpack parameters
+    tank_height, u_g0, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, E_l, source_term = (
+        params["tank_height"], params["u_g0"], params["a"], params["h_l"], params["K_s"], params["P_0"], params["T"], params["eps_g"], params["eps_l"], params["E_g"], params["E_l"], params["source_term"]
+    )
+
     # MESH AND FUNCTION SPACES
     mesh = dolfinx.mesh.create_interval(MPI.COMM_WORLD, 10000, points=[0, tank_height])
     fdim = mesh.topology.dim - 1
