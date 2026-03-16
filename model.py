@@ -7,7 +7,11 @@ import scipy.constants as const
 from dolfinx.fem.petsc import NonlinearProblem
 from petsc4py import PETSc
 
+import warnings
+
 from dolfinx import log
+
+m3_to_cm3 = 1e6
 
 U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
 # log.set_log_level(log.LogLevel.INFO)
@@ -79,21 +83,25 @@ def compute_properties(params):
 
     # --- correlations for bubble properties ---
     def get_d_b():
+        """
+        mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
+        """
         nozzle_flow = flow_g_vol / nb_nozzle  # volumetric flow per nozzle [m3/s]
         if nozzle_flow < 3e-6 or nozzle_flow > 10e-6:
-            print(
-                f"Warning: nozzle flow {nozzle_flow * 1e6:.2e} cm3/s is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)"
+            warnings.warn(
+                f"nozzle flow {nozzle_flow * m3_to_cm3:.2e} cm3/s is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)"
             )
         return (
             0.54
-            * (nozzle_flow * 1e6 * np.sqrt(nozzle_diameter / 2 * 1e2)) ** 0.289
+            * (nozzle_flow * m3_to_cm3 * np.sqrt(nozzle_diameter / 2 * 1e2)) ** 0.289
             * 1e-2
-        )  # mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
+        )
 
     d_b = _get(params, "d_b", get_d_b)
 
+    he_molar_mass = 4.003e-3  # kg/mol
     rho_g = (
-        P_0 * 4.003e-3 / (R * T)
+        P_0 * he_molar_mass / (R * T)
     )  # bubbles density [kg/m3], using ideal gas law for He
     drho = rho_l - rho_g  # density difference between liquid and gas [kg/m3]
 
@@ -122,13 +130,13 @@ def compute_properties(params):
             J = 0.94 * H**0.757
         else:
             J = Re * Mo**0.149 + 0.857
-            print(
+            warnings.warn(
                 f"Warning: low Reynolds number {Re:.2e}, bubble size d_b = {d_b} m might be too small."
                 f"Clift correlation will use default value for bubble velocity u_g0 = {U_G0_DEFAULT} m/s"
             )
         u_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
         if u_g0 > 1 or u_g0 < 0.1:
-            print(
+            warnings.warn(
                 f"Warning: bubble velocity {u_g0:.2f} m/s is out of the typical range"
             )
         return u_g0
@@ -147,9 +155,9 @@ def compute_properties(params):
             * (flow_g_mol / (np.pi * (D / 2) ** 2 * u_g0))
         )  # gas void fraction, from ideal gas law and Young-Laplace pressure (neglecting hydrostatic pressure variation)
         if eps_g > 1 or eps_g < 0:
-            print(f"Warning: unphysical gas fraction: {eps_g:.2f}")
+            warnings.warn(f"Warning: unphysical gas fraction: {eps_g:.2f}")
         elif eps_g > 0.1:
-            print(
+            warnings.warn(
                 f"Warning: high gas fraction: {eps_g:.2f}, models assumptions may not hold"
             )
         return eps_g
