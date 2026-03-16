@@ -37,20 +37,34 @@ def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
     )
 
 
-def _get(params, key, func, correlations=None):
+def _get(
+    params: dict,
+    key: str,
+    func: callable,
+    correlations: dict | None = None,
+    **kwargs,
+):
     """
     Get a parameter value from params dictionnary.
 
     - If key is missing: compute it with default correlation func().
     - If key exists and is numeric: use that value.
     - If key exists and is a string: interpret it as a correlation name.
+
+    Arguments:
+    - params: dictionnary of parameters
+    - key: name of the parameter to get (e.g. "d_b", "u_g0", "h_l", "eps_g", etc.)
+    - func: default correlation to compute the parameter if key is missing (e.g. get_d_b, get_u_g0, get_h_briggs, get_eps_g, etc.)
+    - correlations: dictionnary of available correlations to compute the parameter if key is a string
+        (e.g. {"kanai": get_d_b, "higbie": get_h_higbie, "malara": get_h_malara, "briggs": get_h_briggs, etc.})
+    - kwargs: additional arguments to pass to the correlation function if key is a string
     """
     if key in params:
         value = params[key]
 
         if isinstance(value, str):
             corr_name = value.lower()
-            value = correlations[corr_name]()
+            value = correlations[corr_name](**kwargs)
             print(
                 f"{key} = {value:.2e} \t calculated using '{corr_name}' correlation as specified in input"
             )
@@ -59,7 +73,7 @@ def _get(params, key, func, correlations=None):
             print(f"{key} = {value:.2e} \t provided by input")
             return value
     else:
-        value = func()
+        value = func(**kwargs)
         print(f"{key} = {value:.2e} \t calculated using default correlation")
         return value
 
@@ -99,7 +113,19 @@ def compute_properties(params):
 
     # --- correlations for bubble properties ---
 
-    d_b = _get(params, "d_b", get_d_b)
+    d_b = _get(
+        params,
+        "d_b",
+        get_d_b,
+        # flow_g_vol=flow_g_vol,
+        # nozzle_diameter=nozzle_diameter,
+        # nb_nozzle=nb_nozzle,
+        kwargs={
+            "flow_g_vol": flow_g_vol,
+            "nozzle_diameter": nozzle_diameter,
+            "nb_nozzle": nb_nozzle,
+        },
+    )  # bubble diameter [m]
 
     he_molar_mass = 4.003e-3  # kg/mol
     rho_g = (
@@ -311,7 +337,7 @@ def solve(params):
         u,
         bcs=[bc1, bc2],
         petsc_options_prefix="librasparge",
-        petsc_options={"snes_monitor": None},
+        # petsc_options={"snes_monitor": None},
     )
 
     # initialise post processing
