@@ -2,7 +2,9 @@ tank_height: 1 # m
 D: 0.5        # m, tank diameter
 nozzle_diameter: 0.001  # m
 nb_nozzle: 1000 # number of nozzles at bottom of the tank 
-source_term: 0.001  # tritium generation term [mol/m3/s]
+source_term: 0.00001  # tritium generation term [mol/m3/s]
 P_top: 151988 # Pa, gas pressure at the top of the tank
 T: 878      # temperature [K] = 600°C temperature
 flow_g_mol: 0.19 # inlet gas flow [mol/s] 
+d_b : 0.005 # m, bubble diameter
+h_l : briggs

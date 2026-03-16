@@ -1,6 +1,8 @@
 import model
 import numpy as np
 
+ANIMATE = False
+
 def main():
     import sys
     import os
@@ -9,7 +11,7 @@ def main():
     import pandas as pd
 
     INPUT_PATH = os.path.join(os.getcwd(), sys.argv[1])
-    OUTPUT_PATH = os.path.join(os.getcwd(), sys.argv[1] + "_output" if len(sys.argv) < 3 else sys.argv[2])
+    OUTPUT_PATH = os.path.join(os.getcwd(), sys.argv[1] + "_out" if len(sys.argv) < 3 else sys.argv[2])
 
     def get_input (input_path):
         with open(input_path, 'r') as file:
@@ -74,14 +76,16 @@ def main():
 
     times, c_T_solutions, y_T2_solutions, x_ct, x_y, c_T_volume = model.solve(merged_dict)
     
-    save_to_csv(c_T_volume)
+    # save_to_csv(c_T_volume)
 
     save_output(results_dict = properties, output_path = OUTPUT_PATH + ".yaml", input_dict = params)
-    # Create interactive animation
-    try:
-        create_animation(times, c_T_solutions, y_T2_solutions, x_ct, x_y, c_T_volume)
-    except KeyboardInterrupt:
-        exit()
+
+    if ANIMATE is True:
+        # Create interactive animation
+        try:
+            create_animation(times, c_T_solutions, y_T2_solutions, x_ct, x_y, c_T_volume)
+        except KeyboardInterrupt:
+            exit()
 
 if __name__ == "__main__":
     main()  

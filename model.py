@@ -7,14 +7,38 @@ import scipy.constants as const
 from dolfinx.fem.petsc import NonlinearProblem
 from petsc4py import PETSc
 
-
 from dolfinx import log
 
-log.set_log_level(log.LogLevel.INFO)
+U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
+# log.set_log_level(log.LogLevel.INFO)
 
 # -- Physical constants -- 
 R = const.R   # J/mol/K
 g = const.g   # m/s2
+
+def _get(params, key, func, correlations=None):
+    '''
+    Get a parameter value from params dictionnary.
+
+    - If key is missing: compute it with default correlation func().
+    - If key exists and is numeric: use that value.
+    - If key exists and is a string: interpret it as a correlation name.
+    '''
+    if key in params:
+        value = params[key]
+
+        if isinstance(value, str):
+            corr_name = value.lower()
+            value = correlations[corr_name]()
+            print(f"{key} = {value:.2e} \t calculated using '{corr_name}' correlation as specified in input")
+            return value
+        else:
+            print(f"{key} = {value:.2e} \t provided by input")
+            return value
+    else:
+        value = func()
+        print(f"{key} = {value:.2e} \t calculated using default correlation")
+        return value
 
 def compute_properties(params):
     tank_height = params["tank_height"]
@@ -46,13 +70,13 @@ def compute_properties(params):
             print (f"Warning: nozzle flow {nozzle_flow*1e6:.2e} cm3/s is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)")
         return 0.54 * (nozzle_flow * 1e6 * np.sqrt(nozzle_diameter/2 * 1e2)) ** 0.289 * 1e-2 # mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
 
-    d_b = get_d_b()
+    d_b = _get(params, "d_b", get_d_b)
 
     rho_g = P_0 * 4.003e-3 / (R * T)  # bubbles density [kg/m3], using ideal gas law for He
     drho = rho_l - rho_g  # density difference between liquid and gas [kg/m3]
     
     # - dimensionless numbers used in correlations -
-    def get_Re(u = 0.25, Re_old = 0):
+    def get_Re(u = U_G0_DEFAULT, Re_old = 0):
         Re = rho_l * u * d_b / mu_l
         if Re_old != 0 and np.abs(np.log10(Re / Re_old)) > 1:   # check if Reynolds number changed by more than an order of magnitude
             print (f"Warning: Reynolds number changed significantly from {Re_old:.2e} to {Re:.2e}, resulting bubble velocity {u:.2f} m/s might be off. Check assumed bubble velocity in initial Reynolds number calculation")
@@ -71,6 +95,8 @@ def compute_properties(params):
             J = 0.94 * H**0.757
         else:
             J = Re * Mo**0.149 + 0.857
+            print (f"Warning: low Reynolds number {Re:.2e}, bubble size d_b = {d_b} m might be too small."
+                   f"Clift correlation will use default value for bubble velocity u_g0 = {U_G0_DEFAULT} m/s")
         u_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
         if u_g0 > 1 or u_g0 < 0.1:
             print (f"Warning: bubble velocity {u_g0:.2f} m/s is out of the typical range")
@@ -79,16 +105,16 @@ def compute_properties(params):
     Re = get_Re(u_g0, Re) # update Reynolds number with the calculated bubble velocity
 
     # - bubble volume fraction -
-    def get_eps():
+    def get_eps_g():
         eps_g = R * T / (P_0 + 4 * sigma_l / d_b) * (flow_g_mol / (np.pi * (D/2)**2 * u_g0)) # gas void fraction, from ideal gas law and Young-Laplace pressure (neglecting hydrostatic pressure variation)
         if eps_g > 1 or eps_g < 0:
             print (f"Warning: unphysical gas fraction: {eps_g:.2f}")
         elif eps_g > 0.1:
             print (f"Warning: high gas fraction: {eps_g:.2f}, models assumptions may not hold")
-        return (eps_g, 1 - eps_g)
+        return eps_g
 
-    eps_g, eps_l = get_eps()
-
+    eps_g = _get(params, "eps_g", get_eps_g)
+    eps_l = 1 - eps_g
     a = 6 * eps_g / d_b  # specific interfacial area
 
     # - mass transfer coefficient -
@@ -107,11 +133,12 @@ def compute_properties(params):
         h_l = Sh * diffusivity / d_b
         return h_l
 
-    h_l_higbie = get_h_higbie()
-    h_l_malara = get_h_malara()
-    h_l_briggs = get_h_briggs()
-
-    h_l = h_l_briggs # choose mass transfer coefficient model
+    h_l_correlations = {
+        "higbie": get_h_higbie,
+        "malara": get_h_malara,
+        "briggs": get_h_briggs,
+    }
+    h_l = _get(params, "h_l", get_h_briggs, correlations=h_l_correlations)  # Briggs default
 
     E_g = 0.2 * D**2 * u_g0  # gas phase diffusivity (Malara 1995)
     E_l = diffusivity  # liquid phase diffusivity 
@@ -231,7 +258,7 @@ def solve(params):
     t = 0
     while t < 10:
         # t += dt
-        print("t:", t)
+        # print("t:", t)
         problem.solve()
 
         # update previous solution
