@@ -117,14 +117,9 @@ def compute_properties(params):
         params,
         "d_b",
         get_d_b,
-        # flow_g_vol=flow_g_vol,
-        # nozzle_diameter=nozzle_diameter,
-        # nb_nozzle=nb_nozzle,
-        kwargs={
-            "flow_g_vol": flow_g_vol,
-            "nozzle_diameter": nozzle_diameter,
-            "nb_nozzle": nb_nozzle,
-        },
+        flow_g_vol=flow_g_vol,
+        nozzle_diameter=nozzle_diameter,
+        nb_nozzle=nb_nozzle,
     )  # bubble diameter [m]
 
     he_molar_mass = 4.003e-3  # kg/mol
@@ -277,7 +272,7 @@ def solve(params):
     c_T, y_T2 = ufl.split(u)
     c_T_n, y_T2_n = ufl.split(u_n)
 
-    dt = 0.2
+    dt = 0.001 * 3600  # s
 
     vel_x = u_g0  # TODO velocity should vary with hydrostatic pressure
     vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
@@ -357,7 +352,11 @@ def solve(params):
 
     # SOLVE
     t = 0
-    while t < 10:
+    t_final = 8 * 3600  # s
+    t_irr = (
+        6 * 3600
+    )  # s, irradiation time (time during which the source term is active)
+    while t < t_final:
         # t += dt
         # print("t:", t)
         problem.solve()
@@ -369,7 +368,7 @@ def solve(params):
         c_T_vals = u.x.array[ct_dofs][ct_sort_coords]
         y_T2_vals = u.x.array[y_dofs][y_sort_coords]
 
-        if t >= 1:
+        if t >= t_irr:
             gen.value = 0.0
 
         # store time and solution
