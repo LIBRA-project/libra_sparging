@@ -21,6 +21,22 @@ R = const.R  # J/mol/K
 g = const.g  # m/s2
 
 
+def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
+    """
+    mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
+    """
+    nozzle_flow = flow_g_vol / nb_nozzle  # volumetric flow per nozzle [m3/s]
+    if nozzle_flow < 3e-6 or nozzle_flow > 10e-6:
+        warnings.warn(
+            f"nozzle flow {nozzle_flow * m3_to_cm3:.2e} cm3/s is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)"
+        )
+    return (
+        0.54
+        * (nozzle_flow * m3_to_cm3 * np.sqrt(nozzle_diameter / 2 * 1e2)) ** 0.289
+        * 1e-2
+    )
+
+
 def _get(params, key, func, correlations=None):
     """
     Get a parameter value from params dictionnary.
@@ -82,20 +98,6 @@ def compute_properties(params):
     flow_g_vol = flow_g_mol * R * T / P_0  # inlet gas volumetric flow rate [m3/s]
 
     # --- correlations for bubble properties ---
-    def get_d_b():
-        """
-        mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
-        """
-        nozzle_flow = flow_g_vol / nb_nozzle  # volumetric flow per nozzle [m3/s]
-        if nozzle_flow < 3e-6 or nozzle_flow > 10e-6:
-            warnings.warn(
-                f"nozzle flow {nozzle_flow * m3_to_cm3:.2e} cm3/s is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)"
-            )
-        return (
-            0.54
-            * (nozzle_flow * m3_to_cm3 * np.sqrt(nozzle_diameter / 2 * 1e2)) ** 0.289
-            * 1e-2
-        )
 
     d_b = _get(params, "d_b", get_d_b)
 
