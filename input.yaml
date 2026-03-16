@@ -1,10 +1,15 @@
+# -- required inputs --
 tank_height: 1 # m
 D: 0.5        # m, tank diameter
 nozzle_diameter: 0.001  # m
-nb_nozzle: 1000 # number of nozzles at bottom of the tank 
+nb_nozzle: 1000 # number of nozzles at bottom of the tank -> inlet gas flow is shared among nozzles, nozzle flow affects bubble size. 
+# Must adjust nozzle diameter and number to stay within the range of nozzle flow where the bubble size correlation is valid
 source_term: 0.00001  # tritium generation term [mol/m3/s]
 P_top: 151988 # Pa, gas pressure at the top of the tank
 T: 878      # temperature [K] = 600°C temperature
 flow_g_mol: 0.19 # inlet gas flow [mol/s] 
-d_b : 0.005 # m, bubble diameter
-h_l : briggs
+
+# -- optional inputs --
+#d_b : 0.006 # m, bubble diameter
+u_g0 : 0.25 # m/s, bubble velocity
+#h_l : 0.0001 # m/s, T mass transfer coefficient to gas bubbles
