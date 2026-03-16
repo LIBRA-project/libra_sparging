@@ -107,7 +107,7 @@ def compute_properties(params):
 
     # - derived parameters -
     P_0 = (
-        P_top + rho_l * 9.81 * tank_height
+        P_top + rho_l * g * tank_height
     )  # gas inlet pressure, from hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
     flow_g_vol = flow_g_mol * R * T / P_0  # inlet gas volumetric flow rate [m3/s]
 
