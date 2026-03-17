@@ -7,7 +7,11 @@ import scipy.constants as const
 from dolfinx.fem.petsc import NonlinearProblem
 from petsc4py import PETSc
 
+import warnings
+
 from dolfinx import log
+
+m3_to_cm3 = 1e6
 
 U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
 # log.set_log_level(log.LogLevel.INFO)
@@ -17,20 +21,50 @@ R = const.R  # J/mol/K
 g = const.g  # m/s2
 
 
-def _get(params, key, func, correlations=None):
+def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
+    """
+    mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
+    """
+    nozzle_flow = flow_g_vol / nb_nozzle  # volumetric flow per nozzle [m3/s]
+    if nozzle_flow < 3e-6 or nozzle_flow > 10e-6:
+        warnings.warn(
+            f"nozzle flow {nozzle_flow * m3_to_cm3:.2e} cm3/s is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)"
+        )
+    return (
+        0.54
+        * (nozzle_flow * m3_to_cm3 * np.sqrt(nozzle_diameter / 2 * 1e2)) ** 0.289
+        * 1e-2
+    )
+
+
+def _get(
+    params: dict,
+    key: str,
+    func: callable,
+    correlations: dict | None = None,
+    **kwargs,
+):
     """
     Get a parameter value from params dictionnary.
 
     - If key is missing: compute it with default correlation func().
     - If key exists and is numeric: use that value.
     - If key exists and is a string: interpret it as a correlation name.
+
+    Arguments:
+    - params: dictionnary of parameters
+    - key: name of the parameter to get (e.g. "d_b", "u_g0", "h_l", "eps_g", etc.)
+    - func: default correlation to compute the parameter if key is missing (e.g. get_d_b, get_u_g0, get_h_briggs, get_eps_g, etc.)
+    - correlations: dictionnary of available correlations to compute the parameter if key is a string
+        (e.g. {"kanai": get_d_b, "higbie": get_h_higbie, "malara": get_h_malara, "briggs": get_h_briggs, etc.})
+    - kwargs: additional arguments to pass to the correlation function if key is a string
     """
     if key in params:
         value = params[key]
 
         if isinstance(value, str):
             corr_name = value.lower()
-            value = correlations[corr_name]()
+            value = correlations[corr_name](**kwargs)
             print(
                 f"{key} = {value:.2e} \t calculated using '{corr_name}' correlation as specified in input"
             )
@@ -39,7 +73,7 @@ def _get(params, key, func, correlations=None):
             print(f"{key} = {value:.2e} \t provided by input")
             return value
     else:
-        value = func()
+        value = func(**kwargs)
         print(f"{key} = {value:.2e} \t calculated using default correlation")
         return value
 
@@ -73,27 +107,24 @@ def compute_properties(params):
 
     # - derived parameters -
     P_0 = (
-        P_top + rho_l * 9.81 * tank_height
+        P_top + rho_l * g * tank_height
     )  # gas inlet pressure, from hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
     flow_g_vol = flow_g_mol * R * T / P_0  # inlet gas volumetric flow rate [m3/s]
 
     # --- correlations for bubble properties ---
-    def get_d_b():
-        nozzle_flow = flow_g_vol / nb_nozzle  # volumetric flow per nozzle [m3/s]
-        if nozzle_flow < 3e-6 or nozzle_flow > 10e-6:
-            print(
-                f"Warning: nozzle flow {nozzle_flow * 1e6:.2e} cm3/s is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)"
-            )
-        return (
-            0.54
-            * (nozzle_flow * 1e6 * np.sqrt(nozzle_diameter / 2 * 1e2)) ** 0.289
-            * 1e-2
-        )  # mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
 
-    d_b = _get(params, "d_b", get_d_b)
+    d_b = _get(
+        params,
+        "d_b",
+        get_d_b,
+        flow_g_vol=flow_g_vol,
+        nozzle_diameter=nozzle_diameter,
+        nb_nozzle=nb_nozzle,
+    )  # bubble diameter [m]
 
+    he_molar_mass = 4.003e-3  # kg/mol
     rho_g = (
-        P_0 * 4.003e-3 / (R * T)
+        P_0 * he_molar_mass / (R * T)
     )  # bubbles density [kg/m3], using ideal gas law for He
     drho = rho_l - rho_g  # density difference between liquid and gas [kg/m3]
 
@@ -122,13 +153,13 @@ def compute_properties(params):
             J = 0.94 * H**0.757
         else:
             J = Re * Mo**0.149 + 0.857
-            print(
+            warnings.warn(
                 f"Warning: low Reynolds number {Re:.2e}, bubble size d_b = {d_b} m might be too small."
                 f"Clift correlation will use default value for bubble velocity u_g0 = {U_G0_DEFAULT} m/s"
             )
         u_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
         if u_g0 > 1 or u_g0 < 0.1:
-            print(
+            warnings.warn(
                 f"Warning: bubble velocity {u_g0:.2f} m/s is out of the typical range"
             )
         return u_g0
@@ -147,9 +178,9 @@ def compute_properties(params):
             * (flow_g_mol / (np.pi * (D / 2) ** 2 * u_g0))
         )  # gas void fraction, from ideal gas law and Young-Laplace pressure (neglecting hydrostatic pressure variation)
         if eps_g > 1 or eps_g < 0:
-            print(f"Warning: unphysical gas fraction: {eps_g:.2f}")
+            warnings.warn(f"Warning: unphysical gas fraction: {eps_g:.2f}")
         elif eps_g > 0.1:
-            print(
+            warnings.warn(
                 f"Warning: high gas fraction: {eps_g:.2f}, models assumptions may not hold"
             )
         return eps_g
@@ -241,7 +272,7 @@ def solve(params):
     c_T, y_T2 = ufl.split(u)
     c_T_n, y_T2_n = ufl.split(u_n)
 
-    dt = 0.2
+    dt = 0.001 * 3600  # s
 
     vel_x = u_g0  # TODO velocity should vary with hydrostatic pressure
     vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
@@ -301,7 +332,7 @@ def solve(params):
         u,
         bcs=[bc1, bc2],
         petsc_options_prefix="librasparge",
-        petsc_options={"snes_monitor": None},
+        # petsc_options={"snes_monitor": None},
     )
 
     # initialise post processing
@@ -321,7 +352,11 @@ def solve(params):
 
     # SOLVE
     t = 0
-    while t < 10:
+    t_final = 8 * 3600  # s
+    t_irr = (
+        6 * 3600
+    )  # s, irradiation time (time during which the source term is active)
+    while t < t_final:
         # t += dt
         # print("t:", t)
         problem.solve()
@@ -333,7 +368,7 @@ def solve(params):
         c_T_vals = u.x.array[ct_dofs][ct_sort_coords]
         y_T2_vals = u.x.array[y_dofs][y_sort_coords]
 
-        if t >= 1:
+        if t >= t_irr:
             gen.value = 0.0
 
         # store time and solution
