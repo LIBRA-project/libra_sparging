@@ -12,8 +12,13 @@ import warnings
 from dolfinx import log
 
 m3_to_cm3 = 1e6
+cm3_to_m3 = 1e-6
+m_to_cm = 1e2
+cm_to_m = 1e-2
+dynespercm_to_newtonpermeter = 1e-3
 
 U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
+VERBOSE = True
 # log.set_log_level(log.LogLevel.INFO)
 
 # -- Physical constants --
@@ -21,27 +26,150 @@ R = const.R  # J/mol/K
 g = const.g  # m/s2
 
 
+def kelvin_to_celsius(T_kelvin):
+    return T_kelvin - 273.15
+
+
+def get_rho_l(T: float) -> float:
+    """density of FLiBe [kg/m3], Vidrio 2022"""
+    return 2245 - 0.424 * (kelvin_to_celsius(T))
+
+
+def get_mu_l(T: float) -> float:
+    """dynamic viscosity of FLiBe [Pa.s], Cantor 1968"""
+    return 0.116e-3 * np.exp(3755 / T)
+
+
+def get_sigma_l(T: float) -> float:
+    """surface tension of FLiBe [N/m], Cantor 1968"""
+    return (260 - 0.12 * (kelvin_to_celsius(T))) * dynespercm_to_newtonpermeter
+
+
+def get_E_l(T: float) -> float:
+    """diffusivity of T in FLiBe [m2/s], Calderoni 2008"""
+    return 9.3e-7 * np.exp(-42e3 / (R * T))
+
+
+def get_K_s(T: float) -> float:
+    """solubility of T in FLiBe [mol/m3/Pa], Calderoni 2008"""
+    return 7.9e-2 * np.exp(-35e3 / (R * T))
+
+
 def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
     """
     mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
     """
     nozzle_flow = flow_g_vol / nb_nozzle  # volumetric flow per nozzle [m3/s]
-    if nozzle_flow < 3e-6 or nozzle_flow > 10e-6:
+    if nozzle_flow < 3 * cm3_to_m3 or nozzle_flow > 10 * cm3_to_m3:
         warnings.warn(
             f"nozzle flow {nozzle_flow * m3_to_cm3:.2e} cm3/s is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)"
         )
     return (
         0.54
-        * (nozzle_flow * m3_to_cm3 * np.sqrt(nozzle_diameter / 2 * 1e2)) ** 0.289
-        * 1e-2
+        * (nozzle_flow * m3_to_cm3 * np.sqrt(nozzle_diameter / 2 * m_to_cm)) ** 0.289
+        * cm_to_m
     )
+
+
+def get_Re(rho: float, mu: float, u: float, d: float, Re_old: float = 0) -> float:
+    """
+    Reynolds number
+    """
+    Re = rho * u * d / mu
+    if (
+        Re_old != 0 and np.abs(np.log10(Re / Re_old)) > 1
+    ):  # check if Reynolds number changed by more than an order of magnitude
+        warnings.warnngs.warn(
+            f"Re number changed significantly from {Re_old:.2e} to {Re:.2e}, bubble velocity u = {u:.2f} m/s might be off. Check assumed bubble velocity in initial Reynolds number calculation"
+        )
+    return Re
+
+
+def get_u_g0(
+    Eo: float, Mo: float, mu_l: float, rho_l: float, d_b: float, Re: float
+) -> float:
+    """
+    bubble initial velocity [m/s], correlation for terminal velocity from Clift 1978
+    """
+    H = 4 / 3 * Eo * Mo**-0.149 * (mu_l / 0.0009) ** -0.14
+    if H > 59.3:
+        J = 3.42 * H**0.441
+    elif H > 2:
+        J = 0.94 * H**0.757
+    else:
+        J = Re * Mo**0.149 + 0.857
+        warnings.warn(
+            f"Warning: low Reynolds number {Re:.2e}, bubble size d_b = {d_b} m might be too small."
+            f"Clift correlation will use default value for bubble velocity u_g0 = {U_G0_DEFAULT} m/s"
+        )
+    u_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
+    if u_g0 > 1 or u_g0 < 0.1:
+        warnings.warn(
+            f"Warning: bubble velocity {u_g0:.2f} m/s is out of the typical range"
+        )
+    return u_g0
+
+
+def get_eps_g(
+    T: float,
+    P_0: float,
+    flow_g_mol: float,
+    D: float,
+    d_b: float,
+    u_g: float,
+    sigma_l: float,
+) -> float:
+    """computes gas void fraction from ideal gas law and Young-Laplace pressure in the bubbles (neglecting hydrostatic pressure variation)"""
+    eps_g = (
+        R * T / (P_0 + 4 * sigma_l / d_b) * flow_g_mol / (np.pi * (D / 2) ** 2 * u_g)
+    )
+    if eps_g > 1 or eps_g < 0:
+        warnings.warn(f"Warning: unphysical gas fraction: {eps_g:.2f}")
+    elif eps_g > 0.1:
+        warnings.warn(
+            f"Warning: high gas fraction: {eps_g:.2f}, models assumptions may not hold"
+        )
+    return eps_g
+
+
+def get_h_l(
+    Re: float, Sc: float, E_l: float, d_b: float, u_g: float, corr_name: str = "briggs"
+) -> float:
+    """mass transfer coefficient [m/s] for tritium in liquid FLiBe, computed using the specified correlation"""
+    match corr_name:
+        case "briggs":
+            return get_h_briggs(Re, Sc, E_l, d_b)
+        case "higbie":
+            return get_h_higbie(E_l, u_g, d_b)
+        case "malara":
+            return get_h_malara(E_l, d_b)
+
+
+def get_h_higbie(E_l: float, u_g: float, d_b: float) -> float:
+    """mass transfer coefficient [m/s] for tritium in liquid FLiBe using Higbie penetration model"""
+    h_l = (
+        (E_l * u_g) / (ufl.pi * d_b)
+    ) ** 0.5  # mass transport coefficient Higbie penetration model
+    return h_l
+
+
+def get_h_malara(E_l: float, d_b: float) -> float:
+    """mass transfer coefficient [m/s] for tritium in liquid FLiBe using Malara 1995 correlation"""
+    h_l = 2 * np.pi**2 * E_l / (3 * d_b)
+    return h_l
+
+
+def get_h_briggs(Re: float, Sc: float, E_l: float, d_b: float) -> float:
+    """mass transfer coefficient [m/s] for tritium in liquid FLiBe using Briggs 1970 correlation"""
+    Sh = 0.089 * Re**0.69 * Sc**0.33  # Sherwood number
+    h_l = Sh * E_l / d_b
+    return h_l
 
 
 def _get(
     params: dict,
     key: str,
     func: callable,
-    correlations: dict | None = None,
     **kwargs,
 ):
     """
@@ -59,12 +187,15 @@ def _get(
         (e.g. {"kanai": get_d_b, "higbie": get_h_higbie, "malara": get_h_malara, "briggs": get_h_briggs, etc.})
     - kwargs: additional arguments to pass to the correlation function if key is a string
     """
+    if VERBOSE:
+        print(f"in _get() for {key}, passed parameters: {kwargs}")  # FIXME
     if key in params:
         value = params[key]
 
         if isinstance(value, str):
             corr_name = value.lower()
-            value = correlations[corr_name](**kwargs)
+            kwargs.update({"corr_name": corr_name})
+            value = func(**kwargs)
             print(
                 f"{key} = {value:.2e} \t calculated using '{corr_name}' correlation as specified in input"
             )
@@ -88,31 +219,23 @@ def compute_properties(params):
     flow_g_mol = params["flow_g_mol"]
 
     # --- correlations for FLiBe properties ---
-    rho_l = 2245 - 0.424 * (T - 272.15)  # density [kg/m3] of Li2BeF4, Vidrio 2022
-    mu_l = 0.116e-3 * np.exp(
-        3755 / T
-    )  # dynamic viscosity [Pa.s] of Li2BeF4, Cantor 1968
+    rho_l = _get(params, "rho_l", get_rho_l, T=T)  # density [kg/m3] of Li2BeF4
+    mu_l = _get(params, "mu_l", get_mu_l, T=T)  # dynamic viscosity [Pa.s] of Li2BeF4
     nu_l = mu_l / rho_l  # kinematic viscosity [m2/s] of Li2BeF4
-    sigma_l = (
-        260 - 0.12 * (T - 272.15)
-    ) * 1e-3  # surface tension of FLiBe [N/m], Cantor 1968
+    sigma_l = _get(
+        params, "sigma_l", get_sigma_l, T=T
+    )  # surface tension [N/m] of Li2BeF4
 
     # --- correlations for tritium in FLiBe ---
-    diffusivity = 9.3e-7 * np.exp(
-        -42e3 / (R * T)
-    )  # diffusivity of T in Li2BeF4 [m2/s], Calderoni 2008
-    K_s = 7.9e-2 * np.exp(
-        -35e3 / (R * T)
-    )  # solubility of T in Li2BeF4 [mol/m3/Pa], Calderoni 2008
-
+    E_l = _get(params, "E_l", get_E_l, T=T)  # diffusivity of T in FLiBe [m2/s]
+    K_s = _get(params, "K_s", get_K_s, T=T)  # solubility of T in FLiBe [mol/m3/Pa]
     # - derived parameters -
     P_0 = (
         P_top + rho_l * g * tank_height
-    )  # gas inlet pressure, from hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
+    )  # gas inlet pressure [Pa] = hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
     flow_g_vol = flow_g_mol * R * T / P_0  # inlet gas volumetric flow rate [m3/s]
 
     # --- correlations for bubble properties ---
-
     d_b = _get(
         params,
         "d_b",
@@ -128,94 +251,54 @@ def compute_properties(params):
     )  # bubbles density [kg/m3], using ideal gas law for He
     drho = rho_l - rho_g  # density difference between liquid and gas [kg/m3]
 
-    # - dimensionless numbers used in correlations -
-    def get_Re(u=U_G0_DEFAULT, Re_old=0):
-        Re = rho_l * u * d_b / mu_l
-        if (
-            Re_old != 0 and np.abs(np.log10(Re / Re_old)) > 1
-        ):  # check if Reynolds number changed by more than an order of magnitude
-            print(
-                f"Warning: Reynolds number changed significantly from {Re_old:.2e} to {Re:.2e}, resulting bubble velocity {u:.2f} m/s might be off. Check assumed bubble velocity in initial Reynolds number calculation"
-            )
-        return Re
+    # --- dimensionless numbers used in correlations ---
 
     Eo = (drho * g * d_b**2) / sigma_l  # Eotvos (Bond) number
-    Re = get_Re()  # Reynolds number, assuming velocity of gas = 0.25 m/s (typical according to Chavez 2021)
+    Re = _get(
+        params, "Re", get_Re, rho=rho_l, mu=mu_l, u=U_G0_DEFAULT, d=d_b
+    )  # initial Reynolds number calculation, assuming typical gas velocity (~0.25 m/s according to Chavez 2021)
     Mo = (drho * g * mu_l**4) / (rho_l**2 * sigma_l**3)  # Morton number
-    Sc = nu_l / diffusivity  # Schmidt number
+    Sc = nu_l / E_l  # Schmidt number
 
-    # - bubble velocity -
-    def get_u_g0():  # Clift 1978 correlation for bubble terminal velocity
-        H = 4 / 3 * Eo * Mo**-0.149 * (mu_l / 0.0009) ** -0.14
-        if H > 59.3:
-            J = 3.42 * H**0.441
-        elif H > 2:
-            J = 0.94 * H**0.757
-        else:
-            J = Re * Mo**0.149 + 0.857
-            warnings.warn(
-                f"Warning: low Reynolds number {Re:.2e}, bubble size d_b = {d_b} m might be too small."
-                f"Clift correlation will use default value for bubble velocity u_g0 = {U_G0_DEFAULT} m/s"
-            )
-        u_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
-        if u_g0 > 1 or u_g0 < 0.1:
-            warnings.warn(
-                f"Warning: bubble velocity {u_g0:.2f} m/s is out of the typical range"
-            )
-        return u_g0
-
+    # --- bubble velocity ---
     u_g0 = _get(
-        params, "u_g0", get_u_g0
+        params, "u_g0", get_u_g0, Eo=Eo, Mo=Mo, mu_l=mu_l, rho_l=rho_l, d_b=d_b, Re=Re
     )  # bubble velocity [m/s], correlation from Clift 1978, reported by Chavez 2021
-    Re = get_Re(u_g0, Re)  # update Reynolds number with the calculated bubble velocity
+    Re = _get(
+        params, "Re", get_Re, rho=rho_l, mu=mu_l, u=u_g0, d=d_b, Re_old=Re
+    )  # update Reynolds number with the calculated bubble velocity
 
-    # - bubble volume fraction -
-    def get_eps_g():
-        eps_g = (
-            R
-            * T
-            / (P_0 + 4 * sigma_l / d_b)
-            * (flow_g_mol / (np.pi * (D / 2) ** 2 * u_g0))
-        )  # gas void fraction, from ideal gas law and Young-Laplace pressure (neglecting hydrostatic pressure variation)
-        if eps_g > 1 or eps_g < 0:
-            warnings.warn(f"Warning: unphysical gas fraction: {eps_g:.2f}")
-        elif eps_g > 0.1:
-            warnings.warn(
-                f"Warning: high gas fraction: {eps_g:.2f}, models assumptions may not hold"
-            )
-        return eps_g
+    # --- bubble volume fraction ---
+    eps_g = _get(
+        params,
+        "eps_g",
+        get_eps_g,
+        T=T,
+        P_0=P_0,
+        flow_g_mol=flow_g_mol,
+        D=D,
+        d_b=d_b,
+        u_g=u_g0,
+        sigma_l=sigma_l,
+    )  # gas fraction [-]
+    eps_l = 1 - eps_g  # liquid fraction [-]
+    a = 6 * eps_g / d_b  # specific interfacial area [m-1]
 
-    eps_g = _get(params, "eps_g", get_eps_g)
-    eps_l = 1 - eps_g
-    a = 6 * eps_g / d_b  # specific interfacial area
-
-    # - mass transfer coefficient -
-    def get_h_higbie():
-        h_l = (
-            (diffusivity * u_g0) / (ufl.pi * d_b)
-        ) ** 0.5  # mass transport coefficient Higbie penetration model
-        return h_l
-
-    def get_h_malara():  # mass transfer coefficient [m2/s], Malara 1995
-        h_l = 2 * np.pi**2 * diffusivity / (3 * d_b)
-        return h_l
-
-    def get_h_briggs():  # mass transfer coefficient [m2/s] from Sherwood number, Briggs 1970
-        Sh = 0.089 * Re**0.69 * Sc**0.33  # Sherwood number
-        h_l = Sh * diffusivity / d_b
-        return h_l
-
-    h_l_correlations = {
-        "higbie": get_h_higbie,
-        "malara": get_h_malara,
-        "briggs": get_h_briggs,
-    }
+    # --- mass transfer coefficient ---
     h_l = _get(
-        params, "h_l", get_h_briggs, correlations=h_l_correlations
-    )  # Briggs default
+        params,
+        "h_l",
+        get_h_l,
+        Re=Re,
+        Sc=Sc,
+        E_l=E_l,
+        d_b=d_b,
+        u_g=u_g0,
+    )  # T mass transfer coefficient [m/s], using Briggs 1970 correlation as default
 
-    E_g = 0.2 * D**2 * u_g0  # gas phase diffusivity (Malara 1995)
-    E_l = diffusivity  # liquid phase diffusivity
+    E_g = (
+        0.2 * D**2 * u_g0
+    )  # gas phase diffusivity (Malara 1995) # is this correct ? Should we use tank diameter ?? TODO
 
     return {
         "rho_l": rho_l,
