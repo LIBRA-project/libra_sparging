@@ -18,21 +18,13 @@ cm_to_m = 1e-2
 dynespercm_to_newtonpermeter = 1e-3
 
 U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
-VERBOSE = True
+VERBOSE = False
 # log.set_log_level(log.LogLevel.INFO)
-
-# -- Physical constants --
-R = const.R  # J/mol/K
-g = const.g  # m/s2
-
-
-def kelvin_to_celsius(T_kelvin):
-    return T_kelvin - 273.15
 
 
 def get_rho_l(T: float) -> float:
     """density of FLiBe [kg/m3], Vidrio 2022"""
-    return 2245 - 0.424 * (kelvin_to_celsius(T))
+    return 2245 - 0.424 * (const.convert_temperature(T, "kelvin", "celsius"))
 
 
 def get_mu_l(T: float) -> float:
@@ -42,17 +34,19 @@ def get_mu_l(T: float) -> float:
 
 def get_sigma_l(T: float) -> float:
     """surface tension of FLiBe [N/m], Cantor 1968"""
-    return (260 - 0.12 * (kelvin_to_celsius(T))) * dynespercm_to_newtonpermeter
+    return (
+        260 - 0.12 * (const.convert_temperature(T, "kelvin", "celsius"))
+    ) * dynespercm_to_newtonpermeter
 
 
 def get_E_l(T: float) -> float:
     """diffusivity of T in FLiBe [m2/s], Calderoni 2008"""
-    return 9.3e-7 * np.exp(-42e3 / (R * T))
+    return 9.3e-7 * np.exp(-42e3 / (const.R * T))
 
 
 def get_K_s(T: float) -> float:
     """solubility of T in FLiBe [mol/m3/Pa], Calderoni 2008"""
-    return 7.9e-2 * np.exp(-35e3 / (R * T))
+    return 7.9e-2 * np.exp(-35e3 / (const.R * T))
 
 
 def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
@@ -121,7 +115,11 @@ def get_eps_g(
 ) -> float:
     """computes gas void fraction from ideal gas law and Young-Laplace pressure in the bubbles (neglecting hydrostatic pressure variation)"""
     eps_g = (
-        R * T / (P_0 + 4 * sigma_l / d_b) * flow_g_mol / (np.pi * (D / 2) ** 2 * u_g)
+        const.R
+        * T
+        / (P_0 + 4 * sigma_l / d_b)
+        * flow_g_mol
+        / (np.pi * (D / 2) ** 2 * u_g)
     )
     if eps_g > 1 or eps_g < 0:
         warnings.warn(f"Warning: unphysical gas fraction: {eps_g:.2f}")
@@ -166,6 +164,24 @@ def get_h_briggs(Re: float, Sc: float, E_l: float, d_b: float) -> float:
     return h_l
 
 
+def get_tritium_source(input: dict) -> float:
+    """compute tritium generation source term [mol/m3/s] from TBR calculated by openMC for our geometry"""
+    tank_volume = np.pi * (input["D"] / 2) ** 2 * input["tank_height"]
+    return input["tbr"] * float(input["n_gen_rate"]) / (tank_volume * const.N_A)
+
+
+def get_flow_g_mol(input: dict) -> float:
+    """convert gas flow from sccm to mol/s"""
+    T_standard = 0  # °C
+    P_standard = 101325  # Pa
+    min_to_sec = 60
+    return (
+        (input["flow_g_sccm"] * cm3_to_m3 / min_to_sec)
+        * P_standard
+        / (const.R * const.convert_temperature(T_standard, "celsius", "kelvin"))
+    )
+
+
 def _get(
     params: dict,
     key: str,
@@ -188,7 +204,7 @@ def _get(
     - kwargs: additional arguments to pass to the correlation function if key is a string
     """
     if VERBOSE:
-        print(f"in _get() for {key}, passed parameters: {kwargs}")  # FIXME
+        print(f"in _get() for {key}, passed parameters: {kwargs}")
     if key in params:
         value = params[key]
 
@@ -196,16 +212,19 @@ def _get(
             corr_name = value.lower()
             kwargs.update({"corr_name": corr_name})
             value = func(**kwargs)
-            print(
-                f"{key} = {value:.2e} \t calculated using '{corr_name}' correlation as specified in input"
-            )
+            if VERBOSE:
+                print(
+                    f"{key} = {value:.2e} \t calculated using '{corr_name}' correlation as specified in input"
+                )
             return value
         else:
-            print(f"{key} = {value:.2e} \t provided by input")
+            if VERBOSE:
+                print(f"{key} = {value:.2e} \t provided by input")
             return value
     else:
         value = func(**kwargs)
-        print(f"{key} = {value:.2e} \t calculated using default correlation")
+        if VERBOSE:
+            print(f"{key} = {value:.2e} \t calculated using default correlation")
         return value
 
 
@@ -216,7 +235,10 @@ def compute_properties(params):
     nb_nozzle = params["nb_nozzle"]
     P_top = params["P_top"]
     T = params["T"]
-    flow_g_mol = params["flow_g_mol"]
+
+    flow_g_mol = _get(
+        params, "flow_g_mol", get_flow_g_mol, input=params
+    )  # inlet gas flow rate [mol/s]
 
     # --- correlations for FLiBe properties ---
     rho_l = _get(params, "rho_l", get_rho_l, T=T)  # density [kg/m3] of Li2BeF4
@@ -231,9 +253,9 @@ def compute_properties(params):
     K_s = _get(params, "K_s", get_K_s, T=T)  # solubility of T in FLiBe [mol/m3/Pa]
     # - derived parameters -
     P_0 = (
-        P_top + rho_l * g * tank_height
+        P_top + rho_l * const.g * tank_height
     )  # gas inlet pressure [Pa] = hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
-    flow_g_vol = flow_g_mol * R * T / P_0  # inlet gas volumetric flow rate [m3/s]
+    flow_g_vol = flow_g_mol * const.R * T / P_0  # inlet gas volumetric flow rate [m3/s]
 
     # --- correlations for bubble properties ---
     d_b = _get(
@@ -247,17 +269,17 @@ def compute_properties(params):
 
     he_molar_mass = 4.003e-3  # kg/mol
     rho_g = (
-        P_0 * he_molar_mass / (R * T)
+        P_0 * he_molar_mass / (const.R * T)
     )  # bubbles density [kg/m3], using ideal gas law for He
     drho = rho_l - rho_g  # density difference between liquid and gas [kg/m3]
 
     # --- dimensionless numbers used in correlations ---
 
-    Eo = (drho * g * d_b**2) / sigma_l  # Eotvos (Bond) number
+    Eo = (drho * const.g * d_b**2) / sigma_l  # Eotvos (Bond) number
     Re = _get(
         params, "Re", get_Re, rho=rho_l, mu=mu_l, u=U_G0_DEFAULT, d=d_b
     )  # initial Reynolds number calculation, assuming typical gas velocity (~0.25 m/s according to Chavez 2021)
-    Mo = (drho * g * mu_l**4) / (rho_l**2 * sigma_l**3)  # Morton number
+    Mo = (drho * const.g * mu_l**4) / (rho_l**2 * sigma_l**3)  # Morton number
     Sc = nu_l / E_l  # Schmidt number
 
     # --- bubble velocity ---
@@ -300,6 +322,13 @@ def compute_properties(params):
         0.2 * D**2 * u_g0
     )  # gas phase diffusivity (Malara 1995) # is this correct ? Should we use tank diameter ?? TODO
 
+    tritium_source = _get(
+        params,
+        "tritium_source",
+        get_tritium_source,
+        input=params,
+    )  # tritium generation source term [mol/m3/s]
+
     return {
         "rho_l": rho_l,
         "sigma_l": sigma_l,
@@ -311,6 +340,7 @@ def compute_properties(params):
         "rho_g": rho_g,
         "P_0": P_0,
         "flow_g_vol": flow_g_vol,
+        "flow_g_mol": flow_g_mol,
         "eps_g": eps_g,
         "eps_l": eps_l,
         "E_l": E_l,
@@ -321,12 +351,14 @@ def compute_properties(params):
         "Eo": Eo,
         "Mo": Mo,
         "Sc": Sc,
+        "nozzle_flow": flow_g_vol / nb_nozzle,
+        "tritium_source": tritium_source,
     }
 
 
 def solve(params):
     # unpack parameters
-    tank_height, u_g0, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, E_l, source_term = (
+    tank_height, u_g0, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, E_l, tritium_source = (
         params["tank_height"],
         params["u_g0"],
         params["a"],
@@ -338,7 +370,7 @@ def solve(params):
         params["eps_l"],
         params["E_g"],
         params["E_l"],
-        params["source_term"],
+        params["tritium_source"],
     )
 
     # MESH AND FUNCTION SPACES
@@ -363,7 +395,7 @@ def solve(params):
     EPS = 1e-16
 
     gen = dolfinx.fem.Constant(
-        mesh, PETSc.ScalarType(source_term)
+        mesh, PETSc.ScalarType(tritium_source)
     )  # generation term (neutrons)
 
     # VARIATIONAL FORMULATION
@@ -377,7 +409,7 @@ def solve(params):
 
     # transient terms
     F += eps_l * ((c_T - c_T_n) / dt) * v_c * ufl.dx
-    F += eps_g * 1 / (R * T) * (P_0 * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
+    F += eps_g * 1 / (const.R * T) * (P_0 * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
     # diffusion/dispersion terms
     F += eps_l * E_l * ufl.dot(ufl.grad(c_T), ufl.grad(v_c)) * ufl.dx
@@ -390,7 +422,7 @@ def solve(params):
     F += -gen * v_c * ufl.dx
 
     # advection of gas
-    F += 1 / (R * T) * ufl.inner(ufl.dot(ufl.grad(P_0 * y_T2), vel), v_y) * ufl.dx
+    F += 1 / (const.R * T) * ufl.inner(ufl.dot(ufl.grad(P_0 * y_T2), vel), v_y) * ufl.dx
 
     # BOUNDARY CONDITIONS
     gas_inlet_facets = dolfinx.mesh.locate_entities_boundary(
@@ -440,8 +472,6 @@ def solve(params):
         6 * 3600
     )  # s, irradiation time (time during which the source term is active)
     while t < t_final:
-        # t += dt
-        # print("t:", t)
         problem.solve()
 
         # update previous solution
