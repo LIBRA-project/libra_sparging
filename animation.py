@@ -3,6 +3,10 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from matplotlib.widgets import Slider, Button
 
+molar_mass_tritium = 3.016  # g/mol
+specific_activity_tritium = 3.57e14  # Bq/g
+mol_to_activity_tritium = molar_mass_tritium * specific_activity_tritium  # Bq/mol
+
 
 class ConcentrationAnimator:
     """Interactive animation for concentration profiles over time."""
@@ -15,6 +19,7 @@ class ConcentrationAnimator:
         x_ct,
         x_y,
         c_integrated=None,
+        show_activity=False,
         figsize=None,
         hspace=0.45,
     ):
@@ -46,8 +51,16 @@ class ConcentrationAnimator:
         self.x_ct = x_ct
         self.x_y = x_y
         self.c_integrated = c_integrated
+        self.show_activity = show_activity
         self.figsize = figsize
         self.hspace = hspace
+
+        if self.c_integrated is not None and self.show_activity:
+            self.c_integrated_display = (
+                np.array(self.c_integrated) * mol_to_activity_tritium
+            )
+        else:
+            self.c_integrated_display = self.c_integrated
 
         # Animation state
         self.is_animating = False
@@ -85,15 +98,17 @@ class ConcentrationAnimator:
         )
         if self.c_integrated is not None:
             (self.line3,) = self.axs[2].plot(
-                self.times, self.c_integrated, "g-", linewidth=2
+                self.times, self.c_integrated_display, "g-", linewidth=2
             )
             (self.time_marker,) = self.axs[2].plot(
-                [self.times[0]], [self.c_integrated[0]], "ko", markersize=6
+                [self.times[0]], [self.c_integrated_display[0]], "ko", markersize=6
             )
 
         # Setup axes properties
         self.axs[0].set_ylabel(r"$c_T \: [mol/m^3]$")
-        self.axs[0].set_title(f"Concentration profile in breeder at t={self.times[0]:.1f}s")
+        self.axs[0].set_title(
+            f"Concentration profile in breeder at t={self.times[0]:.1f}s"
+        )
         self.axs[0].grid(True, alpha=0.3)
         self.axs[0].set_ylim(
             self.c_T_solutions.min() * 0.9, self.c_T_solutions.max() * 1.1
@@ -108,12 +123,17 @@ class ConcentrationAnimator:
         )
 
         if self.c_integrated is not None:
-            self.axs[2].set_ylabel(r"$n_T \: [mol]$")
+            if self.show_activity:
+                self.axs[2].set_ylabel(r"$A_T \: [Bq]$")
+                self.axs[2].set_title("Total T activity in breeder [Bq]")
+            else:
+                self.axs[2].set_ylabel(r"$n_T \: [mol]$")
+                self.axs[2].set_title("Total T quantity in breeder [mol]")
             self.axs[2].set_xlabel("Time (t)")
-            self.axs[2].set_title(f"Total T quantity in breeder [mol]")
             self.axs[2].grid(True, alpha=0.3)
             self.axs[2].set_ylim(
-                self.c_integrated.min() * 0.9, self.c_integrated.max() * 1.1
+                self.c_integrated_display.min() * 0.9,
+                self.c_integrated_display.max() * 1.1,
             )
 
     def _setup_slider(self):
@@ -146,10 +166,14 @@ class ConcentrationAnimator:
         self.line2.set_ydata(self.y_T2_solutions[idx])
 
         # Update titles
-        self.axs[0].set_title(f"Concentration profile in breeder at t={self.times[idx]:.1f}s")
+        self.axs[0].set_title(
+            f"Concentration profile in breeder at t={self.times[idx]:.1f}s"
+        )
         self.axs[1].set_title(f"T fraction in sparging gas at t={self.times[idx]:.1f}s")
         if self.c_integrated is not None:
-            self.time_marker.set_data([self.times[idx]], [self.c_integrated[idx]])
+            self.time_marker.set_data(
+                [self.times[idx]], [self.c_integrated_display[idx]]
+            )
 
         self.fig.canvas.draw_idle()
 
@@ -196,6 +220,7 @@ def create_animation(
     x_ct,
     x_y,
     c_integrated=None,
+    show_activity=False,
     figsize=None,
     hspace=0.35,
 ):
@@ -216,6 +241,8 @@ def create_animation(
         Spatial coordinates for y-component concentration
     c_integrated : array_like, optional
         Integrated concentration values over time
+    show_activity : bool, optional
+        If True, convert integrated tritium amount from mol to activity in Bq
     figsize : tuple, optional
         Figure size as (width, height) in inches
     hspace : float, optional
@@ -233,6 +260,7 @@ def create_animation(
         x_ct,
         x_y,
         c_integrated=c_integrated,
+        show_activity=show_activity,
         figsize=figsize,
         hspace=hspace,
     )

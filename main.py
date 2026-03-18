@@ -2,6 +2,7 @@ import model
 import numpy as np
 
 ANIMATE = True
+SHOW_ACTIVITY = False
 
 
 def main():
@@ -84,7 +85,9 @@ def main():
     merged_dict.update(properties)
 
     times, c_T_solutions, y_T2_solutions, x_ct, x_y, c_T_volume = model.solve(
-        merged_dict
+        merged_dict,
+        t_final=1 * model.days_to_seconds,
+        t_irr=0.5 * model.days_to_seconds,
     )
 
     # save_to_csv(c_T_volume)
@@ -97,7 +100,13 @@ def main():
         # Create interactive animation
         try:
             create_animation(
-                times, c_T_solutions, y_T2_solutions, x_ct, x_y, c_T_volume
+                times,
+                c_T_solutions,
+                y_T2_solutions,
+                x_ct,
+                x_y,
+                c_T_volume,
+                show_activity=SHOW_ACTIVITY,
             )
         except KeyboardInterrupt:
             exit()

@@ -16,6 +16,8 @@ cm3_to_m3 = 1e-6
 m_to_cm = 1e2
 cm_to_m = 1e-2
 dynespercm_to_newtonpermeter = 1e-3
+hours_to_seconds = 3600
+days_to_seconds = 24 * hours_to_seconds
 
 U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
 VERBOSE = False
@@ -356,7 +358,8 @@ def compute_properties(params):
     }
 
 
-def solve(params):
+def solve(params, t_final, t_irr):
+    dt = 0.1 * hours_to_seconds  # s
     # unpack parameters
     tank_height, u_g0, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, E_l, tritium_source = (
         params["tank_height"],
@@ -386,8 +389,6 @@ def solve(params):
 
     c_T, y_T2 = ufl.split(u)
     c_T_n, y_T2_n = ufl.split(u_n)
-
-    dt = 0.001 * 3600  # s
 
     vel_x = u_g0  # TODO velocity should vary with hydrostatic pressure
     vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
@@ -467,10 +468,10 @@ def solve(params):
 
     # SOLVE
     t = 0
-    t_final = 8 * 3600  # s
-    t_irr = (
-        6 * 3600
-    )  # s, irradiation time (time during which the source term is active)
+    # t_final = 5 * 24 * 3600  # s
+    # t_irr = (
+    #     1 * 24 * 3600
+    # )  # s, irradiation time (time during which the source term is active)
     while t < t_final:
         problem.solve()
 
