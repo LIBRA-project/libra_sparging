@@ -18,7 +18,10 @@ cm_to_m = 1e-2
 dynespercm_to_newtonpermeter = 1e-3
 hours_to_seconds = 3600
 days_to_seconds = 24 * hours_to_seconds
+T2_to_T = 2
+T_to_T2 = 1 / T2_to_T
 
+EPS = 1e-20
 U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
 VERBOSE = False
 # log.set_log_level(log.LogLevel.INFO)
@@ -395,7 +398,6 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
 
     """ vel = fem_func(U)
         v,interpolate(lambda x: v0 + 2*x[0])"""
-    EPS = 1e-16
 
     h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
     gen = dolfinx.fem.Constant(
@@ -406,7 +408,8 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
 
     # mass transfer rate
     J = (
-        a * h_l_const * (c_T - K_s * (P_0 * y_T2 + EPS))
+        a * h_l_const * (c_T * T_to_T2 - K_s * (P_0 * y_T2 + EPS))
+        # c_T/2 because we use Henry's law for c_T2_eq and c_T2 = c_T/2
     )  # TODO pressure shouldn't be a constant (use hydrostatic pressure profile), how to deal with this ? -> use fem.Expression ?
 
     F = 0  # variational formulation
@@ -468,6 +471,8 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
     times = []
     c_T_solutions = []
     y_T2_solutions = []
+    source_T = []
+    flux_T = []
 
     # SOLVE
     t = 0
@@ -500,7 +505,8 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         times.append(t)
         c_T_solutions.append(c_T_vals.copy())
         y_T2_solutions.append(y_T2_vals.copy())
-
+        source_T.append(gen.value.copy())
+        flux_T.append(params["flow_g_mol"] * y_T2_vals[-1].copy() * T2_to_T)
         t += dt
 
     c_T_volume = np.zeros(len(times))
@@ -509,4 +515,18 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
             c_T_solutions[i], x_ct
         )  # integrate concentration profile to get total amount of tritium in the tank at each time step
     c_T_volume *= np.pi * (params["D"] / 2) ** 2  # get total amount of T in [mol]
-    return (times, c_T_solutions, y_T2_solutions, x_ct, x_y, c_T_volume)
+    source_T = (
+        np.array(source_T) * np.pi * (params["D"] / 2) ** 2 * params["tank_height"]
+    )  # total T generation rate in the tank [mol/s]
+
+    # breakpoint()
+    return (
+        times,
+        c_T_solutions,
+        y_T2_solutions,
+        x_ct,
+        x_y,
+        c_T_volume,
+        source_T,
+        flux_T,
+    )

@@ -8,6 +8,8 @@ specific_activity_tritium = 3.57e14  # Bq/g
 mol_to_activity_tritium = molar_mass_tritium * specific_activity_tritium  # Bq/mol
 sec_to_hour = 1 / 3600
 
+EPS = 1e-20
+
 
 class ConcentrationAnimator:
     """Interactive animation for concentration profiles over time."""
@@ -20,6 +22,8 @@ class ConcentrationAnimator:
         x_ct,
         x_y,
         c_integrated=None,
+        source_T=None,
+        flux_T=None,
         show_activity=False,
         figsize=None,
         hspace=0.4,
@@ -41,6 +45,10 @@ class ConcentrationAnimator:
             Spatial coordinates for y-component concentration
         c_integrated : array_like, optional
             Integrated concentration values over time
+        source_T : array_like, optional
+            Tritium source term over time [mol/s]
+        flux_T : array_like, optional
+            Tritium extraction flux over time [mol/s]
         figsize : tuple, optional
             Figure size as (width, height) in inches
         hspace : float, optional
@@ -52,6 +60,8 @@ class ConcentrationAnimator:
         self.x_ct = x_ct
         self.x_y = x_y
         self.c_integrated = c_integrated
+        self.source_T = None if source_T is None else np.array(source_T)
+        self.flux_T = None if flux_T is None else np.array(flux_T)
         self.show_activity = show_activity
         self.figsize = figsize
         self.hspace = hspace
@@ -62,6 +72,14 @@ class ConcentrationAnimator:
             )
         else:
             self.c_integrated_display = self.c_integrated
+
+        if (
+            self.source_T is not None
+            and self.source_T.shape[0] != self.times_hr.shape[0]
+        ):
+            raise ValueError("source_T must have the same length as times")
+        if self.flux_T is not None and self.flux_T.shape[0] != self.times_hr.shape[0]:
+            raise ValueError("flux_T must have the same length as times")
 
         # Animation state
         self.is_animating = False
@@ -87,8 +105,8 @@ class ConcentrationAnimator:
             ax3 = self.fig.add_subplot(gs[2])
             self.axs.append(ax3)
 
-        # Keep controls close to the plots while preserving room for x-axis labels.
-        plt.subplots_adjust(left=0.1, right=0.97, top=0.94, bottom=0.125)
+        # Balance horizontal margins so the plot area is visually centered.
+        plt.subplots_adjust(left=0.12, right=0.92, top=0.94, bottom=0.125)
 
         # Create initial plots
         (self.line1,) = self.axs[0].plot(
@@ -105,6 +123,82 @@ class ConcentrationAnimator:
                 [self.times_hr[0]], [self.c_integrated_display[0]], "ko", markersize=6
             )
 
+            self.ax3_secondary = None
+            self.source_line = None
+            self.flux_line = None
+            self.source_marker = None
+            self.flux_marker = None
+            secondary_lines = []
+            secondary_labels = []
+            if self.source_T is not None or self.flux_T is not None:
+                self.ax3_secondary = self.axs[2].twinx()
+                if self.source_T is not None:
+                    (self.source_line,) = self.ax3_secondary.plot(
+                        self.times_hr,
+                        self.source_T,
+                        color="tab:orange",
+                        linestyle="--",
+                        linewidth=1.8,
+                    )
+                    (self.source_marker,) = self.ax3_secondary.plot(
+                        [self.times_hr[0]],
+                        [self.source_T[0]],
+                        marker="o",
+                        color="tab:orange",
+                        markersize=5,
+                        linestyle="None",
+                    )
+                    secondary_lines.append(self.source_line)
+                    secondary_labels.append(r"$S_T$")
+                if self.flux_T is not None:
+                    (self.flux_line,) = self.ax3_secondary.plot(
+                        self.times_hr,
+                        self.flux_T,
+                        color="tab:purple",
+                        linestyle=":",
+                        linewidth=1.8,
+                    )
+                    (self.flux_marker,) = self.ax3_secondary.plot(
+                        [self.times_hr[0]],
+                        [self.flux_T[0]],
+                        marker="s",
+                        color="tab:purple",
+                        markersize=5,
+                        linestyle="None",
+                    )
+                    secondary_lines.append(self.flux_line)
+                    secondary_labels.append(r"$\Phi_T$")
+
+                self.ax3_secondary.set_ylabel("Source / Flux [mol/s]")
+                self.ax3_secondary.grid(False)
+
+                sec_vals = []
+                if self.source_T is not None:
+                    sec_vals.append(self.source_T)
+                if self.flux_T is not None:
+                    sec_vals.append(self.flux_T)
+                sec_vals = np.concatenate(sec_vals)
+                sec_min = np.min(sec_vals)
+                sec_max = np.max(sec_vals)
+                print(sec_min, sec_max)  # TODO
+                self.ax3_secondary.set_ylim(
+                    (sec_min - EPS) * 0.9, (sec_max + EPS) * 1.1
+                )
+                # if np.isclose(sec_min, sec_max):
+                #     pad = max(1.0, abs(sec_max) * 0.1)
+                #     self.ax3_secondary.set_ylim(sec_min - pad, sec_max + pad)
+                # else:
+                #     pad = 0.1 * (sec_max - sec_min)
+                #     self.ax3_secondary.set_ylim(sec_min - pad, sec_max + pad)
+
+                primary_lines = [self.line3]
+                primary_labels = ["Inventory"]
+                self.axs[2].legend(
+                    primary_lines + secondary_lines,
+                    primary_labels + secondary_labels,
+                    loc="best",
+                )
+
         # Setup axes properties
         self.axs[0].set_ylabel(r"$c_T \: [mol/m^3]$")
         self.axs[0].set_title(
@@ -112,7 +206,8 @@ class ConcentrationAnimator:
         )
         self.axs[0].grid(True, alpha=0.3)
         self.axs[0].set_ylim(
-            self.c_T_solutions.min() * 0.9, self.c_T_solutions.max() * 1.1
+            (self.c_T_solutions.min() - EPS) * 0.9,
+            (self.c_T_solutions.max() + EPS) * 1.1,
         )
 
         self.axs[1].set_ylabel(r"$y_{T2} \: [-]$")
@@ -122,7 +217,8 @@ class ConcentrationAnimator:
         )
         self.axs[1].grid(True, alpha=0.3)
         self.axs[1].set_ylim(
-            self.y_T2_solutions.min() * 0.9, self.y_T2_solutions.max() * 1.1
+            (self.y_T2_solutions.min() - EPS) * 0.9,
+            (self.y_T2_solutions.max() + EPS) * 1.1,
         )
 
         if self.c_integrated is not None:
@@ -135,8 +231,8 @@ class ConcentrationAnimator:
             self.axs[2].set_xlabel("Time [hours]")
             self.axs[2].grid(True, alpha=0.3)
             self.axs[2].set_ylim(
-                self.c_integrated_display.min() * 0.9,
-                self.c_integrated_display.max() * 1.1,
+                (self.c_integrated_display.min() - EPS) * 0.9,
+                (self.c_integrated_display.max() + EPS) * 1.1,
             )
 
     def _setup_slider(self):
@@ -179,6 +275,10 @@ class ConcentrationAnimator:
             self.time_marker.set_data(
                 [self.times_hr[idx]], [self.c_integrated_display[idx]]
             )
+            if self.source_marker is not None:
+                self.source_marker.set_data([self.times_hr[idx]], [self.source_T[idx]])
+            if self.flux_marker is not None:
+                self.flux_marker.set_data([self.times_hr[idx]], [self.flux_T[idx]])
 
         self.fig.canvas.draw_idle()
 
@@ -225,6 +325,8 @@ def create_animation(
     x_ct,
     x_y,
     c_integrated=None,
+    source_T=None,
+    flux_T=None,
     show_activity=False,
     figsize=None,
     hspace=0.4,
@@ -246,6 +348,10 @@ def create_animation(
         Spatial coordinates for y-component concentration
     c_integrated : array_like, optional
         Integrated concentration values over time
+    source_T : array_like, optional
+        Tritium source term over time [mol/s]
+    flux_T : array_like, optional
+        Tritium extraction flux over time [mol/s]
     show_activity : bool, optional
         If True, convert integrated tritium amount from mol to activity in Bq
     figsize : tuple, optional
@@ -265,6 +371,8 @@ def create_animation(
         x_ct,
         x_y,
         c_integrated=c_integrated,
+        source_T=source_T,
+        flux_T=flux_T,
         show_activity=show_activity,
         figsize=figsize,
         hspace=hspace,
