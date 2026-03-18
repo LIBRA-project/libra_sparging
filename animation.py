@@ -6,6 +6,7 @@ from matplotlib.widgets import Slider, Button
 molar_mass_tritium = 3.016  # g/mol
 specific_activity_tritium = 3.57e14  # Bq/g
 mol_to_activity_tritium = molar_mass_tritium * specific_activity_tritium  # Bq/mol
+sec_to_hour = 1 / 3600
 
 
 class ConcentrationAnimator:
@@ -21,7 +22,7 @@ class ConcentrationAnimator:
         c_integrated=None,
         show_activity=False,
         figsize=None,
-        hspace=0.45,
+        hspace=0.4,
     ):
         """
         Initialize the animator with solution data.
@@ -45,7 +46,7 @@ class ConcentrationAnimator:
         hspace : float, optional
             Vertical spacing between subplots
         """
-        self.times = np.array(times)
+        self.times_hr = np.array(times) * sec_to_hour
         self.c_T_solutions = np.array(c_T_solutions)
         self.y_T2_solutions = np.array(y_T2_solutions)
         self.x_ct = x_ct
@@ -73,7 +74,7 @@ class ConcentrationAnimator:
     def _setup_plot(self):
         """Setup the initial plot with subplots."""
         nrows = 3 if self.c_integrated is not None else 2
-        default_figsize = (12, 9.5) if nrows == 3 else (11, 7)
+        default_figsize = (11, 8) if nrows == 3 else (11, 6.3)
         self.fig = plt.figure(figsize=self.figsize or default_figsize)
         gs = gridspec.GridSpec(nrows, 1, figure=self.fig, hspace=self.hspace)
 
@@ -86,8 +87,8 @@ class ConcentrationAnimator:
             ax3 = self.fig.add_subplot(gs[2])
             self.axs.append(ax3)
 
-        # Leave room for slider/button and avoid subplot title/label overlap.
-        plt.subplots_adjust(left=0.1, right=0.97, top=0.94, bottom=0.2)
+        # Keep controls close to the plots while preserving room for x-axis labels.
+        plt.subplots_adjust(left=0.1, right=0.97, top=0.94, bottom=0.125)
 
         # Create initial plots
         (self.line1,) = self.axs[0].plot(
@@ -98,16 +99,16 @@ class ConcentrationAnimator:
         )
         if self.c_integrated is not None:
             (self.line3,) = self.axs[2].plot(
-                self.times, self.c_integrated_display, "g-", linewidth=2
+                self.times_hr, self.c_integrated_display, "g-", linewidth=2
             )
             (self.time_marker,) = self.axs[2].plot(
-                [self.times[0]], [self.c_integrated_display[0]], "ko", markersize=6
+                [self.times_hr[0]], [self.c_integrated_display[0]], "ko", markersize=6
             )
 
         # Setup axes properties
         self.axs[0].set_ylabel(r"$c_T \: [mol/m^3]$")
         self.axs[0].set_title(
-            f"Concentration profile in breeder at t={self.times[0]:.1f}s"
+            f"Concentration profile in breeder at t={self.times_hr[0]:.1f} hr"
         )
         self.axs[0].grid(True, alpha=0.3)
         self.axs[0].set_ylim(
@@ -116,7 +117,9 @@ class ConcentrationAnimator:
 
         self.axs[1].set_ylabel(r"$y_{T2} \: [-]$")
         self.axs[1].set_xlabel("Position along tank height [m]")
-        self.axs[1].set_title(f"T fraction in sparging gas at t={self.times[0]:.1f}s")
+        self.axs[1].set_title(
+            f"T fraction in sparging gas at t={self.times_hr[0]:.1f} hr"
+        )
         self.axs[1].grid(True, alpha=0.3)
         self.axs[1].set_ylim(
             self.y_T2_solutions.min() * 0.9, self.y_T2_solutions.max() * 1.1
@@ -129,7 +132,7 @@ class ConcentrationAnimator:
             else:
                 self.axs[2].set_ylabel(r"$n_T \: [mol]$")
                 self.axs[2].set_title("Total T quantity in breeder [mol]")
-            self.axs[2].set_xlabel("Time (t)")
+            self.axs[2].set_xlabel("Time [hours]")
             self.axs[2].grid(True, alpha=0.3)
             self.axs[2].set_ylim(
                 self.c_integrated_display.min() * 0.9,
@@ -138,20 +141,20 @@ class ConcentrationAnimator:
 
     def _setup_slider(self):
         """Setup the time slider."""
-        ax_slider = plt.axes([0.2, 0.05, 0.5, 0.03])
+        ax_slider = plt.axes([0.2, 0.03, 0.55, 0.04])
         self.time_slider = Slider(
             ax_slider,
-            "Time (s)",
-            self.times.min(),
-            self.times.max(),
-            valinit=self.times[0],
+            "Time (hr)",
+            self.times_hr.min(),
+            self.times_hr.max(),
+            valinit=self.times_hr[0],
             valfmt="%.1f",
         )
         self.time_slider.on_changed(self._update_plot)
 
     def _setup_animation_button(self):
         """Setup the animation toggle button."""
-        ax_button = plt.axes([0.8, 0.05, 0.1, 0.05])
+        ax_button = plt.axes([0.8, 0.03, 0.1, 0.035])
         self.anim_button = Button(ax_button, "Animate")
         self.anim_button.on_clicked(self._animate_toggle)
 
@@ -159,7 +162,7 @@ class ConcentrationAnimator:
         """Update the plots based on slider value."""
         # Find the closest time index
         current_time = self.time_slider.val
-        idx = np.argmin(np.abs(self.times - current_time))
+        idx = np.argmin(np.abs(self.times_hr - current_time))
 
         # Update the plots
         self.line1.set_ydata(self.c_T_solutions[idx])
@@ -167,12 +170,14 @@ class ConcentrationAnimator:
 
         # Update titles
         self.axs[0].set_title(
-            f"Concentration profile in breeder at t={self.times[idx]:.1f}s"
+            f"Concentration profile in breeder at t={self.times_hr[idx]:.1f} hr"
         )
-        self.axs[1].set_title(f"T fraction in sparging gas at t={self.times[idx]:.1f}s")
+        self.axs[1].set_title(
+            f"T fraction in sparging gas at t={self.times_hr[idx]:.1f} hr"
+        )
         if self.c_integrated is not None:
             self.time_marker.set_data(
-                [self.times[idx]], [self.c_integrated_display[idx]]
+                [self.times_hr[idx]], [self.c_integrated_display[idx]]
             )
 
         self.fig.canvas.draw_idle()
@@ -197,10 +202,10 @@ class ConcentrationAnimator:
                 return
 
             current_val = self.time_slider.val
-            next_val = current_val + (self.times.max() - self.times.min()) / 50
+            next_val = current_val + (self.times_hr.max() - self.times_hr.min()) / 50
 
-            if next_val > self.times.max():
-                next_val = self.times.min()
+            if next_val > self.times_hr.max():
+                next_val = self.times_hr.min()
 
             self.time_slider.set_val(next_val)
 
@@ -222,7 +227,7 @@ def create_animation(
     c_integrated=None,
     show_activity=False,
     figsize=None,
-    hspace=0.35,
+    hspace=0.4,
 ):
     """
     Convenience function to create and show animation.

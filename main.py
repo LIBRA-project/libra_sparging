@@ -84,10 +84,14 @@ def main():
     merged_dict.update(params)
     merged_dict.update(properties)
 
+    t_sparging_hr = [0, 0]  # time interval when sparger is ON
+    t_irr_hr = [0, 24]  # time interval when irradiation is ON
+
     times, c_T_solutions, y_T2_solutions, x_ct, x_y, c_T_volume = model.solve(
         merged_dict,
-        t_final=1 * model.days_to_seconds,
-        t_irr=0.5 * model.days_to_seconds,
+        t_final=2 * model.days_to_seconds,
+        t_irr=[t * model.hours_to_seconds for t in t_irr_hr],
+        t_sparging=([t * model.hours_to_seconds for t in t_sparging_hr]),
     )
 
     # save_to_csv(c_T_volume)

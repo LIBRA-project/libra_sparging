@@ -358,8 +358,8 @@ def compute_properties(params):
     }
 
 
-def solve(params, t_final, t_irr):
-    dt = 0.1 * hours_to_seconds  # s
+def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
+    dt = 0.2 * hours_to_seconds  # s
     # unpack parameters
     tank_height, u_g0, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, E_l, tritium_source = (
         params["tank_height"],
@@ -393,17 +393,20 @@ def solve(params, t_final, t_irr):
     vel_x = u_g0  # TODO velocity should vary with hydrostatic pressure
     vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
 
+    """ vel = fem_func(U)
+        v,interpolate(lambda x: v0 + 2*x[0])"""
     EPS = 1e-16
 
+    h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
     gen = dolfinx.fem.Constant(
         mesh, PETSc.ScalarType(tritium_source)
-    )  # generation term (neutrons)
+    )  # generation term [mol T /m3/s]
 
     # VARIATIONAL FORMULATION
 
     # mass transfer rate
     J = (
-        a * h_l * (c_T - K_s * (P_0 * y_T2 + EPS))
+        a * h_l_const * (c_T - K_s * (P_0 * y_T2 + EPS))
     )  # TODO pressure shouldn't be a constant (use hydrostatic pressure profile), how to deal with this ? -> use fem.Expression ?
 
     F = 0  # variational formulation
@@ -468,11 +471,22 @@ def solve(params, t_final, t_irr):
 
     # SOLVE
     t = 0
-    # t_final = 5 * 24 * 3600  # s
-    # t_irr = (
-    #     1 * 24 * 3600
-    # )  # s, irradiation time (time during which the source term is active)
     while t < t_final:
+        if isinstance(t_irr, (int, float)):
+            if t >= t_irr:
+                gen.value = 0.0
+        else:
+            if t >= t_irr[0] and t < t_irr[1]:
+                gen.value = tritium_source
+            else:
+                gen.value = 0.0
+        """ utiliser ufl.conditional TODO"""
+        if t_sparging is not None:
+            if t >= t_sparging[0] and t < t_sparging[1]:
+                h_l_const.value = h_l
+            else:
+                h_l_const.value = 0.0
+
         problem.solve()
 
         # update previous solution
@@ -481,9 +495,6 @@ def solve(params, t_final, t_irr):
         # post process
         c_T_vals = u.x.array[ct_dofs][ct_sort_coords]
         y_T2_vals = u.x.array[y_dofs][y_sort_coords]
-
-        if t >= t_irr:
-            gen.value = 0.0
 
         # store time and solution
         times.append(t)
