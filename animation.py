@@ -137,7 +137,7 @@ class ConcentrationAnimator:
                         self.times_hr,
                         self.source_T,
                         color="tab:orange",
-                        linestyle="--",
+                        linestyle=":",
                         linewidth=1.8,
                     )
                     (self.source_marker,) = self.ax3_secondary.plot(
@@ -154,15 +154,15 @@ class ConcentrationAnimator:
                     (self.flux_line,) = self.ax3_secondary.plot(
                         self.times_hr,
                         self.flux_T,
-                        color="tab:purple",
-                        linestyle=":",
+                        color="magenta",
+                        linestyle="dashdot",
                         linewidth=1.8,
                     )
                     (self.flux_marker,) = self.ax3_secondary.plot(
                         [self.times_hr[0]],
                         [self.flux_T[0]],
                         marker="s",
-                        color="tab:purple",
+                        color="magenta",
                         markersize=5,
                         linestyle="None",
                     )
@@ -180,7 +180,6 @@ class ConcentrationAnimator:
                 sec_vals = np.concatenate(sec_vals)
                 sec_min = np.min(sec_vals)
                 sec_max = np.max(sec_vals)
-                print(sec_min, sec_max)  # TODO
                 self.ax3_secondary.set_ylim(
                     (sec_min - EPS) * 0.9, (sec_max + EPS) * 1.1
                 )

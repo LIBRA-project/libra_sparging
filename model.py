@@ -21,7 +21,7 @@ days_to_seconds = 24 * hours_to_seconds
 T2_to_T = 2
 T_to_T2 = 1 / T2_to_T
 
-EPS = 1e-20
+EPS = 1e-26
 U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
 VERBOSE = False
 # log.set_log_level(log.LogLevel.INFO)
@@ -157,7 +157,10 @@ def get_h_higbie(E_l: float, u_g: float, d_b: float) -> float:
 
 
 def get_h_malara(E_l: float, d_b: float) -> float:
-    """mass transfer coefficient [m/s] for tritium in liquid FLiBe using Malara 1995 correlation"""
+    """
+    mass transfer coefficient [m/s] for tritium in liquid FLiBe using Malara 1995 correlation
+    (used for inert gas stripping from breeder droplets, may not be valid here)
+    """
     h_l = 2 * np.pi**2 * E_l / (3 * d_b)
     return h_l
 
@@ -378,6 +381,8 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         params["E_l"],
         params["tritium_source"],
     )
+    tank_area = np.pi * (params["D"] / 2) ** 2
+    tank_volume = tank_area * tank_height
 
     # MESH AND FUNCTION SPACES
     mesh = dolfinx.mesh.create_interval(MPI.COMM_WORLD, 1000, points=[0, tank_height])
@@ -420,10 +425,12 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
 
     # diffusion/dispersion terms
     F += eps_l * E_l * ufl.dot(ufl.grad(c_T), ufl.grad(v_c)) * ufl.dx
-    F += eps_g * E_g * ufl.dot(ufl.grad(P_0 * y_T2), ufl.grad(v_y)) * ufl.dx
+
+    # remove diffusive term for gas for now
+    # F += eps_g * E_g * ufl.dot(ufl.grad(P_0 * y_T2), ufl.grad(v_y)) * ufl.dx
 
     # mass exchange (coupling term)
-    F += J * v_c * ufl.dx - J * v_y * ufl.dx
+    F += 2 * J * v_c * ufl.dx - J * v_y * ufl.dx
 
     # Generation term in the breeder
     F += -gen * v_c * ufl.dx
@@ -505,8 +512,13 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         times.append(t)
         c_T_solutions.append(c_T_vals.copy())
         y_T2_solutions.append(y_T2_vals.copy())
-        source_T.append(gen.value.copy())
-        flux_T.append(params["flow_g_mol"] * y_T2_vals[-1].copy() * T2_to_T)
+        source_T.append(
+            gen.value.copy() * tank_volume
+        )  # total T generation rate in the tank [mol/s]
+        # flux_T.append(params["flow_g_mol"] * y_T2_vals[-1].copy() * T2_to_T)
+        flux_T.append(
+            tank_area * vel_x * P_0 / (const.R * T) * y_T2_vals[-1].copy() * T2_to_T
+        )  # total T flux at the outlet [mol/s]
         t += dt
 
     c_T_volume = np.zeros(len(times))
@@ -514,10 +526,7 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         c_T_volume[i] = np.trapezoid(
             c_T_solutions[i], x_ct
         )  # integrate concentration profile to get total amount of tritium in the tank at each time step
-    c_T_volume *= np.pi * (params["D"] / 2) ** 2  # get total amount of T in [mol]
-    source_T = (
-        np.array(source_T) * np.pi * (params["D"] / 2) ** 2 * params["tank_height"]
-    )  # total T generation rate in the tank [mol/s]
+    c_T_volume *= tank_area  # get total amount of T in [mol]
 
     # breakpoint()
     return (
