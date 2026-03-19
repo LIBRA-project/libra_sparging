@@ -456,6 +456,15 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         V.sub(0),
     )
 
+    # Custom measure
+    all_facets = np.concatenate((gas_inlet_facets, gas_outlet_facets))
+    all_tags = np.concatenate(
+        (np.full_like(gas_inlet_facets, 1), np.full_like(gas_outlet_facets, 2))
+    )
+    facet_markers = dolfinx.mesh.meshtags(mesh, fdim, all_facets, all_tags)
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=facet_markers)
+
+    # set up problem
     problem = NonlinearProblem(
         F,
         u,
@@ -479,7 +488,7 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
     c_T_solutions = []
     y_T2_solutions = []
     source_T = []
-    flux_T = []
+    fluxes_T = []
     inventories_T_salt = []
 
     # SOLVE
@@ -506,6 +515,8 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         u_n.x.array[:] = u.x.array[:]
 
         # post process
+        c_T_post, y_T2_post = u.split()
+
         c_T_vals = u.x.array[ct_dofs][ct_sort_coords]
         y_T2_vals = u.x.array[y_dofs][y_sort_coords]
 
@@ -516,12 +527,17 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         source_T.append(
             gen.value.copy() * tank_volume
         )  # total T generation rate in the tank [mol/s]
-        # flux_T.append(params["flow_g_mol"] * y_T2_vals[-1].copy() * T2_to_T)
-        flux_T.append(
-            tank_area * vel_x * P_0 / (const.R * T) * y_T2_vals[-1].copy() * T2_to_T
-        )  # total T flux at the outlet [mol/s]
 
-        inventory_T_salt = dolfinx.fem.assemble_scalar(dolfinx.fem.form(c_T * ufl.dx))
+        flux_T = dolfinx.fem.assemble_scalar(
+            dolfinx.fem.form(
+                tank_area * vel_x * P_0 / (const.R * T) * y_T2_post * T2_to_T * ds(2)
+            )
+        )  # total T flux at the outlet [mol/s]
+        fluxes_T.append(flux_T)
+
+        inventory_T_salt = dolfinx.fem.assemble_scalar(
+            dolfinx.fem.form(c_T_post * ufl.dx)
+        )
         inventory_T_salt *= tank_area  # get total amount of T in [mol]
         inventories_T_salt.append(inventory_T_salt)
 
@@ -538,5 +554,5 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         x_y,
         inventories_T_salt,
         source_T,
-        flux_T,
+        fluxes_T,
     )
