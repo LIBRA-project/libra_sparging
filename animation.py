@@ -21,7 +21,7 @@ class ConcentrationAnimator:
         y_T2_solutions,
         x_ct,
         x_y,
-        c_integrated=None,
+        inventories_T_salt=None,
         source_T=None,
         flux_T=None,
         show_activity=False,
@@ -43,7 +43,7 @@ class ConcentrationAnimator:
             Spatial coordinates for total concentration
         x_y : array_like
             Spatial coordinates for y-component concentration
-        c_integrated : array_like, optional
+        inventories_T_salt : array_like, optional
             Integrated concentration values over time
         source_T : array_like, optional
             Tritium source term over time [mol/s]
@@ -59,19 +59,19 @@ class ConcentrationAnimator:
         self.y_T2_solutions = np.array(y_T2_solutions)
         self.x_ct = x_ct
         self.x_y = x_y
-        self.c_integrated = c_integrated
+        self.inventories_T_salt = inventories_T_salt
         self.source_T = None if source_T is None else np.array(source_T)
         self.flux_T = None if flux_T is None else np.array(flux_T)
         self.show_activity = show_activity
         self.figsize = figsize
         self.hspace = hspace
 
-        if self.c_integrated is not None and self.show_activity:
-            self.c_integrated_display = (
-                np.array(self.c_integrated) * mol_to_activity_tritium
+        if self.inventories_T_salt is not None and self.show_activity:
+            self.inventories_T_salt_display = (
+                np.array(self.inventories_T_salt) * mol_to_activity_tritium
             )
         else:
-            self.c_integrated_display = self.c_integrated
+            self.inventories_T_salt_display = self.inventories_T_salt
 
         if (
             self.source_T is not None
@@ -91,7 +91,7 @@ class ConcentrationAnimator:
 
     def _setup_plot(self):
         """Setup the initial plot with subplots."""
-        nrows = 3 if self.c_integrated is not None else 2
+        nrows = 3 if self.inventories_T_salt is not None else 2
         default_figsize = (11, 8) if nrows == 3 else (11, 6.3)
         self.fig = plt.figure(figsize=self.figsize or default_figsize)
         gs = gridspec.GridSpec(nrows, 1, figure=self.fig, hspace=self.hspace)
@@ -100,7 +100,7 @@ class ConcentrationAnimator:
         ax2 = self.fig.add_subplot(gs[1], sharex=ax1)
         self.axs = [ax1, ax2]
 
-        if self.c_integrated is not None:
+        if self.inventories_T_salt is not None:
             # Third axis intentionally has an independent x-scale (time).
             ax3 = self.fig.add_subplot(gs[2])
             self.axs.append(ax3)
@@ -115,12 +115,15 @@ class ConcentrationAnimator:
         (self.line2,) = self.axs[1].plot(
             self.x_y, self.y_T2_solutions[0], "r-", linewidth=2
         )
-        if self.c_integrated is not None:
+        if self.inventories_T_salt is not None:
             (self.line3,) = self.axs[2].plot(
-                self.times_hr, self.c_integrated_display, "g-", linewidth=2
+                self.times_hr, self.inventories_T_salt_display, "g-", linewidth=2
             )
             (self.time_marker,) = self.axs[2].plot(
-                [self.times_hr[0]], [self.c_integrated_display[0]], "ko", markersize=6
+                [self.times_hr[0]],
+                [self.inventories_T_salt_display[0]],
+                "ko",
+                markersize=6,
             )
 
             self.ax3_secondary = None
@@ -220,7 +223,7 @@ class ConcentrationAnimator:
             (self.y_T2_solutions.max() + EPS) * 1.1,
         )
 
-        if self.c_integrated is not None:
+        if self.inventories_T_salt is not None:
             if self.show_activity:
                 self.axs[2].set_ylabel(r"$A_T \: [Bq]$")
                 self.axs[2].set_title("Total T activity in breeder [Bq]")
@@ -230,8 +233,8 @@ class ConcentrationAnimator:
             self.axs[2].set_xlabel("Time [hours]")
             self.axs[2].grid(True, alpha=0.3)
             self.axs[2].set_ylim(
-                (self.c_integrated_display.min() - EPS) * 0.9,
-                (self.c_integrated_display.max() + EPS) * 1.1,
+                (self.inventories_T_salt_display.min() - EPS) * 0.9,
+                (self.inventories_T_salt_display.max() + EPS) * 1.1,
             )
 
     def _setup_slider(self):
@@ -270,9 +273,9 @@ class ConcentrationAnimator:
         self.axs[1].set_title(
             f"T fraction in sparging gas at t={self.times_hr[idx]:.1f} hr"
         )
-        if self.c_integrated is not None:
+        if self.inventories_T_salt is not None:
             self.time_marker.set_data(
-                [self.times_hr[idx]], [self.c_integrated_display[idx]]
+                [self.times_hr[idx]], [self.inventories_T_salt_display[idx]]
             )
             if self.source_marker is not None:
                 self.source_marker.set_data([self.times_hr[idx]], [self.source_T[idx]])
@@ -369,7 +372,7 @@ def create_animation(
         y_T2_solutions,
         x_ct,
         x_y,
-        c_integrated=c_integrated,
+        inventories_T_salt=c_integrated,
         source_T=source_T,
         flux_T=flux_T,
         show_activity=show_activity,

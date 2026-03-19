@@ -480,6 +480,7 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
     y_T2_solutions = []
     source_T = []
     flux_T = []
+    inventories_T_salt = []
 
     # SOLVE
     t = 0
@@ -519,23 +520,23 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         flux_T.append(
             tank_area * vel_x * P_0 / (const.R * T) * y_T2_vals[-1].copy() * T2_to_T
         )  # total T flux at the outlet [mol/s]
+
+        inventory_T_salt = dolfinx.fem.assemble_scalar(dolfinx.fem.form(c_T * ufl.dx))
+        inventory_T_salt *= tank_area  # get total amount of T in [mol]
+        inventories_T_salt.append(inventory_T_salt)
+
+        # advance time
         t += dt
 
-    c_T_volume = np.zeros(len(times))
-    for i in range(len(times)):
-        c_T_volume[i] = np.trapezoid(
-            c_T_solutions[i], x_ct
-        )  # integrate concentration profile to get total amount of tritium in the tank at each time step
-    c_T_volume *= tank_area  # get total amount of T in [mol]
-
     # breakpoint()
+    inventories_T_salt = np.array(inventories_T_salt)
     return (
         times,
         c_T_solutions,
         y_T2_solutions,
         x_ct,
         x_y,
-        c_T_volume,
+        inventories_T_salt,
         source_T,
         flux_T,
     )
