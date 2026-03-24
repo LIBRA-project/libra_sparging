@@ -172,7 +172,7 @@ def get_h_briggs(Re: float, Sc: float, D_l: float, d_b: float) -> float:
     return h_l
 
 
-def get_tritium_source(input: dict) -> float:
+def get_source_T(input: dict) -> float:
     """compute tritium generation source term [mol/m3/s] from TBR calculated by openMC for our geometry"""
     tank_volume = np.pi * (input["D"] / 2) ** 2 * input["tank_height"]
     return input["tbr"] * float(input["n_gen_rate"]) / (tank_volume * const.N_A)
@@ -337,10 +337,10 @@ def compute_properties(params):
         params, "E_g", get_E_g, diameter=D, u_g=u_g0
     )  # gas phase axial dispersion coefficient [m2/s]
 
-    tritium_source = _get(
+    source_T = _get(
         params,
-        "tritium_source",
-        get_tritium_source,
+        "source_T",
+        get_source_T,
         input=params,
     )  # tritium generation source term [mol/m3/s]
 
@@ -367,14 +367,14 @@ def compute_properties(params):
         "Mo": Mo,
         "Sc": Sc,
         "nozzle_flow": flow_g_vol / nb_nozzle,
-        "tritium_source": tritium_source,
+        "source_T": source_T,
     }
 
 
 def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
-    dt = 0.2 * hours_to_seconds  # s
+    dt = 1 * hours_to_seconds  # s
     # unpack parameters
-    tank_height, u_g0, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, D_l, tritium_source = (
+    tank_height, u_g0, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, D_l, source_T = (
         params["tank_height"],
         params["u_g0"],
         params["a"],
@@ -386,7 +386,7 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         params["eps_l"],
         params["E_g"],
         params["D_l"],
-        params["tritium_source"],
+        params["source_T"],
     )
     tank_area = np.pi * (params["D"] / 2) ** 2
     tank_volume = tank_area * tank_height
@@ -402,8 +402,8 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
     u_n = dolfinx.fem.Function(V)
     v_c, v_y = ufl.TestFunctions(V)
 
-    c_T, y_T2 = ufl.split(u)
-    c_T_n, y_T2_n = ufl.split(u_n)
+    c_T2, y_T2 = ufl.split(u)
+    c_T2_n, y_T2_n = ufl.split(u_n)
 
     vel_x = u_g0  # TODO velocity should vary with hydrostatic pressure
     vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
@@ -412,35 +412,38 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         v,interpolate(lambda x: v0 + 2*x[0])"""
 
     h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
-    gen = dolfinx.fem.Constant(
-        mesh, PETSc.ScalarType(tritium_source)
-    )  # generation term [mol T /m3/s]
+
+    source_T2 = (
+        source_T * T_to_T2
+    )  # convert T generation rate to T2 generation rate for the gas phase [mol T2 /m3/s], assuming bred T immediately combines to T2
+    gen_T2 = dolfinx.fem.Constant(
+        mesh, PETSc.ScalarType(source_T2)
+    )  # generation term [mol T2 /m3/s]
 
     # VARIATIONAL FORMULATION
 
     # mass transfer rate
-    J = (
-        a * h_l_const * (c_T * T_to_T2 - K_s * (P_0 * y_T2 + EPS))
-        # c_T/2 because we use Henry's law for c_T2_eq and c_T2 = c_T/2
+    J_T2 = (
+        a * h_l_const * (c_T2 - K_s * (P_0 * y_T2 + EPS))
     )  # TODO pressure shouldn't be a constant (use hydrostatic pressure profile), how to deal with this ? -> use fem.Expression ?
 
     F = 0  # variational formulation
 
     # transient terms
-    F += eps_l * ((c_T - c_T_n) / dt) * v_c * ufl.dx
+    F += eps_l * ((c_T2 - c_T2_n) / dt) * v_c * ufl.dx
     F += eps_g * 1 / (const.R * T) * (P_0 * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
-    # diffusion/dispersion terms #TODO shouldn't use D_l, find dispersion coeff for steady liquid in gas bubbles
-    F += eps_l * D_l * ufl.dot(ufl.grad(c_T), ufl.grad(v_c)) * ufl.dx
+    # diffusion/dispersion terms #TODO shouldn't use D_l, transport of T in liquid is dominated by dispersive effects due to gas sparging, find dispersion coeff for steady liquid in gas bubbles
+    F += eps_l * D_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
 
     # NOTE remove diffusive term for gas for now for mass balance
     # F += eps_g * E_g * ufl.dot(ufl.grad(P_0 * y_T2), ufl.grad(v_y)) * ufl.dx
 
     # mass exchange (coupling term)
-    F += 2 * J * v_c * ufl.dx - J * v_y * ufl.dx
+    F += J_T2 * v_c * ufl.dx - J_T2 * v_y * ufl.dx
 
     # Generation term in the breeder
-    F += -gen * v_c * ufl.dx
+    F += -gen_T2 * v_c * ufl.dx
 
     # advection of gas
     F += 1 / (const.R * T) * ufl.inner(ufl.dot(ufl.grad(P_0 * y_T2), vel), v_y) * ufl.dx
@@ -492,23 +495,23 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
     x_y = coords[y_sort_coords]
 
     times = []
-    c_T_solutions = []
+    c_T2_solutions = []
     y_T2_solutions = []
-    source_T = []
-    fluxes_T = []
-    inventories_T_salt = []
+    sources_T2 = []
+    fluxes_T2 = []
+    inventories_T2_salt = []
 
     # SOLVE
     t = 0
     while t < t_final:
         if isinstance(t_irr, (int, float)):
             if t >= t_irr:
-                gen.value = 0.0
+                gen_T2.value = 0.0
         else:
             if t >= t_irr[0] and t < t_irr[1]:
-                gen.value = tritium_source
+                gen_T2.value = source_T2
             else:
-                gen.value = 0.0
+                gen_T2.value = 0.0
         """ utiliser ufl.conditional TODO"""
         if t_sparging is not None:
             if t >= t_sparging[0] and t < t_sparging[1]:
@@ -522,22 +525,22 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         u_n.x.array[:] = u.x.array[:]
 
         # post process
-        c_T_post, y_T2_post = u.split()
+        c_T2_post, y_T2_post = u.split()
 
-        c_T_vals = u.x.array[ct_dofs][ct_sort_coords]
+        c_T2_vals = u.x.array[ct_dofs][ct_sort_coords]
         y_T2_vals = u.x.array[y_dofs][y_sort_coords]
 
         # store time and solution
         times.append(t)
-        c_T_solutions.append(c_T_vals.copy())
+        c_T2_solutions.append(c_T2_vals.copy())
         y_T2_solutions.append(y_T2_vals.copy())
-        source_T.append(
-            gen.value.copy() * tank_volume
+        sources_T2.append(
+            gen_T2.value.copy() * tank_volume
         )  # total T generation rate in the tank [mol/s]
 
-        flux_T = dolfinx.fem.assemble_scalar(
+        flux_T2 = dolfinx.fem.assemble_scalar(
             dolfinx.fem.form(
-                tank_area * vel_x * P_0 / (const.R * T) * y_T2_post * T2_to_T * ds(2)
+                tank_area * vel_x * P_0 / (const.R * T) * y_T2_post * ds(2)
             )
         )  # total T flux at the outlet [mol/s]
 
@@ -554,32 +557,34 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         # )  # total T dispersive flux at the inlet [mol/s]
 
         n = ufl.FacetNormal(mesh)
-        flux_T_inlet = dolfinx.fem.assemble_scalar(
+        flux_T2_inlet = dolfinx.fem.assemble_scalar(
             dolfinx.fem.form(-E_g * ufl.inner(ufl.grad(P_0 * y_T2_post), n) * ds(1))
         )  # total T dispersive flux at the inlet [Pa T2 /s/m2]
-        flux_T_inlet *= 1 / (const.R * T) * T2_to_T  # convert to mol T/s/m2
-        flux_T_inlet *= tank_area  # convert to mol T/s
+        flux_T2_inlet *= 1 / (const.R * T) * T2_to_T  # convert to mol T/s/m2
+        flux_T2_inlet *= tank_area  # convert to mol T/s
 
-        # fluxes_T.append(flux_T + flux_T_inlet)
-        fluxes_T.append(flux_T)
+        # fluxes_T2.append(flux_T2 + flux_T2_inlet)
+        fluxes_T2.append(flux_T2)
 
-        inventory_T_salt = dolfinx.fem.assemble_scalar(
-            dolfinx.fem.form(c_T_post * ufl.dx)
+        inventory_T2_salt = dolfinx.fem.assemble_scalar(
+            dolfinx.fem.form(c_T2_post * ufl.dx)
         )
-        inventory_T_salt *= tank_area  # get total amount of T in [mol]
-        inventories_T_salt.append(inventory_T_salt)
+        inventory_T2_salt *= tank_area  # get total amount of T2 in [mol]
+        inventories_T2_salt.append(inventory_T2_salt)
 
         # advance time
         t += dt
 
-    inventories_T_salt = np.array(inventories_T_salt)
+    inventories_T2_salt = np.array(inventories_T2_salt)
+
+    # breakpoint()
     return (
         times,
-        c_T_solutions,
+        c_T2_solutions,
         y_T2_solutions,
         x_ct,
         x_y,
-        inventories_T_salt,
-        source_T,
-        fluxes_T,
+        inventories_T2_salt,
+        sources_T2,
+        fluxes_T2,
     )

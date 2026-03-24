@@ -2,7 +2,7 @@ import model
 import numpy as np
 
 ANIMATE = True
-SHOW_ACTIVITY = False
+SHOW_ACTIVITY = True
 
 
 def main():
@@ -89,13 +89,20 @@ def main():
     t_irr_hr = [0, 96]  # time interval when irradiation is ON
     t_final = 10 * model.days_to_seconds
 
-    times, c_T_solutions, y_T2_solutions, x_ct, x_y, c_T_volume, source_T, flux_T = (
-        model.solve(
-            merged_dict,
-            t_final=t_final,
-            t_irr=[t * model.hours_to_seconds for t in t_irr_hr],
-            t_sparging=([t * model.hours_to_seconds for t in t_sparging_hr]),
-        )
+    (
+        times,
+        c_T2_solutions,
+        y_T2_solutions,
+        x_ct,
+        x_y,
+        inventories_T2_salt,
+        source_T2,
+        fluxes_T2,
+    ) = model.solve(
+        merged_dict,
+        t_final=t_final,
+        t_irr=[t * model.hours_to_seconds for t in t_irr_hr],
+        t_sparging=([t * model.hours_to_seconds for t in t_sparging_hr]),
     )
 
     # save_to_csv(c_T_volume)
@@ -110,13 +117,13 @@ def main():
         try:
             create_animation(
                 times,
-                c_T_solutions,
+                c_T2_solutions,
                 y_T2_solutions,
                 x_ct,
                 x_y,
-                c_T_volume,
-                source_T=source_T,
-                flux_T=flux_T,
+                inventories_T2_salt,
+                source_T2=source_T2,
+                fluxes_T2=fluxes_T2,
                 show_activity=SHOW_ACTIVITY,
             )
         except KeyboardInterrupt:
