@@ -44,7 +44,7 @@ def get_sigma_l(T: float) -> float:
     ) * dynespercm_to_newtonpermeter
 
 
-def get_E_l(T: float) -> float:
+def get_D_l(T: float) -> float:  # TODO
     """diffusivity of T in FLiBe [m2/s], Calderoni 2008"""
     return 9.3e-7 * np.exp(-42e3 / (const.R * T))
 
@@ -136,39 +136,39 @@ def get_eps_g(
 
 
 def get_h_l(
-    Re: float, Sc: float, E_l: float, d_b: float, u_g: float, corr_name: str = "briggs"
+    Re: float, Sc: float, D_l: float, d_b: float, u_g: float, corr_name: str = "briggs"
 ) -> float:
     """mass transfer coefficient [m/s] for tritium in liquid FLiBe, computed using the specified correlation"""
     match corr_name:
         case "briggs":
-            return get_h_briggs(Re, Sc, E_l, d_b)
+            return get_h_briggs(Re, Sc, D_l, d_b)
         case "higbie":
-            return get_h_higbie(E_l, u_g, d_b)
+            return get_h_higbie(D_l, u_g, d_b)
         case "malara":
-            return get_h_malara(E_l, d_b)
+            return get_h_malara(D_l, d_b)
 
 
-def get_h_higbie(E_l: float, u_g: float, d_b: float) -> float:
+def get_h_higbie(D_l: float, u_g: float, d_b: float) -> float:
     """mass transfer coefficient [m/s] for tritium in liquid FLiBe using Higbie penetration model"""
     h_l = (
-        (E_l * u_g) / (ufl.pi * d_b)
+        (D_l * u_g) / (ufl.pi * d_b)
     ) ** 0.5  # mass transport coefficient Higbie penetration model
     return h_l
 
 
-def get_h_malara(E_l: float, d_b: float) -> float:
+def get_h_malara(D_l: float, d_b: float) -> float:
     """
     mass transfer coefficient [m/s] for tritium in liquid FLiBe using Malara 1995 correlation
     (used for inert gas stripping from breeder droplets, may not be valid here)
     """
-    h_l = 2 * np.pi**2 * E_l / (3 * d_b)
+    h_l = 2 * np.pi**2 * D_l / (3 * d_b)
     return h_l
 
 
-def get_h_briggs(Re: float, Sc: float, E_l: float, d_b: float) -> float:
+def get_h_briggs(Re: float, Sc: float, D_l: float, d_b: float) -> float:
     """mass transfer coefficient [m/s] for tritium in liquid FLiBe using Briggs 1970 correlation"""
     Sh = 0.089 * Re**0.69 * Sc**0.33  # Sherwood number
-    h_l = Sh * E_l / d_b
+    h_l = Sh * D_l / d_b
     return h_l
 
 
@@ -188,6 +188,13 @@ def get_flow_g_mol(input: dict) -> float:
         * P_standard
         / (const.R * const.convert_temperature(T_standard, "celsius", "kelvin"))
     )
+
+
+def get_E_g(diameter: float, u_g: float) -> float:
+    """gas phase axial dispersion coefficient [m2/s], Malara 1995 correlation
+    models dispersion of the gas velocity distribution around the mean bubble velocity"""
+    E_g = 0.2 * diameter**2 * u_g
+    return E_g
 
 
 def _get(
@@ -257,7 +264,7 @@ def compute_properties(params):
     )  # surface tension [N/m] of Li2BeF4
 
     # --- correlations for tritium in FLiBe ---
-    E_l = _get(params, "E_l", get_E_l, T=T)  # diffusivity of T in FLiBe [m2/s]
+    D_l = _get(params, "D_l", get_D_l, T=T)  # diffusivity of T in FLiBe [m2/s]
     K_s = _get(params, "K_s", get_K_s, T=T)  # solubility of T in FLiBe [mol/m3/Pa]
     # - derived parameters -
     P_0 = (
@@ -288,7 +295,7 @@ def compute_properties(params):
         params, "Re", get_Re, rho=rho_l, mu=mu_l, u=U_G0_DEFAULT, d=d_b
     )  # initial Reynolds number calculation, assuming typical gas velocity (~0.25 m/s according to Chavez 2021)
     Mo = (drho * const.g * mu_l**4) / (rho_l**2 * sigma_l**3)  # Morton number
-    Sc = nu_l / E_l  # Schmidt number
+    Sc = nu_l / D_l  # Schmidt number
 
     # --- bubble velocity ---
     u_g0 = _get(
@@ -321,14 +328,14 @@ def compute_properties(params):
         get_h_l,
         Re=Re,
         Sc=Sc,
-        E_l=E_l,
+        D_l=D_l,
         d_b=d_b,
         u_g=u_g0,
     )  # T mass transfer coefficient [m/s], using Briggs 1970 correlation as default
 
-    E_g = (
-        0.2 * D**2 * u_g0
-    )  # gas phase diffusivity (Malara 1995) # is this correct ? Should we use tank diameter ?? TODO
+    E_g = _get(
+        params, "E_g", get_E_g, diameter=D, u_g=u_g0
+    )  # gas phase axial dispersion coefficient [m2/s]
 
     tritium_source = _get(
         params,
@@ -351,7 +358,7 @@ def compute_properties(params):
         "flow_g_mol": flow_g_mol,
         "eps_g": eps_g,
         "eps_l": eps_l,
-        "E_l": E_l,
+        "D_l": D_l,
         "E_g": E_g,
         "a": a,
         "h_l": h_l,
@@ -367,7 +374,7 @@ def compute_properties(params):
 def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
     dt = 0.2 * hours_to_seconds  # s
     # unpack parameters
-    tank_height, u_g0, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, E_l, tritium_source = (
+    tank_height, u_g0, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, D_l, tritium_source = (
         params["tank_height"],
         params["u_g0"],
         params["a"],
@@ -378,7 +385,7 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         params["eps_g"],
         params["eps_l"],
         params["E_g"],
-        params["E_l"],
+        params["D_l"],
         params["tritium_source"],
     )
     tank_area = np.pi * (params["D"] / 2) ** 2
@@ -423,10 +430,10 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
     F += eps_l * ((c_T - c_T_n) / dt) * v_c * ufl.dx
     F += eps_g * 1 / (const.R * T) * (P_0 * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
-    # diffusion/dispersion terms
-    F += eps_l * E_l * ufl.dot(ufl.grad(c_T), ufl.grad(v_c)) * ufl.dx
+    # diffusion/dispersion terms #TODO shouldn't use D_l, find dispersion coeff for steady liquid in gas bubbles
+    F += eps_l * D_l * ufl.dot(ufl.grad(c_T), ufl.grad(v_c)) * ufl.dx
 
-    # remove diffusive term for gas for now
+    # NOTE remove diffusive term for gas for now for mass balance
     # F += eps_g * E_g * ufl.dot(ufl.grad(P_0 * y_T2), ufl.grad(v_y)) * ufl.dx
 
     # mass exchange (coupling term)
@@ -533,6 +540,27 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
                 tank_area * vel_x * P_0 / (const.R * T) * y_T2_post * T2_to_T * ds(2)
             )
         )  # total T flux at the outlet [mol/s]
+
+        # flux_T_inlet = dolfinx.fem.assemble_scalar(
+        #     dolfinx.fem.form(
+        #         tank_area
+        #         * E_g
+        #         * P_0
+        #         / (const.R * T)
+        #         * y_T2_post.dx(0)
+        #         * T2_to_T
+        #         * ds(1)
+        #     )
+        # )  # total T dispersive flux at the inlet [mol/s]
+
+        n = ufl.FacetNormal(mesh)
+        flux_T_inlet = dolfinx.fem.assemble_scalar(
+            dolfinx.fem.form(-E_g * ufl.inner(ufl.grad(P_0 * y_T2_post), n) * ds(1))
+        )  # total T dispersive flux at the inlet [Pa T2 /s/m2]
+        flux_T_inlet *= 1 / (const.R * T) * T2_to_T  # convert to mol T/s/m2
+        flux_T_inlet *= tank_area  # convert to mol T/s
+
+        # fluxes_T.append(flux_T + flux_T_inlet)
         fluxes_T.append(flux_T)
 
         inventory_T_salt = dolfinx.fem.assemble_scalar(
@@ -544,7 +572,6 @@ def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
         # advance time
         t += dt
 
-    # breakpoint()
     inventories_T_salt = np.array(inventories_T_salt)
     return (
         times,
