@@ -6,10 +6,24 @@ import numpy as np
 import scipy.constants as const
 from dolfinx.fem.petsc import NonlinearProblem
 from petsc4py import PETSc
+from dataclasses import dataclass
 
 import warnings
 
 from dolfinx import log
+
+
+@dataclass
+class SimulationResults:
+    times: list
+    c_T2_solutions: list
+    y_T2_solutions: list
+    x_ct: np.ndarray
+    x_y: np.ndarray
+    inventories_T2_salt: np.ndarray
+    source_T2: list
+    fluxes_T2: list
+
 
 m3_to_cm3 = 1e6
 cm3_to_m3 = 1e-6
@@ -577,14 +591,14 @@ def solve(params: dict, t_final: float, t_irr: float | list, t_sparging: list = 
 
     inventories_T2_salt = np.array(inventories_T2_salt)
 
-    # breakpoint()
-    return (
-        times,
-        c_T2_solutions,
-        y_T2_solutions,
-        x_ct,
-        x_y,
-        inventories_T2_salt,
-        sources_T2,
-        fluxes_T2,
+    results = SimulationResults(
+        times=times,
+        c_T2_solutions=c_T2_solutions,
+        y_T2_solutions=y_T2_solutions,
+        x_ct=x_ct,
+        x_y=x_y,
+        inventories_T2_salt=inventories_T2_salt,
+        source_T2=sources_T2,
+        fluxes_T2=fluxes_T2,
     )
+    return results

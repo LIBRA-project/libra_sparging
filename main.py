@@ -50,22 +50,13 @@ if __name__ == "__main__":
     t_irr_hr = [0, 96]  # time interval when irradiation is ON
     t_final = 10 * model.days_to_seconds
 
-    (
-        times,
-        c_T2_solutions,
-        y_T2_solutions,
-        x_ct,
-        x_y,
-        inventories_T2_salt,
-        source_T2,
-        fluxes_T2,
-    ) = model.solve(
+    results = model.solve(
         merged_dict,
         t_final=t_final,
         t_irr=[t * model.hours_to_seconds for t in t_irr_hr],
         t_sparging=([t * model.hours_to_seconds for t in t_sparging_hr]),
     )
-
+    print(results)
     # save_to_csv(c_T_volume)
 
     save_output(
@@ -77,14 +68,14 @@ if __name__ == "__main__":
         # Create interactive animation
         try:
             create_animation(
-                times,
-                c_T2_solutions,
-                y_T2_solutions,
-                x_ct,
-                x_y,
-                inventories_T2_salt,
-                source_T2=source_T2,
-                fluxes_T2=fluxes_T2,
+                results.times,
+                results.c_T2_solutions,
+                results.y_T2_solutions,
+                results.x_ct,
+                results.x_y,
+                results.inventories_T2_salt,
+                source_T2=results.source_T2,
+                fluxes_T2=results.fluxes_T2,
                 show_activity=SHOW_ACTIVITY,
             )
         except KeyboardInterrupt:
