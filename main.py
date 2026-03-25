@@ -54,9 +54,8 @@ if __name__ == "__main__":
         merged_dict,
         t_final=t_final,
         t_irr=[t * model.hours_to_seconds for t in t_irr_hr],
-        t_sparging=([t * model.hours_to_seconds for t in t_sparging_hr]),
+        t_sparging=[t * model.hours_to_seconds for t in t_sparging_hr],
     )
-    print(results)
     # save_to_csv(c_T_volume)
 
     save_output(
