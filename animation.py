@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from matplotlib.widgets import Slider, Button
+from model import SimulationResults
 
 molar_mass_T2 = 3.016 * 2  # g/mol T2
 specific_activity_tritium = 3.57e14  # Bq/g
@@ -16,14 +17,7 @@ class ConcentrationAnimator:
 
     def __init__(
         self,
-        times,
-        c_T2_solutions,
-        y_T2_solutions,
-        x_ct,
-        x_y,
-        inventories_T2_salt=None,
-        source_T2=None,
-        fluxes_T2=None,
+        results: SimulationResults,
         show_activity=False,
         figsize=None,
         hspace=0.4,
@@ -33,35 +27,27 @@ class ConcentrationAnimator:
 
         Parameters:
         -----------
-        times : array_like
-            Time points
-        c_T2_solutions : array_like
-            Total concentration solutions at each time
-        y_T2_solutions : array_like
-            Y-component concentration solutions at each time
-        x_ct : array_like
-            Spatial coordinates for total concentration
-        x_y : array_like
-            Spatial coordinates for y-component concentration
-        inventories_T2_salt : array_like, optional
-            Integrated concentration values over time
-        source_T2 : array_like, optional
-            Tritium source term over time [molT2/s]
-        fluxes_T2 : array_like, optional
-            Tritium extraction flux over time [molT2/s]
+        results : SimulationResults
+            The simulation results object containing all necessary data
+        show_activity : bool, optional
+            If True, convert integrated tritium amount from molT2 to activity in Bq
         figsize : tuple, optional
             Figure size as (width, height) in inches
         hspace : float, optional
             Vertical spacing between subplots
         """
-        self.times_hr = np.array(times) * sec_to_hour
-        self.c_T2_solutions = np.array(c_T2_solutions)
-        self.y_T2_solutions = np.array(y_T2_solutions)
-        self.x_ct = x_ct
-        self.x_y = x_y
-        self.inventories_T2_salt = inventories_T2_salt
-        self.source_T2 = None if source_T2 is None else np.array(source_T2)
-        self.fluxes_T2 = None if fluxes_T2 is None else np.array(fluxes_T2)
+        self.times_hr = np.array(results.times) * sec_to_hour
+        self.c_T2_solutions = np.array(results.c_T2_solutions)
+        self.y_T2_solutions = np.array(results.y_T2_solutions)
+        self.x_ct = results.x_ct
+        self.x_y = results.x_y
+        self.inventories_T2_salt = results.inventories_T2_salt
+        self.source_T2 = (
+            None if results.source_T2 is None else np.array(results.source_T2)
+        )
+        self.fluxes_T2 = (
+            None if results.fluxes_T2 is None else np.array(results.fluxes_T2)
+        )
         self.show_activity = show_activity
         self.figsize = figsize
         self.hspace = hspace
@@ -318,14 +304,7 @@ class ConcentrationAnimator:
 
 
 def create_animation(
-    times,
-    c_T2_solutions,
-    y_T2_solutions,
-    x_ct,
-    x_y,
-    c_integrated=None,
-    source_T2=None,
-    fluxes_T2=None,
+    results: SimulationResults,
     show_activity=False,
     figsize=None,
     hspace=0.4,
@@ -335,22 +314,8 @@ def create_animation(
 
     Parameters:
     -----------
-    times : array_like
-        Time points
-    c_T2_solutions : array_like
-        Total concentration solutions at each time
-    y_T2_solutions : array_like
-        Y-component concentration solutions at each time
-    x_ct : array_like
-        Spatial coordinates for total concentration
-    x_y : array_like
-        Spatial coordinates for y-component concentration
-    c_integrated : array_like, optional
-        Integrated concentration values over time
-    source_T2 : array_like, optional
-        Tritium source term over time [molT2/s]
-    fluxes_T2 : array_like, optional
-        Tritium extraction flux over time [molT2/s]
+    results : SimulationResults
+        The simulation results object
     show_activity : bool, optional
         If True, convert integrated tritium amount from molT2 to activity in Bq
     figsize : tuple, optional
@@ -363,15 +328,9 @@ def create_animation(
     ConcentrationAnimator
         The animator instance
     """
+
     animator = ConcentrationAnimator(
-        times,
-        c_T2_solutions,
-        y_T2_solutions,
-        x_ct,
-        x_y,
-        inventories_T2_salt=c_integrated,
-        source_T2=source_T2,
-        fluxes_T2=fluxes_T2,
+        results,
         show_activity=show_activity,
         figsize=figsize,
         hspace=hspace,

@@ -66,16 +66,6 @@ if __name__ == "__main__":
     if ANIMATE is True:
         # Create interactive animation
         try:
-            create_animation(
-                results.times,
-                results.c_T2_solutions,
-                results.y_T2_solutions,
-                results.x_ct,
-                results.x_y,
-                results.inventories_T2_salt,
-                source_T2=results.source_T2,
-                fluxes_T2=results.fluxes_T2,
-                show_activity=SHOW_ACTIVITY,
-            )
+            create_animation(results, show_activity=SHOW_ACTIVITY)
         except KeyboardInterrupt:
-            exit()
+            pass
