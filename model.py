@@ -11,7 +11,6 @@ from dataclasses import dataclass
 import warnings
 from datetime import datetime
 from dolfinx import log
-from main import ureg
 import yaml
 import helpers
 
