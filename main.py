@@ -1,9 +1,8 @@
 import model
 import sys
 import os
-import yaml
 from animation import create_animation
-from helpers import get_input, setup_yaml_numpy, get_git_hash
+from helpers import get_input
 
 ANIMATE = True
 SHOW_ACTIVITY = True
@@ -13,31 +12,7 @@ OUTPUT_PATH = os.path.join(
 )
 
 
-def save_output(results_dict, output_path, input_dict=None, properties_dict=None):
-    from datetime import datetime
-
-    setup_yaml_numpy()
-
-    # structure the output
-    output = {
-        "metadata": {
-            "git_commit": get_git_hash(),
-            "date": datetime.now().isoformat(),
-        },
-    }
-    if input_dict is not None:
-        output["input parameters"] = input_dict
-    if properties_dict is not None:
-        output["calculated properties"] = properties_dict
-    output["results"] = results_dict
-
-    with open(output_path, "w") as f:
-        yaml.dump(output, f, sort_keys=False)
-
-
 if __name__ == "__main__":
-    setup_yaml_numpy()
-
     params = get_input(INPUT_PATH + ".yaml")
     properties = model.compute_properties(params)
 
@@ -58,10 +33,9 @@ if __name__ == "__main__":
     )
     # save_to_csv(c_T_volume)
 
-    save_output(
-        results_dict=properties, output_path=OUTPUT_PATH + ".yaml", input_dict=params
-    )
-
+    results.to_yaml(OUTPUT_PATH + ".yaml", inputs=params, properties=properties)
+    results.to_json(OUTPUT_PATH + ".json", inputs=params, properties=properties)
+    results.profiles_to_csv(OUTPUT_PATH + "_profiles")
     # breakpoint()
     if ANIMATE is True:
         # Create interactive animation

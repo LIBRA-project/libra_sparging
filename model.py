@@ -9,8 +9,10 @@ from petsc4py import PETSc
 from dataclasses import dataclass
 
 import warnings
-
+from datetime import datetime
 from dolfinx import log
+import yaml
+import helpers
 
 
 @dataclass
@@ -23,6 +25,84 @@ class SimulationResults:
     inventories_T2_salt: np.ndarray
     source_T2: list
     fluxes_T2: list
+
+    keys_to_ignore_output = [
+        "c_T2_solutions",
+        "y_T2_solutions",
+        "x_ct",
+        "x_y",
+        "inventories_T2_salt",
+    ]
+
+    def to_yaml(self, output_path: str, inputs: dict, properties: dict):
+
+        helpers.setup_yaml_numpy()
+
+        # structure the output
+        output = {
+            "metadata": {
+                "git_commit": helpers.get_git_hash(),
+                "date": datetime.now().isoformat(),
+            },
+        }
+        if inputs:
+            output["input parameters"] = inputs
+        if properties:
+            output["calculated properties"] = properties
+        output["results"] = self.__dict__.copy()
+        # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
+        for key in self.keys_to_ignore_output:
+            output["results"].pop(key, None)
+
+        with open(output_path, "w") as f:
+            yaml.dump(output, f, sort_keys=False)
+
+    def to_json(self, output_path: str, inputs: dict, properties: dict):
+        import json
+
+        # convert numpy arrays to lists for JSON serialization
+        # structure the output
+        output = {
+            "metadata": {
+                "git_commit": helpers.get_git_hash(),
+                "date": datetime.now().isoformat(),
+            },
+        }
+        if inputs:
+            output["input parameters"] = inputs
+        if properties:
+            output["calculated properties"] = properties
+        output["results"] = self.__dict__.copy()
+
+        for key in self.keys_to_ignore_output:
+            output["results"].pop(key, None)
+
+        for key, value in output.items():
+            if isinstance(value, np.ndarray):
+                output[key] = value.tolist()
+                print(
+                    "found list in results, converting to list for JSON serialization"
+                )
+
+        with open(output_path, "w") as f:
+            json.dump(output, f, indent=3)
+
+    def profiles_to_csv(self, output_path: str):
+        import pandas as pd
+
+        # save c_T2 and y_T2 profiles at the final time step to csv
+        df_c_T2 = pd.DataFrame({"x": self.x_ct})
+        df_y_T2 = pd.DataFrame({"x": self.x_y})
+
+        # add one column for each profile
+        for i, (c_T2_profile, y_T2_profile) in enumerate(
+            zip(self.c_T2_solutions, self.y_T2_solutions)
+        ):
+            df_c_T2[f"c_T2_t{i}"] = c_T2_profile
+            df_y_T2[f"y_T2_t{i}"] = y_T2_profile
+
+        df_c_T2.to_csv(output_path + "_c_T2.csv", index=False)
+        df_y_T2.to_csv(output_path + "_y_T2.csv", index=False)
 
 
 m3_to_cm3 = 1e6

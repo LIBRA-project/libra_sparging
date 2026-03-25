@@ -2,6 +2,8 @@ import yaml
 import numpy as np
 
 
+# TODO this could be a dataclass?
+# see issue #3
 def get_input(input_path):
     with open(input_path, "r") as file:
         params = yaml.safe_load(file)
