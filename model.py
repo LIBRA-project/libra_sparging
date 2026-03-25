@@ -10,6 +10,7 @@ from petsc4py import PETSc
 import warnings
 
 from dolfinx import log
+from main import ureg
 
 m3_to_cm3 = 1e6
 cm3_to_m3 = 1e-6
@@ -372,7 +373,7 @@ def compute_properties(params):
 
 
 def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
-    dt = 1 * hours_to_seconds  # s
+    dt = 0.2 * hours_to_seconds  # s
     # unpack parameters
     tank_height, u_g0, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, D_l, source_T = (
         params["tank_height"],

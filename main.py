@@ -1,6 +1,11 @@
 import model
 import numpy as np
 
+from pint import UnitRegistry
+
+ureg = UnitRegistry()
+ureg.formatter.default_format = "~P"
+
 ANIMATE = True
 SHOW_ACTIVITY = True
 
@@ -85,9 +90,9 @@ def main():
     merged_dict.update(params)
     merged_dict.update(properties)
 
-    t_sparging_hr = [0, 1e20]  # time interval when sparger is ON
+    t_sparging_hr = [24, 1e20]  # time interval when sparger is ON
     t_irr_hr = [0, 96]  # time interval when irradiation is ON
-    t_final = 10 * model.days_to_seconds
+    t_final = 6 * model.days_to_seconds
 
     (
         times,
