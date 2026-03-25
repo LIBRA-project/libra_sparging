@@ -5,3 +5,7 @@ dependencies:
   - fenics-dolfinx
   - matplotlib
   - pyvista
+  - pyyaml
+  - numpy
+  - scipy
+  - pandas
