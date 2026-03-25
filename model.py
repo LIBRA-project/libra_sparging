@@ -371,7 +371,7 @@ def compute_properties(params):
     }
 
 
-def solve(params, t_final, t_irr: float | list, t_sparging: list = None):
+def solve(params: dict, t_final: float, t_irr: float | list, t_sparging: list = None):
     dt = 1 * hours_to_seconds  # s
     # unpack parameters
     tank_height, u_g0, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, D_l, source_T = (
