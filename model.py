@@ -13,6 +13,7 @@ from datetime import datetime
 from dolfinx import log
 import yaml
 import helpers
+import json
 
 
 @dataclass
@@ -32,6 +33,9 @@ class SimulationResults:
         "x_ct",
         "x_y",
         "inventories_T2_salt",
+        "times",
+        "source_T2",
+        "fluxes_T2",
     ]
 
     def to_yaml(self, output_path: str, inputs: dict, properties: dict):
@@ -58,9 +62,6 @@ class SimulationResults:
             yaml.dump(output, f, sort_keys=False)
 
     def to_json(self, output_path: str, inputs: dict, properties: dict):
-        import json
-
-        # convert numpy arrays to lists for JSON serialization
         # structure the output
         output = {
             "metadata": {
@@ -74,11 +75,13 @@ class SimulationResults:
             output["calculated properties"] = properties
         output["results"] = self.__dict__.copy()
 
+        # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
         for key in self.keys_to_ignore_output:
             output["results"].pop(key, None)
 
         for key, value in output.items():
             if isinstance(value, np.ndarray):
+                # convert numpy arrays to lists for JSON serialization
                 output[key] = value.tolist()
                 print(
                     "found list in results, converting to list for JSON serialization"
@@ -88,9 +91,9 @@ class SimulationResults:
             json.dump(output, f, indent=3)
 
     def profiles_to_csv(self, output_path: str):
+        """save c_T2 and y_T2 profiles at all time steps to csv files, one for c_T2 and one for y_T2, with columns for each time step"""
         import pandas as pd
 
-        # save c_T2 and y_T2 profiles at the final time step to csv
         df_c_T2 = pd.DataFrame({"x": self.x_ct})
         df_y_T2 = pd.DataFrame({"x": self.x_y})
 

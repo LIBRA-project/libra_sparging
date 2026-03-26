@@ -11,14 +11,17 @@ ureg.formatter.default_format = "~P"
 
 ANIMATE = True
 SHOW_ACTIVITY = True
-INPUT_PATH = os.path.join(os.getcwd(), sys.argv[1])
+YAML_INPUT_PATH = os.path.join(os.getcwd(), sys.argv[1])
 OUTPUT_PATH = os.path.join(
-    os.getcwd(), sys.argv[1] + "_out" if len(sys.argv) < 3 else sys.argv[2]
+    os.getcwd(),
+    sys.argv[1].split(".")[0].replace("input", "output")
+    if len(sys.argv) < 3
+    else sys.argv[2],
 )
 
 
 if __name__ == "__main__":
-    params = get_input(INPUT_PATH + ".yaml")
+    params = get_input(YAML_INPUT_PATH)
     properties = model.compute_properties(params)
 
     # breakpoint()
@@ -36,12 +39,11 @@ if __name__ == "__main__":
         t_irr=[t * model.hours_to_seconds for t in t_irr_hr],
         t_sparging=[t * model.hours_to_seconds for t in t_sparging_hr],
     )
-    # save_to_csv(c_T_volume)
 
     results.to_yaml(OUTPUT_PATH + ".yaml", inputs=params, properties=properties)
     results.to_json(OUTPUT_PATH + ".json", inputs=params, properties=properties)
-    results.profiles_to_csv(OUTPUT_PATH + "_profiles")
-    # breakpoint()
+    # results.profiles_to_csv(OUTPUT_PATH + "_profiles")
+
     if ANIMATE is True:
         # Create interactive animation
         try:
