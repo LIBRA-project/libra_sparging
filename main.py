@@ -30,7 +30,7 @@ if __name__ == "__main__":
 
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
     results.to_yaml(
-        os.path.join(OUTPUT_FOLDER, "restart.yaml"), sim_input.quantities_dict
+        os.path.join(OUTPUT_FOLDER, "restart.yaml"), sim_input.__dict__.copy()
     )
     results.to_json(
         os.path.join(OUTPUT_FOLDER, "output.json"), sim_input.quantities_dict

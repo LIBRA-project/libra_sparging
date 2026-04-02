@@ -56,8 +56,8 @@ class SimulationResults:
     ]
 
     def to_yaml(self, output_path: str, sim_dict: dict):
-
-        helpers.setup_yaml_numpy()
+        sim_dict = sim_dict.copy()
+        helpers.setup_yaml()
 
         # structure the output
         output = {
@@ -66,10 +66,14 @@ class SimulationResults:
                 "date": datetime.now().isoformat(),
             },
         }
-        if sim_dict.get("inputed"):
-            output["input parameters"] = sim_dict["inputed"]
-        if sim_dict.get("computed"):
-            output["calculated properties"] = sim_dict["computed"]
+        sim_dict.pop(
+            "quantities_dict"
+        )  # remove quantities_dict from input for cleaner output
+
+        output["input"] = {}
+        for key, value in sim_dict.items():
+            output["input"][key] = str(value)
+
         output["results"] = self.__dict__.copy()
         # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
         for key in self.keys_to_ignore_output:

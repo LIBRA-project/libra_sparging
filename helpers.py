@@ -10,7 +10,7 @@ def get_input(yaml_input_path):
     return params
 
 
-def setup_yaml_numpy():
+def setup_yaml():
     """Tells PyYAML to represent numpy types in human readable way"""
 
     def numpy_representer(dumper, data):
