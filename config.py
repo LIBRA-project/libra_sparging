@@ -3,7 +3,9 @@ import scipy.constants as const
 
 VERBOSE = False
 
-ureg = UnitRegistry()
+ureg = UnitRegistry(
+    autoconvert_offset_to_baseunit=True
+)  # to deal with offset units (eg: degree celsius)
 ureg.formatter.default_format = ".3e~D"
 ureg.define("triton = [tritium] = T")
 ureg.define(f"molT = {const.N_A} * triton")

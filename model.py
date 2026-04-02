@@ -34,7 +34,7 @@ class SimulationResults:
     fluxes_T2: list
     sim_input: SimulationInput
 
-    keys_to_ignore_results = [
+    keys_to_ignore_results = [  # TODO do it the other way: keys_to_include_results
         "c_T2_solutions",
         "y_T2_solutions",
         "x_ct",
@@ -241,9 +241,9 @@ class SimulationInput:
         # -- bubbles properties --
         self.d_b = self._get(input_dict, "d_b").to("millimetre")  # bubble diameter
         he_molar_mass = ureg("4.003e-3 kg/mol")
-        self.rho_g = (
-            self.P_0 * he_molar_mass / (const_R * self.T)
-        ).to_base_units()  # bubbles density, using ideal gas law for He
+        self.rho_g = (self.P_0 * he_molar_mass / (const_R * self.T)).to(
+            "kg/m**3"
+        )  # bubbles density, using ideal gas law for He
         self.drho = self.rho_l - self.rho_g  # density difference between liquid and gas
 
         self.Eo = self._get(input_dict, "Eo")  # Eotvos number
