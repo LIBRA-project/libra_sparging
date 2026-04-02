@@ -4,10 +4,6 @@ import os
 from animation import create_animation
 from helpers import get_input
 
-from pint import UnitRegistry
-
-ureg = UnitRegistry()
-ureg.formatter.default_format = "~P"
 
 ANIMATE = True
 SHOW_ACTIVITY = True
@@ -22,26 +18,32 @@ OUTPUT_PATH = os.path.join(
 
 if __name__ == "__main__":
     params = get_input(YAML_INPUT_PATH)
-    properties = model.compute_properties(params)
+    sim_input = model.SimulationInput(params)
 
-    # breakpoint()
-    merged_dict = {}
-    merged_dict.update(params)
-    merged_dict.update(properties)
+    # merged_dict = {}
+    # merged_dict.update(params)
+    # merged_dict.update(properties)
 
     t_sparging_hr = [24, 1e20]  # time interval when sparger is ON
     t_irr_hr = [0, 96]  # time interval when irradiation is ON
     t_final = 6 * model.days_to_seconds
 
+    # results = model.solve(
+    #     merged_dict,
+    #     t_final=t_final,
+    #     t_irr=[t * model.hours_to_seconds for t in t_irr_hr],
+    #     t_sparging=[t * model.hours_to_seconds for t in t_sparging_hr],
+    # )
+
     results = model.solve(
-        merged_dict,
+        sim_input,
         t_final=t_final,
         t_irr=[t * model.hours_to_seconds for t in t_irr_hr],
         t_sparging=[t * model.hours_to_seconds for t in t_sparging_hr],
     )
 
-    results.to_yaml(OUTPUT_PATH + ".yaml", inputs=params, properties=properties)
-    results.to_json(OUTPUT_PATH + ".json", inputs=params, properties=properties)
+    results.to_yaml(OUTPUT_PATH + ".yaml", sim_input.quantities_dict)
+    results.to_json(OUTPUT_PATH + ".json", sim_input.quantities_dict)
     # results.profiles_to_csv(OUTPUT_PATH + "_profiles")
 
     if ANIMATE is True:

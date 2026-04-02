@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from mpi4py import MPI
 import dolfinx
 import basix
@@ -10,10 +12,25 @@ from dataclasses import dataclass
 
 import warnings
 from datetime import datetime
-from dolfinx import log
+
+# from dolfinx import log
 import yaml
 import helpers
 import json
+
+from pint import UnitRegistry
+import inspect
+
+ureg = UnitRegistry()
+ureg.formatter.default_format = "3e~P"
+ureg.define("triton = 1 * particle = T")
+ureg.define(f"molT = {const.N_A} * triton")
+ureg.define(f"molT2 = 2 * {const.N_A} * triton")
+ureg.define("neutron = 1 * particle = n")
+ureg.define("sccm = 7.44e-7 mol/s")
+
+const_R = const.R * ureg("J/K/mol")  # ideal gas constant
+const_g = const.g * ureg("m/s**2")  # gravitational acceleration
 
 
 @dataclass
@@ -38,7 +55,7 @@ class SimulationResults:
         "fluxes_T2",
     ]
 
-    def to_yaml(self, output_path: str, inputs: dict, properties: dict):
+    def to_yaml(self, output_path: str, sim_dict: dict):
 
         helpers.setup_yaml_numpy()
 
@@ -49,10 +66,10 @@ class SimulationResults:
                 "date": datetime.now().isoformat(),
             },
         }
-        if inputs:
-            output["input parameters"] = inputs
-        if properties:
-            output["calculated properties"] = properties
+        if sim_dict.get("inputed"):
+            output["input parameters"] = sim_dict["inputed"]
+        if sim_dict.get("computed"):
+            output["calculated properties"] = sim_dict["computed"]
         output["results"] = self.__dict__.copy()
         # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
         for key in self.keys_to_ignore_output:
@@ -61,7 +78,7 @@ class SimulationResults:
         with open(output_path, "w") as f:
             yaml.dump(output, f, sort_keys=False)
 
-    def to_json(self, output_path: str, inputs: dict, properties: dict):
+    def to_json(self, output_path: str, sim_dict: dict):
         # structure the output
         output = {
             "metadata": {
@@ -69,10 +86,10 @@ class SimulationResults:
                 "date": datetime.now().isoformat(),
             },
         }
-        if inputs:
-            output["input parameters"] = inputs
-        if properties:
-            output["calculated properties"] = properties
+        if sim_dict.get("inputed"):
+            output["input parameters"] = sim_dict["inputed"]
+        if sim_dict.get("computed"):
+            output["calculated properties"] = sim_dict["computed"]
         output["results"] = self.__dict__.copy()
 
         # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
@@ -108,11 +125,6 @@ class SimulationResults:
         df_y_T2.to_csv(output_path + "_y_T2.csv", index=False)
 
 
-m3_to_cm3 = 1e6
-cm3_to_m3 = 1e-6
-m_to_cm = 1e2
-cm_to_m = 1e-2
-dynespercm_to_newtonpermeter = 1e-3
 hours_to_seconds = 3600
 days_to_seconds = 24 * hours_to_seconds
 T2_to_T = 2
@@ -121,34 +133,9 @@ T_to_T2 = 1 / T2_to_T
 EPS = 1e-26
 U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
 VERBOSE = False
+SEPARATOR_KEYWORD = "from"
+
 # log.set_log_level(log.LogLevel.INFO)
-
-
-def get_rho_l(T: float) -> float:
-    """density of FLiBe [kg/m3], Vidrio 2022"""
-    return 2245 - 0.424 * (const.convert_temperature(T, "kelvin", "celsius"))
-
-
-def get_mu_l(T: float) -> float:
-    """dynamic viscosity of FLiBe [Pa.s], Cantor 1968"""
-    return 0.116e-3 * np.exp(3755 / T)
-
-
-def get_sigma_l(T: float) -> float:
-    """surface tension of FLiBe [N/m], Cantor 1968"""
-    return (
-        260 - 0.12 * (const.convert_temperature(T, "kelvin", "celsius"))
-    ) * dynespercm_to_newtonpermeter
-
-
-def get_D_l(T: float) -> float:  # TODO
-    """diffusivity of T in FLiBe [m2/s], Calderoni 2008"""
-    return 9.3e-7 * np.exp(-42e3 / (const.R * T))
-
-
-def get_K_s(T: float) -> float:
-    """solubility of T in FLiBe [mol/m3/Pa], Calderoni 2008"""
-    return 7.9e-2 * np.exp(-35e3 / (const.R * T))
 
 
 def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
@@ -156,93 +143,81 @@ def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
     mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
     """
     nozzle_flow = flow_g_vol / nb_nozzle  # volumetric flow per nozzle [m3/s]
-    if nozzle_flow < 3 * cm3_to_m3 or nozzle_flow > 10 * cm3_to_m3:
+    if nozzle_flow < ureg("3 cm**3/s") or nozzle_flow > ureg("10 cm**3/s"):
         warnings.warn(
-            f"nozzle flow {nozzle_flow * m3_to_cm3:.2e} cm3/s is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)"
+            f"nozzle flow {nozzle_flow.to('cm**3/s')} is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)"
         )
-    return (
+    return ureg.Quantity(
         0.54
-        * (nozzle_flow * m3_to_cm3 * np.sqrt(nozzle_diameter / 2 * m_to_cm)) ** 0.289
-        * cm_to_m
+        * (
+            nozzle_flow.to("cm**3/s").magnitude
+            * np.sqrt(nozzle_diameter.to("cm").magnitude / 2)
+        )
+        ** 0.289,
+        "cm",
     )
 
 
-def get_Re(rho: float, mu: float, u: float, d: float, Re_old: float = 0) -> float:
-    """
-    Reynolds number
-    """
-    Re = rho * u * d / mu
+def get_Re(input: SimulationInput) -> float:
+    try:
+        u = input.u_g0
+        Re_old = input.Re
+    except AttributeError:
+        if VERBOSE:
+            print("in get_Re, use default bubble velocity")
+        u = U_G0_DEFAULT * ureg("m/s")
+        Re_old = 0
+
+    Re = input.rho_l * u * input.d_b / input.mu_l
     if (
         Re_old != 0 and np.abs(np.log10(Re / Re_old)) > 1
     ):  # check if Reynolds number changed by more than an order of magnitude
-        warnings.warnngs.warn(
-            f"Re number changed significantly from {Re_old:.2e} to {Re:.2e}, bubble velocity u = {u:.2f} m/s might be off. Check assumed bubble velocity in initial Reynolds number calculation"
+        warnings.warn(
+            f"Re number changed significantly from {Re_old:.2e} to {Re:.2e}, bubble velocity u = {u} might be off. Check assumed bubble velocity in initial Reynolds number calculation"
         )
-    return Re
+    return Re.to("dimensionless")
 
 
-def get_u_g0(
-    Eo: float, Mo: float, mu_l: float, rho_l: float, d_b: float, Re: float
-) -> float:
+def get_u_g0(input: SimulationInput) -> float:  # TODO move inside class ?
     """
     bubble initial velocity [m/s], correlation for terminal velocity from Clift 1978
     """
-    H = 4 / 3 * Eo * Mo**-0.149 * (mu_l / 0.0009) ** -0.14
+    H = (4 / 3 * input.Eo.magnitude * input.Mo.magnitude**-0.149) * (
+        input.mu_l.magnitude / 0.0009
+    ) ** -0.14
     if H > 59.3:
         J = 3.42 * H**0.441
     elif H > 2:
         J = 0.94 * H**0.757
     else:
-        J = Re * Mo**0.149 + 0.857
+        J = input.Re * input.Mo**0.149 + 0.857
         warnings.warn(
-            f"Warning: low Reynolds number {Re:.2e}, bubble size d_b = {d_b} m might be too small."
+            f"Warning: low Reynolds number {input.Re:.2e}, bubble size d_b = {input.d_b} m might be too small."
             f"Clift correlation will use default value for bubble velocity u_g0 = {U_G0_DEFAULT} m/s"
         )
-    u_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
-    if u_g0 > 1 or u_g0 < 0.1:
-        warnings.warn(
-            f"Warning: bubble velocity {u_g0:.2f} m/s is out of the typical range"
-        )
+    u_g0 = input.mu_l / (input.rho_l * input.d_b) * input.Mo**-0.149 * (J - 0.857)
+    if u_g0 > ureg("1 m/s") or u_g0 < ureg("0.1 m/s"):
+        warnings.warn(f"Warning: bubble velocity {u_g0} is out of the typical range")
+
     return u_g0
 
 
-def get_eps_g(
-    T: float,
-    P_0: float,
-    flow_g_mol: float,
-    D: float,
-    d_b: float,
-    u_g: float,
-    sigma_l: float,
-) -> float:
+def get_eps_g(input: SimulationInput) -> float:
     """computes gas void fraction from ideal gas law and Young-Laplace pressure in the bubbles (neglecting hydrostatic pressure variation)"""
     eps_g = (
-        const.R
-        * T
-        / (P_0 + 4 * sigma_l / d_b)
-        * flow_g_mol
-        / (np.pi * (D / 2) ** 2 * u_g)
+        const_R
+        * input.T
+        / (input.P_0 + 4 * input.sigma_l / input.d_b)
+        * input.flow_g
+        / (np.pi * (input.tank_diameter / 2) ** 2 * input.u_g0)
     )
     if eps_g > 1 or eps_g < 0:
-        warnings.warn(f"Warning: unphysical gas fraction: {eps_g:.2f}")
+        warnings.warn(f"Warning: unphysical gas fraction: {eps_g}")
     elif eps_g > 0.1:
         warnings.warn(
-            f"Warning: high gas fraction: {eps_g:.2f}, models assumptions may not hold"
+            f"Warning: high gas fraction: {eps_g}, models assumptions may not hold"
         )
     return eps_g
-
-
-def get_h_l(
-    Re: float, Sc: float, D_l: float, d_b: float, u_g: float, corr_name: str = "briggs"
-) -> float:
-    """mass transfer coefficient [m/s] for tritium in liquid FLiBe, computed using the specified correlation"""
-    match corr_name:
-        case "briggs":
-            return get_h_briggs(Re, Sc, D_l, d_b)
-        case "higbie":
-            return get_h_higbie(D_l, u_g, d_b)
-        case "malara":
-            return get_h_malara(D_l, d_b)
 
 
 def get_h_higbie(D_l: float, u_g: float, d_b: float) -> float:
@@ -269,227 +244,240 @@ def get_h_briggs(Re: float, Sc: float, D_l: float, d_b: float) -> float:
     return h_l
 
 
-def get_source_T(input: dict) -> float:
-    """compute tritium generation source term [mol/m3/s] from TBR calculated by openMC for our geometry"""
-    tank_volume = np.pi * (input["D"] / 2) ** 2 * input["tank_height"]
-    return input["tbr"] * float(input["n_gen_rate"]) / (tank_volume * const.N_A)
-
-
-def get_flow_g_mol(input: dict) -> float:
-    """convert gas flow from sccm to mol/s"""
-    T_standard = 0  # °C
-    P_standard = 101325  # Pa
-    min_to_sec = 60
-    return (
-        (input["flow_g_sccm"] * cm3_to_m3 / min_to_sec)
-        * P_standard
-        / (const.R * const.convert_temperature(T_standard, "celsius", "kelvin"))
-    )
-
-
 def get_E_g(diameter: float, u_g: float) -> float:
     """gas phase axial dispersion coefficient [m2/s], Malara 1995 correlation
     models dispersion of the gas velocity distribution around the mean bubble velocity"""
-    E_g = 0.2 * diameter**2 * u_g
+    E_g = 0.2 * ureg("1/m") * diameter**2 * u_g
     return E_g
 
 
-def _get(
-    params: dict,
-    key: str,
-    func: callable,
-    **kwargs,
-):
-    """
-    Get a parameter value from params dictionnary.
+correlations_dict = {
+    "rho_l": lambda input: ureg.Quantity(
+        2245 - 0.424 * input.T.to("celsius").magnitude, "kg/m**3"
+    ),  # density of Li2BeF4, Vidrio 2022
+    "mu_l": lambda input: ureg.Quantity(
+        0.116e-3 * np.exp(3755 / input.T.to("kelvin").magnitude), "Pa*s"
+    ),  # kinematic viscosity of Li2BeF4, Cantor 1968
+    "sigma_l": lambda input: ureg.Quantity(
+        260 - 0.12 * input.T.to("celsius").magnitude, "dyn/cm"
+    ).to("N/m"),  # surface tension of Li2BeF4,Cantor 1968
+    "D_l": lambda input: ureg.Quantity(
+        9.3e-7 * np.exp(-42e3 / (const.R * input.T.to("kelvin").magnitude)), "m**2/s"
+    ),  # diffusivity of T in FLiBe, Calderoni 2008
+    "K_s": lambda input: ureg.Quantity(
+        7.9e-2 * np.exp(-35e3 / (const.R * input.T.to("kelvin").magnitude)),
+        "mol/m**3/Pa",
+    ),  # solubility of T in FLiBe, Calderoni 2008
+    "d_b": lambda input: get_d_b(
+        flow_g_vol=input.flow_g_vol,
+        nozzle_diameter=input.nozzle_diameter,
+        nb_nozzle=input.nb_nozzle,
+    ),  # mean bubble diameter, Kanai 2017
+    "Eo": lambda input: (const_g * input.drho * input.d_b**2 / input.sigma_l).to(
+        "dimensionless"
+    ),  # Eotvos number
+    "Mo": lambda input: (
+        input.drho * const_g * input.mu_l**4 / (input.rho_l**2 * input.sigma_l**3)
+    ).to("dimensionless"),  # Morton number
+    "Sc": lambda input: (input.nu_l / input.D_l).to("dimensionless"),  # Schmidt number
+    "Re": lambda input: get_Re(input),  # Reynolds number
+    "u_g0": lambda input: get_u_g0(input),  # initial gas velocity
+    "eps_g": lambda input: get_eps_g(input),  # gas void fraction
+    "h_l_malara": lambda input: get_h_malara(
+        input.D_l, input.d_b
+    ),  # mass transfer coefficient with Malara correlation
+    "h_l_briggs": lambda input: get_h_briggs(
+        input.Re, input.Sc, input.D_l, input.d_b
+    ),  # mass transfer coefficient with Briggs correlation
+    "h_l_higbie": lambda input: get_h_higbie(
+        input.D_l, input.u_g0, input.d_b
+    ),  # mass transfer coefficient with Higbie correlation
+    "E_g": lambda input: get_E_g(
+        input.tank_diameter, input.u_g0
+    ),  # gas phase axial dispersion coefficient
+    "source_T": lambda input: (
+        input.tbr * input.n_gen_rate / (input.tank_volume)
+    ),  # tritium generation source term
+}
 
-    - If key is missing: compute it with default correlation func().
-    - If key exists and is numeric: use that value.
-    - If key exists and is a string: interpret it as a correlation name.
 
-    Arguments:
-    - params: dictionnary of parameters
-    - key: name of the parameter to get (e.g. "d_b", "u_g0", "h_l", "eps_g", etc.)
-    - func: default correlation to compute the parameter if key is missing (e.g. get_d_b, get_u_g0, get_h_briggs, get_eps_g, etc.)
-    - correlations: dictionnary of available correlations to compute the parameter if key is a string
-        (e.g. {"kanai": get_d_b, "higbie": get_h_higbie, "malara": get_h_malara, "briggs": get_h_briggs, etc.})
-    - kwargs: additional arguments to pass to the correlation function if key is a string
-    """
-    if VERBOSE:
-        print(f"in _get() for {key}, passed parameters: {kwargs}")
-    if key in params:
-        value = params[key]
+class SimulationInput:
+    def _get(self, input_dict: dict, key: str, corr_name: str = None):
+        """get a parameter value from input_dict, or compute it from correlation if not specified in input_dict
+        - input_dict: dictionary of input values and/or correlation names
+        - key: name of the parameter to get
+        - corr_name: name of the correlation to use if not specified in input_dict, will be the key itself by default
+        """
 
-        if isinstance(value, str):
-            corr_name = value.lower()
-            kwargs.update({"corr_name": corr_name})
-            value = func(**kwargs)
+        if key in input_dict:
+            value = input_dict[key]
+            input_dict.pop(key)  # to keep track of unused input parameters, if any
+
+            if (
+                isinstance(value, str) and value.__contains__(SEPARATOR_KEYWORD)
+            ):  # if the value is a string that contains keyword "from", we assume it's a correlation name
+                corr_name = value.split(SEPARATOR_KEYWORD + " ")[1]
+                try:
+                    func = correlations_dict[corr_name]
+                    quantity = func(self)
+                    self.quantities_dict["computed"][key] = {
+                        "quantity": str(quantity),
+                        "correlation": corr_name,
+                    }
+                    return quantity
+                except KeyError:
+                    raise KeyError(
+                        f"Correlation '{corr_name}' not found in correlations dictionary. Available correlations: {list(correlations_dict.keys())}"
+                    )
+            else:  # we assume the quantity is directly provided
+                if VERBOSE:
+                    print(f"{key} = {value} \t provided by input")
+                quantity = ureg.parse_expression(str(value))
+                self.quantities_dict["inputed"][key] = str(quantity)
+                return quantity
+        else:  # input doesn't specify a value or a correlation name
+            while True:
+                # compute quantity using correlation, and if needed retrieve quantities it depends on
+                try:
+                    corr_name = key if corr_name is None else corr_name
+                    quantity = correlations_dict[corr_name](self)
+                    # compute the quantity using the default correlation function
+                    self.quantities_dict["computed"][key] = {
+                        "quantity": str(quantity),
+                        "correlation": corr_name,
+                    }
+                    break
+                except KeyError:
+                    raise KeyError(
+                        f"Correlation for '{corr_name}' not found in correlations dictionary. Available correlations: {list(correlations_dict.keys())}"
+                    )
+                except AttributeError as e:
+                    missing_attr = str(e).split("attribute '")[1].split("'")[0]
+                    print(f"AttributeError: missing attribute '{missing_attr}'")
+                    setattr(
+                        self, missing_attr, self._get(input_dict, missing_attr)
+                    )  # recursively get missing attributes
             if VERBOSE:
-                print(
-                    f"{key} = {value:.2e} \t calculated using '{corr_name}' correlation as specified in input"
-                )
-            return value
-        else:
-            if VERBOSE:
-                print(f"{key} = {value:.2e} \t provided by input")
-            return value
-    else:
-        value = func(**kwargs)
+                print(f"{key} = {quantity} \t calculated using default correlation")
+
+            return quantity
+
+    def __init__(self, input_dict: dict):
+        input_dict = input_dict.copy()
+        self.quantities_dict = {
+            "inputed": {},
+            "computed": {},
+        }  # to keep track of inputed and calculated quantities and the correlation used, for output purposes
+        # TODO useless, can use self.__dict__
+
+        # -- System parameters --
+        self.tank_height = self._get(input_dict, "tank_height")
+        self.tank_diameter = self._get(input_dict, "D")
+        self.tank_area = np.pi * (self.tank_diameter / 2) ** 2
+        self.tank_volume = (self.tank_area * self.tank_height).to_base_units()
+        self.source_T = self._get(input_dict, "source_T").to(
+            "molT/s/m**3"
+        )  # tritium generation source term
+        self.nozzle_diameter = self._get(input_dict, "nozzle_diameter")
+        self.nb_nozzle = self._get(input_dict, "nb_nozzle")
+        self.P_top = self._get(input_dict, "P_top")
+        self.T = self._get(input_dict, "T")  # temperature
+        self.flow_g = self._get(input_dict, "flow_g").to(
+            "mol/s"
+        )  # inlet gas flow rate [mol/s]
+
+        # -- FLiBe and tritium physical properties --
+        self.rho_l = self._get(input_dict, "rho_l")
+        self.mu_l = self._get(input_dict, "mu_l")
+        self.sigma_l = self._get(input_dict, "sigma_l")
+        self.nu_l = self.mu_l / self.rho_l
+        self.D_l = self._get(input_dict, "D_l")
+        self.K_s = self._get(input_dict, "K_s")
+
+        self.P_0 = (self.P_top + self.rho_l * const_g * self.tank_height).to(
+            "Pa"
+        )  # gas inlet pressure [Pa] = hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
+        self.flow_g_vol = (self.flow_g.to("mol/s") * const_R * self.T / self.P_0).to(
+            "m**3/s"
+        )  # inlet gas volumetric flow rate
+
+        # -- bubbles properties --
+        self.d_b = self._get(input_dict, "d_b").to("metre")  # bubble diameter
+        he_molar_mass = ureg("4.003e-3 kg/mol")
+        self.rho_g = (
+            self.P_0 * he_molar_mass / (const_R * self.T)
+        ).to_base_units()  # bubbles density, using ideal gas law for He
+        self.drho = self.rho_l - self.rho_g  # density difference between liquid and gas
+
+        self.Eo = self._get(input_dict, "Eo")  # Eotvos number
+        self.Mo = self._get(input_dict, "Mo")  # Morton number
+        self.Sc = self._get(input_dict, "Sc")  # Schmidt number
+        self.Re = self._get(input_dict, "Re")  # Reynolds number
+
+        self.u_g0 = self._get(
+            input_dict, "u_g0"
+        ).to_base_units()  # mean bubble velocity
+
+        self.Re = self._get(
+            input_dict, "Re"
+        )  # update Reynolds number with the calculated bubble velocity
+
+        self.eps_g = self._get(input_dict, "eps_g").to(
+            "dimensionless"
+        )  # gas void fraction
+        self.eps_l = 1 - self.eps_g
+        self.a = (6 * self.eps_g / self.d_b).to("1/m")  # specific interfacial area
+
+        self.h_l = self._get(input_dict, "h_l", corr_name="h_l_briggs").to(
+            "m/s"
+        )  # mass transfer coefficient
+
+        self.E_g = self._get(input_dict, "E_g").to(
+            "m**2/s"
+        )  # gas phase axial dispersion coefficient
+
+        if input_dict:
+            warnings.warn(f"Unused input parameters:{input_dict}")
+
         if VERBOSE:
-            print(f"{key} = {value:.2e} \t calculated using default correlation")
-        return value
+            print(self)
+
+    def __str__(self):
+        members = inspect.getmembers(self)
+        return "\n".join(
+            [
+                f"{name}: {value}"
+                for name, value in members
+                if not name.startswith("_") and not inspect.isfunction(value)
+            ]
+        )
 
 
-def compute_properties(params):
-    tank_height = params["tank_height"]
-    D = params["D"]
-    nozzle_diameter = params["nozzle_diameter"]
-    nb_nozzle = params["nb_nozzle"]
-    P_top = params["P_top"]
-    T = params["T"]
-
-    flow_g_mol = _get(
-        params, "flow_g_mol", get_flow_g_mol, input=params
-    )  # inlet gas flow rate [mol/s]
-
-    # --- correlations for FLiBe properties ---
-    rho_l = _get(params, "rho_l", get_rho_l, T=T)  # density [kg/m3] of Li2BeF4
-    mu_l = _get(params, "mu_l", get_mu_l, T=T)  # dynamic viscosity [Pa.s] of Li2BeF4
-    nu_l = mu_l / rho_l  # kinematic viscosity [m2/s] of Li2BeF4
-    sigma_l = _get(
-        params, "sigma_l", get_sigma_l, T=T
-    )  # surface tension [N/m] of Li2BeF4
-
-    # --- correlations for tritium in FLiBe ---
-    D_l = _get(params, "D_l", get_D_l, T=T)  # diffusivity of T in FLiBe [m2/s]
-    K_s = _get(params, "K_s", get_K_s, T=T)  # solubility of T in FLiBe [mol/m3/Pa]
-    # - derived parameters -
-    P_0 = (
-        P_top + rho_l * const.g * tank_height
-    )  # gas inlet pressure [Pa] = hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
-    flow_g_vol = flow_g_mol * const.R * T / P_0  # inlet gas volumetric flow rate [m3/s]
-
-    # --- correlations for bubble properties ---
-    d_b = _get(
-        params,
-        "d_b",
-        get_d_b,
-        flow_g_vol=flow_g_vol,
-        nozzle_diameter=nozzle_diameter,
-        nb_nozzle=nb_nozzle,
-    )  # bubble diameter [m]
-
-    he_molar_mass = 4.003e-3  # kg/mol
-    rho_g = (
-        P_0 * he_molar_mass / (const.R * T)
-    )  # bubbles density [kg/m3], using ideal gas law for He
-    drho = rho_l - rho_g  # density difference between liquid and gas [kg/m3]
-
-    # --- dimensionless numbers used in correlations ---
-
-    Eo = (drho * const.g * d_b**2) / sigma_l  # Eotvos (Bond) number
-    Re = _get(
-        params, "Re", get_Re, rho=rho_l, mu=mu_l, u=U_G0_DEFAULT, d=d_b
-    )  # initial Reynolds number calculation, assuming typical gas velocity (~0.25 m/s according to Chavez 2021)
-    Mo = (drho * const.g * mu_l**4) / (rho_l**2 * sigma_l**3)  # Morton number
-    Sc = nu_l / D_l  # Schmidt number
-
-    # --- bubble velocity ---
-    u_g0 = _get(
-        params, "u_g0", get_u_g0, Eo=Eo, Mo=Mo, mu_l=mu_l, rho_l=rho_l, d_b=d_b, Re=Re
-    )  # bubble velocity [m/s], correlation from Clift 1978, reported by Chavez 2021
-    Re = _get(
-        params, "Re", get_Re, rho=rho_l, mu=mu_l, u=u_g0, d=d_b, Re_old=Re
-    )  # update Reynolds number with the calculated bubble velocity
-
-    # --- bubble volume fraction ---
-    eps_g = _get(
-        params,
-        "eps_g",
-        get_eps_g,
-        T=T,
-        P_0=P_0,
-        flow_g_mol=flow_g_mol,
-        D=D,
-        d_b=d_b,
-        u_g=u_g0,
-        sigma_l=sigma_l,
-    )  # gas fraction [-]
-    eps_l = 1 - eps_g  # liquid fraction [-]
-    a = 6 * eps_g / d_b  # specific interfacial area [m-1]
-
-    # --- mass transfer coefficient ---
-    h_l = _get(
-        params,
-        "h_l",
-        get_h_l,
-        Re=Re,
-        Sc=Sc,
-        D_l=D_l,
-        d_b=d_b,
-        u_g=u_g0,
-    )  # T mass transfer coefficient [m/s], using Briggs 1970 correlation as default
-
-    E_g = _get(
-        params, "E_g", get_E_g, diameter=D, u_g=u_g0
-    )  # gas phase axial dispersion coefficient [m2/s]
-
-    source_T = _get(
-        params,
-        "source_T",
-        get_source_T,
-        input=params,
-    )  # tritium generation source term [mol/m3/s]
-
-    return {
-        "rho_l": rho_l,
-        "sigma_l": sigma_l,
-        "mu_l": mu_l,
-        "nu_l": nu_l,
-        "K_s": K_s,
-        "u_g0": u_g0,
-        "d_b": d_b,
-        "rho_g": rho_g,
-        "P_0": P_0,
-        "flow_g_vol": flow_g_vol,
-        "flow_g_mol": flow_g_mol,
-        "eps_g": eps_g,
-        "eps_l": eps_l,
-        "D_l": D_l,
-        "E_g": E_g,
-        "a": a,
-        "h_l": h_l,
-        "Re": Re,
-        "Eo": Eo,
-        "Mo": Mo,
-        "Sc": Sc,
-        "nozzle_flow": flow_g_vol / nb_nozzle,
-        "source_T": source_T,
-    }
-
-
-def solve(params: dict, t_final: float, t_irr: float | list, t_sparging: list = None):
-    dt = 0.2 * hours_to_seconds  # s
+# def solve(params: dict, t_final: float, t_irr: float | list, t_sparging: list = None):
+def solve(
+    input: SimulationInput, t_final: float, t_irr: float | list, t_sparging: list = None
+):
+    dt = 0.2 * ureg("hours").to("seconds").magnitude
     # unpack parameters
-    tank_height, u_g0, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, D_l, source_T = (
-        params["tank_height"],
-        params["u_g0"],
-        params["a"],
-        params["h_l"],
-        params["K_s"],
-        params["P_0"],
-        params["T"],
-        params["eps_g"],
-        params["eps_l"],
-        params["E_g"],
-        params["D_l"],
-        params["source_T"],
+    tank_height, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, D_l = (
+        input.tank_height.magnitude,
+        input.a.magnitude,
+        input.h_l.magnitude,
+        input.K_s.magnitude,
+        input.P_0.magnitude,
+        input.T.magnitude,
+        input.eps_g.magnitude,
+        input.eps_l.magnitude,
+        input.E_g.magnitude,
+        input.D_l.magnitude,
     )
-    tank_area = np.pi * (params["D"] / 2) ** 2
-    tank_volume = tank_area * tank_height
+    # tank_area = np.pi * (params["D"] / 2) ** 2
+    # tank_volume = tank_area * tank_height
 
     # MESH AND FUNCTION SPACES
-    mesh = dolfinx.mesh.create_interval(MPI.COMM_WORLD, 1000, points=[0, tank_height])
+    mesh = dolfinx.mesh.create_interval(
+        MPI.COMM_WORLD, 1000, points=[0, input.tank_height.magnitude]
+    )
     fdim = mesh.topology.dim - 1
     cg_el = basix.ufl.element("Lagrange", mesh.basix_cell(), degree=1, shape=(2,))
 
@@ -502,19 +490,19 @@ def solve(params: dict, t_final: float, t_irr: float | list, t_sparging: list = 
     c_T2, y_T2 = ufl.split(u)
     c_T2_n, y_T2_n = ufl.split(u_n)
 
-    vel_x = u_g0  # TODO velocity should vary with hydrostatic pressure
+    vel_x = input.u_g0.magnitude  # TODO velocity should vary with hydrostatic pressure
     vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
 
     """ vel = fem_func(U)
         v,interpolate(lambda x: v0 + 2*x[0])"""
 
-    h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
+    h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(input.h_l.magnitude))
 
-    source_T2 = (
-        source_T * T_to_T2
+    source_T2 = input.source_T.to(
+        "molT2/s/m**3"
     )  # convert T generation rate to T2 generation rate for the gas phase [mol T2 /m3/s], assuming bred T immediately combines to T2
     gen_T2 = dolfinx.fem.Constant(
-        mesh, PETSc.ScalarType(source_T2)
+        mesh, PETSc.ScalarType(source_T2.magnitude)
     )  # generation term [mol T2 /m3/s]
 
     # VARIATIONAL FORMULATION
@@ -628,16 +616,22 @@ def solve(params: dict, t_final: float, t_irr: float | list, t_sparging: list = 
         y_T2_vals = u.x.array[y_dofs][y_sort_coords]
 
         # store time and solution
+        # TODO give units to the results
         times.append(t)
         c_T2_solutions.append(c_T2_vals.copy())
         y_T2_solutions.append(y_T2_vals.copy())
         sources_T2.append(
-            gen_T2.value.copy() * tank_volume
+            gen_T2.value.copy() * input.tank_volume.magnitude
         )  # total T generation rate in the tank [mol/s]
 
         flux_T2 = dolfinx.fem.assemble_scalar(
             dolfinx.fem.form(
-                tank_area * vel_x * P_0 / (const.R * T) * y_T2_post * ds(2)
+                input.tank_area.magnitude
+                * vel_x
+                * P_0
+                / (const.R * T)
+                * y_T2_post
+                * ds(2)
             )
         )  # total T flux at the outlet [mol/s]
 
@@ -658,7 +652,7 @@ def solve(params: dict, t_final: float, t_irr: float | list, t_sparging: list = 
             dolfinx.fem.form(-E_g * ufl.inner(ufl.grad(P_0 * y_T2_post), n) * ds(1))
         )  # total T dispersive flux at the inlet [Pa T2 /s/m2]
         flux_T2_inlet *= 1 / (const.R * T) * T2_to_T  # convert to mol T/s/m2
-        flux_T2_inlet *= tank_area  # convert to mol T/s
+        flux_T2_inlet *= input.tank_area.magnitude  # convert to mol T/s
 
         # fluxes_T2.append(flux_T2 + flux_T2_inlet)
         fluxes_T2.append(flux_T2)
@@ -666,7 +660,9 @@ def solve(params: dict, t_final: float, t_irr: float | list, t_sparging: list = 
         inventory_T2_salt = dolfinx.fem.assemble_scalar(
             dolfinx.fem.form(c_T2_post * ufl.dx)
         )
-        inventory_T2_salt *= tank_area  # get total amount of T2 in [mol]
+        inventory_T2_salt *= (
+            input.tank_area.magnitude
+        )  # get total amount of T2 in [mol]
         inventories_T2_salt.append(inventory_T2_salt)
 
         # advance time
