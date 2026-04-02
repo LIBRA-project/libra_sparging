@@ -7,6 +7,8 @@ import numpy as np
 def get_input(yaml_input_path):
     with open(yaml_input_path, "r") as file:
         params = yaml.safe_load(file)
+        if "input" in params:
+            params = params["input"]
     return params
 
 

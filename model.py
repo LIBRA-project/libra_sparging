@@ -310,65 +310,70 @@ correlations_dict = {
 
 
 class SimulationInput:
-    def _get(self, input_dict: dict, key: str, corr_name: str = None):
+    def _get(self, input_dict: dict, keys: list[str], corr_name: str = None):
         """get a parameter value from input_dict, or compute it from correlation if not specified in input_dict
         - input_dict: dictionary of input values and/or correlation names
         - key: name of the parameter to get in the input_dict
         - corr_name: name of the correlation to use if not specified in input_dict, will be the key itself by default
         """
+        # try keys (several names possible in input dictionary, for retrocompatibility)
+        for key in keys if isinstance(keys, list) else [keys]:
+            if key in input_dict:
+                value = input_dict[key]
+                input_dict.pop(key)  # to keep track of unused input parameters, if any
 
-        if key in input_dict:
-            value = input_dict[key]
-            input_dict.pop(key)  # to keep track of unused input parameters, if any
-
-            if (
-                isinstance(value, str) and value.__contains__(SEPARATOR_KEYWORD)
-            ):  # if the value is a string that contains keyword "from", we assume it's a correlation name
-                corr_name = value.split(SEPARATOR_KEYWORD + " ")[1]
-                try:
-                    func = correlations_dict[corr_name]
-                    quantity = func(self)
-                    self.quantities_dict["computed"][key] = {
-                        "quantity": str(quantity),
-                        "correlation": corr_name,
-                    }
+                if (
+                    isinstance(value, str) and value.__contains__(SEPARATOR_KEYWORD)
+                ):  # if the value is a string that contains keyword "from", we assume it's a correlation name
+                    corr_name = value.split(SEPARATOR_KEYWORD + " ")[1]
+                    try:
+                        func = correlations_dict[corr_name]
+                        quantity = func(self)
+                        self.quantities_dict["computed"][key] = {
+                            "quantity": str(quantity),
+                            "correlation": corr_name,
+                        }
+                        return quantity
+                    except KeyError:
+                        raise KeyError(
+                            f"Correlation '{corr_name}' not found in correlations dictionary. Available correlations: {list(correlations_dict.keys())}"
+                        )
+                else:  # we assume the quantity is directly provided
+                    if VERBOSE:
+                        print(f"{key} = {value} \t provided by input")
+                    quantity = ureg.parse_expression(str(value))
+                    self.quantities_dict["inputed"][key] = str(quantity)
                     return quantity
-                except KeyError:
-                    raise KeyError(
-                        f"Correlation '{corr_name}' not found in correlations dictionary. Available correlations: {list(correlations_dict.keys())}"
-                    )
-            else:  # we assume the quantity is directly provided
-                if VERBOSE:
-                    print(f"{key} = {value} \t provided by input")
-                quantity = ureg.parse_expression(str(value))
-                self.quantities_dict["inputed"][key] = str(quantity)
-                return quantity
-        else:  # input doesn't specify a value or a correlation name
-            while True:
-                # compute quantity using correlation, and if needed retrieve quantities it depends on
-                try:
-                    corr_name = key if corr_name is None else corr_name
-                    quantity = correlations_dict[corr_name](self)
-                    # compute the quantity using the default correlation function
-                    self.quantities_dict["computed"][key] = {
-                        "quantity": str(quantity),
-                        "correlation": corr_name,
-                    }
-                    break
-                except KeyError:
-                    raise KeyError(
-                        f"Correlation for '{corr_name}' not found in correlations dictionary. Available correlations: {list(correlations_dict.keys())}"
-                    )
-                except AttributeError as e:
-                    missing_attr = str(e).split("attribute '")[1].split("'")[0]
-                    print(f"AttributeError: missing attribute '{missing_attr}'")
-                    setattr(
-                        self, missing_attr, self._get(input_dict, missing_attr)
-                    )  # recursively get missing attributes
-            if VERBOSE:
-                print(f"{key} = {quantity} \t calculated using default correlation")
 
-            return quantity
+        # nothing found in input_dict -> use default correlation
+        key = keys[0] if isinstance(keys, list) else keys
+        while True:
+            # compute quantity using correlation, and if needed retrieve quantities it depends on
+            try:
+                corr_name = (
+                    key if corr_name is None else corr_name
+                )  # default corr_name is the name of the key itself
+                quantity = correlations_dict[corr_name](self)
+                # compute the quantity using the default correlation function
+                self.quantities_dict["computed"][key] = {
+                    "quantity": str(quantity),
+                    "correlation": corr_name,
+                }
+                break
+            except KeyError:
+                raise KeyError(
+                    f"Correlation for '{corr_name}' not found in correlations dictionary. Missing a required input or wrong correlation name. Available correlations: {list(correlations_dict.keys())}"
+                )
+            except AttributeError as e:
+                missing_attr = str(e).split("attribute '")[1].split("'")[0]
+                print(f"AttributeError: missing attribute '{missing_attr}'")
+                setattr(
+                    self, missing_attr, self._get(input_dict, missing_attr)
+                )  # recursively get missing attributes
+        if VERBOSE:
+            print(f"{key} = {quantity} \t calculated using default correlation")
+
+        return quantity
 
     def __init__(self, input_dict: dict):
         input_dict = input_dict.copy()
@@ -380,7 +385,7 @@ class SimulationInput:
 
         # -- System parameters --
         self.tank_height = self._get(input_dict, "tank_height")
-        self.tank_diameter = self._get(input_dict, "D")
+        self.tank_diameter = self._get(input_dict, ["tank_diameter", "D"])
         self.tank_area = np.pi * (self.tank_diameter / 2) ** 2
         self.tank_volume = (self.tank_area * self.tank_height).to_base_units()
         self.source_T = self._get(input_dict, "source_T").to(
