@@ -20,20 +20,10 @@ if __name__ == "__main__":
     params = get_input(YAML_INPUT_PATH)
     sim_input = model.SimulationInput(params)
 
-    # merged_dict = {}
-    # merged_dict.update(params)
-    # merged_dict.update(properties)
-
+    # TODO integrate to input file
     t_sparging_hr = [24, 1e20]  # time interval when sparger is ON
     t_irr_hr = [0, 96]  # time interval when irradiation is ON
     t_final = 6 * model.days_to_seconds
-
-    # results = model.solve(
-    #     merged_dict,
-    #     t_final=t_final,
-    #     t_irr=[t * model.hours_to_seconds for t in t_irr_hr],
-    #     t_sparging=[t * model.hours_to_seconds for t in t_sparging_hr],
-    # )
 
     results = model.solve(
         sim_input,
@@ -42,7 +32,7 @@ if __name__ == "__main__":
         t_sparging=[t * model.hours_to_seconds for t in t_sparging_hr],
     )
 
-    results.to_yaml(OUTPUT_PATH + ".yaml", sim_input.quantities_dict)
+    # results.to_yaml(OUTPUT_PATH + ".yaml", sim_input.quantities_dict)
     results.to_json(OUTPUT_PATH + ".json", sim_input.quantities_dict)
     # results.profiles_to_csv(OUTPUT_PATH + "_profiles")
 

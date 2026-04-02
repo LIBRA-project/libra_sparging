@@ -22,7 +22,7 @@ from pint import UnitRegistry
 import inspect
 
 ureg = UnitRegistry()
-ureg.formatter.default_format = "3e~P"
+ureg.formatter.default_format = "3e~D"
 ureg.define("triton = 1 * particle = T")
 ureg.define(f"molT = {const.N_A} * triton")
 ureg.define(f"molT2 = 2 * {const.N_A} * triton")
@@ -453,7 +453,6 @@ class SimulationInput:
         )
 
 
-# def solve(params: dict, t_final: float, t_irr: float | list, t_sparging: list = None):
 def solve(
     input: SimulationInput, t_final: float, t_irr: float | list, t_sparging: list = None
 ):
