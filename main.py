@@ -8,13 +8,9 @@ from helpers import get_input
 ANIMATE = True
 SHOW_ACTIVITY = True
 YAML_INPUT_PATH = os.path.join(os.getcwd(), sys.argv[1])
-OUTPUT_PATH = os.path.join(
-    os.getcwd(),
-    sys.argv[1].split(".")[0].replace("input", "output")
-    if len(sys.argv) < 3
-    else sys.argv[2],
+OUTPUT_FOLDER = os.path.join(
+    os.getcwd(), sys.argv[1].split(".")[0].replace("_input", "")
 )
-
 
 if __name__ == "__main__":
     params = get_input(YAML_INPUT_PATH)
@@ -32,9 +28,14 @@ if __name__ == "__main__":
         t_sparging=[t * model.hours_to_seconds for t in t_sparging_hr],
     )
 
-    # results.to_yaml(OUTPUT_PATH + ".yaml", sim_input.quantities_dict)
-    results.to_json(OUTPUT_PATH + ".json", sim_input.quantities_dict)
-    # results.profiles_to_csv(OUTPUT_PATH + "_profiles")
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    results.to_yaml(
+        os.path.join(OUTPUT_FOLDER, "restart.yaml"), sim_input.quantities_dict
+    )
+    results.to_json(
+        os.path.join(OUTPUT_FOLDER, "output.json"), sim_input.quantities_dict
+    )
+    # results.profiles_to_csv(os.path.join(OUTPUT_FOLDER, "profiles"))
 
     if ANIMATE is True:
         # Create interactive animation
