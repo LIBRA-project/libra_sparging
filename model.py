@@ -22,11 +22,11 @@ from pint import UnitRegistry
 import inspect
 
 ureg = UnitRegistry()
-ureg.formatter.default_format = "3e~D"
-ureg.define("triton = 1 * particle = T")
+ureg.formatter.default_format = ".3e~D"
+ureg.define("triton = [tritium] = T")
 ureg.define(f"molT = {const.N_A} * triton")
 ureg.define(f"molT2 = 2 * {const.N_A} * triton")
-ureg.define("neutron = 1 * particle = n")
+ureg.define("neutron = [neutron] = n")
 ureg.define("sccm = 7.44e-7 mol/s")
 
 const_R = const.R * ureg("J/K/mol")  # ideal gas constant
@@ -384,38 +384,37 @@ class SimulationInput:
         # TODO useless, can use self.__dict__
 
         # -- System parameters --
-        self.tank_height = self._get(input_dict, "tank_height")
-        self.tank_diameter = self._get(input_dict, ["tank_diameter", "D"])
+        self.tank_height = self._get(input_dict, "tank_height").to("metre")
+        self.tank_diameter = self._get(input_dict, ["tank_diameter", "D"]).to("metre")
         self.tank_area = np.pi * (self.tank_diameter / 2) ** 2
-        self.tank_volume = (self.tank_area * self.tank_height).to_base_units()
+        self.tank_volume = self.tank_area * self.tank_height
         self.source_T = self._get(input_dict, "source_T").to(
             "molT/s/m**3"
         )  # tritium generation source term
-        self.nozzle_diameter = self._get(input_dict, "nozzle_diameter")
+        self.nozzle_diameter = self._get(input_dict, "nozzle_diameter").to("millimetre")
         self.nb_nozzle = self._get(input_dict, "nb_nozzle")
-        self.P_top = self._get(input_dict, "P_top")
-        self.T = self._get(input_dict, "T")  # temperature
+        self.P_top = self._get(input_dict, "P_top").to("bar")
+        self.T = self._get(input_dict, "T").to("kelvin")  # temperature
         self.flow_g = self._get(input_dict, "flow_g").to(
             "mol/s"
         )  # inlet gas flow rate [mol/s]
 
         # -- FLiBe and tritium physical properties --
-        self.rho_l = self._get(input_dict, "rho_l")
-        self.mu_l = self._get(input_dict, "mu_l")
-        self.sigma_l = self._get(input_dict, "sigma_l")
+        self.rho_l = self._get(input_dict, "rho_l").to("kg/m**3")
+        self.mu_l = self._get(input_dict, "mu_l").to("Pa*s")
+        self.sigma_l = self._get(input_dict, "sigma_l").to("N/m")
         self.nu_l = self.mu_l / self.rho_l
-        self.D_l = self._get(input_dict, "D_l")
-        self.K_s = self._get(input_dict, "K_s")
-
+        self.D_l = self._get(input_dict, "D_l").to("m**2/s")
+        self.K_s = self._get(input_dict, "K_s").to("mol/m**3/Pa")
         self.P_0 = (self.P_top + self.rho_l * const_g * self.tank_height).to(
-            "Pa"
+            "bar"
         )  # gas inlet pressure [Pa] = hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
         self.flow_g_vol = (self.flow_g.to("mol/s") * const_R * self.T / self.P_0).to(
             "m**3/s"
         )  # inlet gas volumetric flow rate
 
         # -- bubbles properties --
-        self.d_b = self._get(input_dict, "d_b").to("metre")  # bubble diameter
+        self.d_b = self._get(input_dict, "d_b").to("millimetre")  # bubble diameter
         he_molar_mass = ureg("4.003e-3 kg/mol")
         self.rho_g = (
             self.P_0 * he_molar_mass / (const_R * self.T)
@@ -427,12 +426,10 @@ class SimulationInput:
         self.Sc = self._get(input_dict, "Sc")  # Schmidt number
         self.Re = self._get(input_dict, "Re")  # Reynolds number
 
-        self.u_g0 = self._get(
-            input_dict, "u_g0"
-        ).to_base_units()  # mean bubble velocity
+        self.u_g0 = self._get(input_dict, "u_g0").to("m/s")  # mean bubble velocity
 
-        self.Re = self._get(
-            input_dict, "Re"
+        self.Re = self._get(input_dict, "Re").to(
+            "dimensionless"
         )  # update Reynolds number with the calculated bubble velocity
 
         self.eps_g = self._get(input_dict, "eps_g").to(
@@ -472,16 +469,16 @@ def solve(
     dt = 0.2 * ureg("hours").to("seconds").magnitude
     # unpack parameters
     tank_height, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, D_l = (
-        input.tank_height.magnitude,
-        input.a.magnitude,
-        input.h_l.magnitude,
-        input.K_s.magnitude,
-        input.P_0.magnitude,
-        input.T.magnitude,
-        input.eps_g.magnitude,
-        input.eps_l.magnitude,
-        input.E_g.magnitude,
-        input.D_l.magnitude,
+        input.tank_height.to("m").magnitude,
+        input.a.to("1/m").magnitude,
+        input.h_l.to("m/s").magnitude,
+        input.K_s.to("mol/m**3/Pa").magnitude,
+        input.P_0.to("Pa").magnitude,
+        input.T.to("K").magnitude,
+        input.eps_g.to("dimensionless").magnitude,
+        input.eps_l.to("dimensionless").magnitude,
+        input.E_g.to("m**2/s").magnitude,
+        input.D_l.to("m**2/s").magnitude,
     )
     # tank_area = np.pi * (params["D"] / 2) ** 2
     # tank_volume = tank_area * tank_height
