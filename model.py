@@ -43,8 +43,9 @@ class SimulationResults:
     inventories_T2_salt: np.ndarray
     source_T2: list
     fluxes_T2: list
+    sim_input: SimulationInput
 
-    keys_to_ignore_output = [
+    keys_to_ignore_results = [
         "c_T2_solutions",
         "y_T2_solutions",
         "x_ct",
@@ -53,10 +54,11 @@ class SimulationResults:
         "times",
         "source_T2",
         "fluxes_T2",
+        "sim_input",
     ]
 
-    def to_yaml(self, output_path: str, sim_dict: dict):
-        sim_dict = sim_dict.copy()
+    def to_yaml(self, output_path: str):
+        sim_dict = self.sim_input.__dict__.copy()
         helpers.setup_yaml()
 
         # structure the output
@@ -76,13 +78,15 @@ class SimulationResults:
 
         output["results"] = self.__dict__.copy()
         # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
-        for key in self.keys_to_ignore_output:
+        for key in self.keys_to_ignore_results:
             output["results"].pop(key, None)
 
         with open(output_path, "w") as f:
             yaml.dump(output, f, sort_keys=False)
 
-    def to_json(self, output_path: str, sim_dict: dict):
+    def to_json(self, output_path: str):
+        sim_dict = self.sim_input.quantities_dict.copy()
+
         # structure the output
         output = {
             "metadata": {
@@ -97,7 +101,7 @@ class SimulationResults:
         output["results"] = self.__dict__.copy()
 
         # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
-        for key in self.keys_to_ignore_output:
+        for key in self.keys_to_ignore_results:
             output["results"].pop(key, None)
 
         for key, value in output.items():
@@ -682,5 +686,6 @@ def solve(
         inventories_T2_salt=inventories_T2_salt,
         source_T2=sources_T2,
         fluxes_T2=fluxes_T2,
+        sim_input=input,
     )
     return results
