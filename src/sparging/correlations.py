@@ -109,10 +109,11 @@ all_correlations.append(sigma_l)
 # TODO this could leverage HTM
 D_l = Correlation(
     identifier="D_l",
-    function=lambda temperature: ureg.Quantity(
-        9.3e-7 * np.exp(-42e3 / (const_R * temperature.to("kelvin").magnitude)),
-        "m**2/s",
-    ),  # diffusivity of T in FLiBe, Calderoni 2008
+    function=lambda temperature: (
+        9.3e-7
+        * ureg("m**2/s")
+        * np.exp(-42e3 * ureg("J/mol") / (const_R * temperature.to("kelvin")))
+    ),
     corr_type=CorrelationType.DIFFUSIVITY,
     source="Calderoni 2008",
     description="diffusivity of tritium in liquid FLiBe as a function of temperature",
@@ -122,10 +123,11 @@ all_correlations.append(D_l)
 
 K_s = Correlation(
     identifier="K_s",
-    function=lambda temperature: ureg.Quantity(
-        7.9e-2 * np.exp(-35e3 / (const_R * temperature.to("kelvin").magnitude)),
-        "mol/m**3/Pa",
-    ),  # solubility of T in FLiBe, Calderoni 2008
+    function=lambda temperature: (
+        7.9e-2
+        * ureg("mol/m**3/Pa")
+        * np.exp(-35e3 * ureg("J/mol") / (const_R * temperature.to("kelvin")))
+    ),
     corr_type=CorrelationType.SOLUBILITY,
     source="Calderoni 2008",
     description="solubility of tritium in liquid FLiBe as a function of temperature",
