@@ -22,6 +22,8 @@ def test_model_solve():
         t_sparging=[t * model.hours_to_seconds for t in t_sparging_hr],
     )
 
+    assert False
+
 
 def test_model_solve_incomplete_input():
     """
