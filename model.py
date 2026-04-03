@@ -303,7 +303,6 @@ class SimulationInput:
 
         if VERBOSE:
             print(self)
-        breakpoint()
 
     def __str__(self):
         members = inspect.getmembers(self)
