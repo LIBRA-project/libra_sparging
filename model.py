@@ -46,6 +46,11 @@ class SimulationResults:
         "sim_input",
     ]
 
+    namespace = {
+        "ramp": lambda s, e: helpers.string_to_ramp(times, s, e),
+        "step": lambda s: helpers.string_to_step(times, s),
+    }
+
     def to_yaml(self, output_path: str):
         sim_dict = self.sim_input.__dict__.copy()
         helpers.setup_yaml()
@@ -135,7 +140,13 @@ SEPARATOR_KEYWORD = "from"
 
 
 class SimulationInput:
-    def _get(self, input_dict: dict, keys: list[str], corr_name: str = None):
+    def _get(
+        self,
+        input_dict: dict,
+        keys: list[str],
+        corr_name: str = None,
+        no_parse: bool = False,
+    ):
         """get a parameter value from input_dict, or compute it from correlation if not specified in input_dict
         - input_dict: dictionary of input values and/or correlation names
         - key: name of the parameter to get in the input_dict
@@ -166,7 +177,9 @@ class SimulationInput:
                 else:  # we assume the quantity is directly provided
                     if VERBOSE:
                         print(f"{key} = {value} \t provided by input")
-                    quantity = ureg.parse_expression(str(value))
+                    quantity = (
+                        ureg.parse_expression(str(value)) if not no_parse else value
+                    )
                     self.quantities_dict["inputed"][key] = str(quantity)
                     return quantity
 
@@ -271,11 +284,26 @@ class SimulationInput:
             "m**2/s"
         )  # gas phase axial dispersion coefficient
 
+        # -- simulation parameters --
+        self.dt = self._get(input_dict, "dt").to(
+            "s"
+        )  # time step for transient simulation
+        self.time_end = self._get(input_dict, "time_end").to(
+            "s"
+        )  # end time for transient simulation
+        self.signal_sparging = self._get(
+            input_dict, "signal_sparging", no_parse=True
+        )  # time signal for sparging (eg: to simulate intermittent sparging)
+        self.signal_irradiation = self._get(
+            input_dict, "signal_irradiation", no_parse=True
+        )  # time signal for irradiation (eg: to simulate intermittent irradiation)
+
         if input_dict:
             warnings.warn(f"Unused input parameters:{input_dict}")
 
         if VERBOSE:
             print(self)
+        breakpoint()
 
     def __str__(self):
         members = inspect.getmembers(self)
