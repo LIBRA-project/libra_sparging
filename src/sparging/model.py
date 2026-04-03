@@ -126,32 +126,35 @@ class SimulationInput:
                 return quantity(self)
             return quantity
 
+        else:
+            quantity = self.get_quantity_from_default_correlation(key, corr_name)
+
+        if VERBOSE:
+            print(f"{key} = {quantity} \t calculated using default correlation")
+
+        return quantity
+
+    # TODO simplify this
+    def get_quantity_from_default_correlation(self, key, corr_name=None):
         # nothing found in input_dict -> use default correlation
         while True:
+            # default corr_name is the name of the key itself
+            corr_name = key if corr_name is None else corr_name
             # compute quantity using correlation, and if needed retrieve quantities it depends on
-            try:
-                corr_name = (
-                    key if corr_name is None else corr_name
-                )  # default corr_name is the name of the key itself
-                quantity = c.correlations_dict[corr_name](self)
-                # compute the quantity using the default correlation function
-                self.quantities_dict["computed"][key] = {
-                    "quantity": str(quantity),
-                    "correlation": corr_name,
-                }
-                break
-            except KeyError:
+            if corr_name not in c.correlations_dict.keys():
                 raise KeyError(
-                    f"Correlation for '{corr_name}' not found in correlations dictionary. Missing a required input or wrong correlation name. Available correlations: {list(c.correlations_dict.keys())}"
+                    f"Correlation for '{key}' not found in correlations dictionary. Missing a required input or wrongcorrelation name. Available correlations: {list(c.correlations_dict.keys())}"
                 )
+            try:
+                # compute the quantity using the default correlation function
+                quantity = c.correlations_dict[corr_name](self)
+                break
             except AttributeError as e:
                 missing_attr = str(e).split("attribute '")[1].split("'")[0]
                 print(f"AttributeError: missing attribute '{missing_attr}'")
                 setattr(
                     self, missing_attr, self._get(missing_attr)
                 )  # recursively get missing attributes
-        if VERBOSE:
-            print(f"{key} = {quantity} \t calculated using default correlation")
 
         return quantity
 
