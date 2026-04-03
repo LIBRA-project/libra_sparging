@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "libra_sparging"
+version = "0.1.0"
+description = "A finite element model for sparging processes"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "LICENSE"}
+authors = [
+    {name = "Author Name", email = "author@example.com"},
+]
+keywords = ["FEM", "sparging", "dolfinx"]
+classifiers = [
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Development Status :: 3 - Alpha",
+]
+
+dependencies = [
+    "fenics-dolfinx",
+    "matplotlib",
+    "pyvista",
+    "pyyaml",
+    "numpy",
+    "scipy",
+    "pandas",
+    "pint",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+
+[project.urls]
+Repository = "https://github.com/libra_project/libra_sparging"
+
+[tool.setuptools]
+packages = ["sparging"]
+package-dir = {"" = "src"}
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+python_files = "test_*.py"
+addopts = "-v"
+
+[tool.setuptools.package-data]
+sparging = ["*.yaml", "*.yml"]

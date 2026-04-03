@@ -2,6 +2,7 @@ name: libra_sparging
 channels:
   - conda-forge
 dependencies:
+  - python>=3.12
   - fenics-dolfinx
   - matplotlib
   - pyvista
@@ -9,3 +10,4 @@ dependencies:
   - numpy
   - scipy
   - pandas
+  - pint
