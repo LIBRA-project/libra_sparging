@@ -19,113 +19,7 @@ import json
 import inspect
 import sparging.correlations as c
 
-from sparging.config import *
-
-
-@dataclass
-class SimulationResults:
-    times: list
-    c_T2_solutions: list
-    y_T2_solutions: list
-    x_ct: np.ndarray
-    x_y: np.ndarray
-    inventories_T2_salt: np.ndarray
-    source_T2: list
-    fluxes_T2: list
-    sim_input: SimulationInput
-
-    keys_to_ignore_results = [  # TODO do it the other way: keys_to_include_results
-        "c_T2_solutions",
-        "y_T2_solutions",
-        "x_ct",
-        "x_y",
-        "inventories_T2_salt",
-        "times",
-        "source_T2",
-        "fluxes_T2",
-        "sim_input",
-    ]
-
-    namespace = {
-        "ramp": lambda s, e: helpers.string_to_ramp(times, s, e),
-        "step": lambda s: helpers.string_to_step(times, s),
-    }
-
-    def to_yaml(self, output_path: str):
-        sim_dict = self.sim_input.__dict__.copy()
-        helpers.setup_yaml()
-
-        # structure the output
-        output = {
-            "metadata": {
-                "git_commit": helpers.get_git_hash(),
-                "date": datetime.now().isoformat(),
-            },
-        }
-        sim_dict.pop(
-            "quantities_dict"
-        )  # remove quantities_dict from input for cleaner output
-
-        output["input"] = {}
-        for key, value in sim_dict.items():
-            output["input"][key] = str(value)
-
-        output["results"] = self.__dict__.copy()
-        # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
-        for key in self.keys_to_ignore_results:
-            output["results"].pop(key, None)
-
-        with open(output_path, "w") as f:
-            yaml.dump(output, f, sort_keys=False)
-
-    def to_json(self, output_path: str):
-        sim_dict = self.sim_input.quantities_dict.copy()
-
-        # structure the output
-        output = {
-            "metadata": {
-                "git_commit": helpers.get_git_hash(),
-                "date": datetime.now().isoformat(),
-            },
-        }
-        if sim_dict.get("inputed"):
-            output["input parameters"] = sim_dict["inputed"]
-        if sim_dict.get("computed"):
-            output["calculated properties"] = sim_dict["computed"]
-        output["results"] = self.__dict__.copy()
-
-        # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
-        for key in self.keys_to_ignore_results:
-            output["results"].pop(key, None)
-
-        for key, value in output.items():
-            if isinstance(value, np.ndarray):
-                # convert numpy arrays to lists for JSON serialization
-                output[key] = value.tolist()
-                print(
-                    "found list in results, converting to list for JSON serialization"
-                )
-
-        with open(output_path, "w") as f:
-            json.dump(output, f, indent=3)
-
-    def profiles_to_csv(self, output_path: str):
-        """save c_T2 and y_T2 profiles at all time steps to csv files, one for c_T2 and one for y_T2, with columns for each time step"""
-        import pandas as pd
-
-        df_c_T2 = pd.DataFrame({"x": self.x_ct})
-        df_y_T2 = pd.DataFrame({"x": self.x_y})
-
-        # add one column for each profile
-        for i, (c_T2_profile, y_T2_profile) in enumerate(
-            zip(self.c_T2_solutions, self.y_T2_solutions)
-        ):
-            df_c_T2[f"c_T2_t{i}"] = c_T2_profile
-            df_y_T2[f"y_T2_t{i}"] = y_T2_profile
-
-        df_c_T2.to_csv(output_path + "_c_T2.csv", index=False)
-        df_y_T2.to_csv(output_path + "_y_T2.csv", index=False)
-
+from sparging.config import ureg, const_R, const_g, VERBOSE
 
 hours_to_seconds = 3600
 days_to_seconds = 24 * hours_to_seconds
@@ -313,6 +207,112 @@ class SimulationInput:
                 if not name.startswith("_") and not inspect.isfunction(value)
             ]
         )
+
+
+@dataclass
+class SimulationResults:
+    times: list
+    c_T2_solutions: list
+    y_T2_solutions: list
+    x_ct: np.ndarray
+    x_y: np.ndarray
+    inventories_T2_salt: np.ndarray
+    source_T2: list
+    fluxes_T2: list
+    sim_input: SimulationInput
+
+    keys_to_ignore_results = [  # TODO do it the other way: keys_to_include_results
+        "c_T2_solutions",
+        "y_T2_solutions",
+        "x_ct",
+        "x_y",
+        "inventories_T2_salt",
+        "times",
+        "source_T2",
+        "fluxes_T2",
+        "sim_input",
+    ]
+
+    # FIXME
+    namespace = {
+        "ramp": lambda s, e: helpers.string_to_ramp(times, s, e),
+        "step": lambda s: helpers.string_to_step(times, s),
+    }
+
+    def to_yaml(self, output_path: str):
+        sim_dict = self.sim_input.__dict__.copy()
+        helpers.setup_yaml()
+
+        # structure the output
+        output = {
+            "metadata": {
+                "git_commit": helpers.get_git_hash(),
+                "date": datetime.now().isoformat(),
+            },
+        }
+        sim_dict.pop(
+            "quantities_dict"
+        )  # remove quantities_dict from input for cleaner output
+
+        output["input"] = {}
+        for key, value in sim_dict.items():
+            output["input"][key] = str(value)
+
+        output["results"] = self.__dict__.copy()
+        # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
+        for key in self.keys_to_ignore_results:
+            output["results"].pop(key, None)
+
+        with open(output_path, "w") as f:
+            yaml.dump(output, f, sort_keys=False)
+
+    def to_json(self, output_path: str):
+        sim_dict = self.sim_input.quantities_dict.copy()
+
+        # structure the output
+        output = {
+            "metadata": {
+                "git_commit": helpers.get_git_hash(),
+                "date": datetime.now().isoformat(),
+            },
+        }
+        if sim_dict.get("inputed"):
+            output["input parameters"] = sim_dict["inputed"]
+        if sim_dict.get("computed"):
+            output["calculated properties"] = sim_dict["computed"]
+        output["results"] = self.__dict__.copy()
+
+        # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
+        for key in self.keys_to_ignore_results:
+            output["results"].pop(key, None)
+
+        for key, value in output.items():
+            if isinstance(value, np.ndarray):
+                # convert numpy arrays to lists for JSON serialization
+                output[key] = value.tolist()
+                print(
+                    "found list in results, converting to list for JSON serialization"
+                )
+
+        with open(output_path, "w") as f:
+            json.dump(output, f, indent=3)
+
+    def profiles_to_csv(self, output_path: str):
+        """save c_T2 and y_T2 profiles at all time steps to csv files, one for c_T2 and one for y_T2, with columns for each time step"""
+        import pandas as pd
+
+        df_c_T2 = pd.DataFrame({"x": self.x_ct})
+        df_y_T2 = pd.DataFrame({"x": self.x_y})
+
+        # add one column for each profile
+        for i, (c_T2_profile, y_T2_profile) in enumerate(
+            zip(self.c_T2_solutions, self.y_T2_solutions)
+        ):
+            df_c_T2[f"c_T2_t{i}"] = c_T2_profile
+            df_y_T2[f"y_T2_t{i}"] = y_T2_profile
+
+        df_c_T2.to_csv(output_path + "_c_T2.csv", index=False)
+        df_y_T2.to_csv(output_path + "_y_T2.csv", index=False)
 
 
 def solve(
