@@ -113,7 +113,6 @@ class SimulationInput:
         corr_name: str = None,
     ):
         """get a parameter value from input_dict, or compute it from correlation if not specified in input_dict
-        - input_dict: dictionary of input values and/or correlation names
         - key: name of the parameter to get in the input_dict
         - corr_name: name of the correlation to use if not specified in input_dict, will be the key itself by default
         """
