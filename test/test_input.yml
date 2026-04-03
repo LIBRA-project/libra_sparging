@@ -1,6 +1,6 @@
 # LIBRA Pi input
 tank_height: 1 m
-D: 0.5 m     # m, tank diameter
+tank_diameter: 0.5 m     # m, tank diameter
 nozzle_diameter: 0.001 m  # m
 nb_nozzle: 10 # number of nozzles at bottom of the tank 
 n_gen_rate: 1.0e+09  neutron/s  # neutron generation rate
@@ -8,7 +8,6 @@ tbr: 0.1 triton / neutron # tritium breeding ratio
 P_top: 1 bar # Pa, gas pressure at the top of the tank
 T: 600 celsius    # temperature [K] = 600°C temperature
 flow_g: 400 sccm
-sourrrce_T: 1e-15 molT/s
 # h_l: from h_l_malara
 
 dt: 0.2 hours

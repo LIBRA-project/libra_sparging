@@ -28,7 +28,7 @@ def test_model_solve_incomplete_input():
     Tests SimulationInput raises error when required input is missing.
     """
     params = get_input("test/test_input.yml")
-    params.pop("D")  # remove bubble velocity to test default value
+    params.pop("tank_diameter")  # remove bubble velocity to test default value
 
     with pytest.raises(KeyError, match="Missing a required input"):
         model.SimulationInput(params)
