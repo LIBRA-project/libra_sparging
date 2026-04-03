@@ -15,7 +15,12 @@ conda env create -f environment.yml
 conda activate libra_sparging
 ```
 
+```
+python -m pip install -e .[dev]
+```
+
+## How to run tests
 
 ```
-python model.py
+python -m pytest test
 ```

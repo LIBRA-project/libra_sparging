@@ -1,5 +1,9 @@
 from __future__ import annotations
-from config import *
+from sparging.config import ureg, const_R, const_g, VERBOSE
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sparging.model import SimulationInput
 import numpy as np
 import scipy.constants as const
 import warnings
@@ -77,7 +81,7 @@ def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
     )
 
 
-def get_Re(input: SimulationInput) -> float:
+def get_Re(input: "SimulationInput") -> float:
     try:
         u = input.u_g0
         Re_old = input.Re
@@ -97,7 +101,7 @@ def get_Re(input: SimulationInput) -> float:
     return Re.to("dimensionless")
 
 
-def get_u_g0(input: SimulationInput) -> float:  # TODO move inside class ?
+def get_u_g0(input: "SimulationInput") -> float:  # TODO move inside class ?
     """
     bubble initial velocity [m/s], correlation for terminal velocity from Clift 1978
     """
@@ -121,7 +125,7 @@ def get_u_g0(input: SimulationInput) -> float:  # TODO move inside class ?
     return u_g0
 
 
-def get_eps_g(input: SimulationInput) -> float:
+def get_eps_g(input: "SimulationInput") -> float:
     """computes gas void fraction from ideal gas law and Young-Laplace pressure in the bubbles (neglecting hydrostatic pressure variation)"""
     eps_g = (
         const_R
@@ -142,7 +146,7 @@ def get_eps_g(input: SimulationInput) -> float:
 def get_h_higbie(D_l: float, u_g: float, d_b: float) -> float:
     """mass transfer coefficient [m/s] for tritium in liquid FLiBe using Higbie penetration model"""
     h_l = (
-        (D_l * u_g) / (ufl.pi * d_b)
+        (D_l * u_g) / (const.pi * d_b)
     ) ** 0.5  # mass transport coefficient Higbie penetration model
     return h_l
 

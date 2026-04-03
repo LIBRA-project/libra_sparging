@@ -1,11 +1,11 @@
 import yaml
 import numpy as np
-from config import *
+from sparging.config import *
 
 
 # TODO this could be a dataclass?
 # see issue #3
-def get_input(yaml_input_path):
+def get_input(yaml_input_path) -> dict:
     with open(yaml_input_path, "r") as file:
         params = yaml.safe_load(file)
         if "input" in params:
