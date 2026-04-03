@@ -27,7 +27,7 @@ jobs:
     - name: Run tests
       shell: bash -l {0}
       run: |
-        python - m pytest test
+        python -m pytest test
     
     # - name: Upload to codecov
     #   uses: codecov/codecov-action@v4
