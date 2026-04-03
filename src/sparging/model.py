@@ -33,7 +33,7 @@ SEPARATOR_KEYWORD = "from"
 # log.set_log_level(log.LogLevel.INFO)
 
 
-class SimulationInput:
+class SimulationInputBak:
     P_0: pint.Quantity
     eps_l: pint.Quantity
     eps_g: pint.Quantity

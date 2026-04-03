@@ -27,6 +27,7 @@ class CorrelationType(enum.Enum):
     REYNOLDS_NUMBER = "Re"
     BUBBLE_VELOCITY = "u_g0"
     GAS_PHASE_DISPERSION = "E_g"
+    PRESSURE = "P"
 
 
 @dataclass
@@ -65,7 +66,7 @@ class CorrelationGroup(list[Correlation]):
         raise ValueError(f"Correlation with identifier {identifier} not found in group")
 
 
-correlations = CorrelationGroup([])
+all_correlations = CorrelationGroup([])
 
 U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
 
@@ -79,7 +80,7 @@ rho_l = Correlation(
     description="density of Li2BeF4 as a function of temperature",
     input_units=["kelvin"],
 )
-correlations.append(rho_l)
+all_correlations.append(rho_l)
 
 mu_l = Correlation(
     identifier="mu_l",
@@ -91,7 +92,7 @@ mu_l = Correlation(
     description="dynamic viscosity of Li2BeF4 as a function of temperature",
     input_units=["kelvin"],
 )
-correlations.append(mu_l)
+all_correlations.append(mu_l)
 
 sigma_l = Correlation(
     identifier="sigma_l",
@@ -103,7 +104,7 @@ sigma_l = Correlation(
     description="surface tension of Li2BeF4 as a function of temperature",
     input_units=["kelvin"],
 )
-correlations.append(sigma_l)
+all_correlations.append(sigma_l)
 
 # TODO this could leverage HTM
 D_l = Correlation(
@@ -117,7 +118,7 @@ D_l = Correlation(
     description="diffusivity of tritium in liquid FLiBe as a function of temperature",
     input_units=["kelvin"],
 )
-correlations.append(D_l)
+all_correlations.append(D_l)
 
 K_s = Correlation(
     identifier="K_s",
@@ -130,7 +131,7 @@ K_s = Correlation(
     description="solubility of tritium in liquid FLiBe as a function of temperature",
     input_units=["kelvin"],
 )
-correlations.append(K_s)
+all_correlations.append(K_s)
 
 d_b = Correlation(
     identifier="d_b",
@@ -140,7 +141,7 @@ d_b = Correlation(
     corr_type=CorrelationType.BUBBLE_DIAMETER,
     input_units=["m**3/s", "m", "dimensionless"],
 )
-correlations.append(d_b)
+all_correlations.append(d_b)
 
 E_o = Correlation(
     identifier="Eo",
@@ -150,7 +151,7 @@ E_o = Correlation(
     corr_type=CorrelationType.EOTVOS_NUMBER,
     input_units=["kg/m**3", "m", "N/m"],
 )
-correlations.append(E_o)
+all_correlations.append(E_o)
 
 Mo = Correlation(
     identifier="Mo",
@@ -160,7 +161,7 @@ Mo = Correlation(
     corr_type=CorrelationType.MORTON_NUMBER,
     input_units=["kg/m**3", "Pa*s", "kg/m**3", "N/m"],
 )
-correlations.append(Mo)
+all_correlations.append(Mo)
 
 Sc = Correlation(
     identifier="Sc",
@@ -168,20 +169,21 @@ Sc = Correlation(
     corr_type=CorrelationType.SCHMIDT_NUMBER,
     input_units=["m**2/s", "m**2/s"],
 )
-correlations.append(Sc)
+all_correlations.append(Sc)
 
-# NOTE on temporise
-# Re = Correlation(
-#     identifier="Re",
-#     function=lambda input: get_Re(input),  # Reynolds number
-#     corr_type=CorrelationType.REYNOLDS_NUMBER,
-#     input_units=None,  # TODO this correlation needs access to multiple input parameters, need to figure out how to handle this
-# )
+Re = Correlation(
+    identifier="Re",
+    function=lambda rho_l, u, d_b, mu_l: (rho_l * u * d_b / mu_l).to(
+        "dimensionless"
+    ),  # Reynolds number
+    corr_type=CorrelationType.REYNOLDS_NUMBER,
+    input_units=["kg/m**3", "m/s", "m", "Pa*s"],
+)
 
 u_g0 = Correlation(
     identifier="u_g0",
-    function=lambda Eo, Mo, Re, mu_l, rho_l, d_b: get_u_g0(
-        Eo=Eo, Mo=Mo, Re=Re, mu_l=mu_l, rho_l=rho_l, d_b=d_b
+    function=lambda Eo, Mo, mu_l, rho_l, d_b: get_u_g0(
+        Eo=Eo, Mo=Mo, mu_l=mu_l, rho_l=rho_l, d_b=d_b
     ),  # initial gas velocity
     corr_type=CorrelationType.BUBBLE_VELOCITY,
     input_units=[
@@ -193,14 +195,14 @@ u_g0 = Correlation(
         "m",
     ],
 )
-correlations.append(u_g0)
+all_correlations.append(u_g0)
 
 eps_g = Correlation(
     identifier="eps_g",
-    function=lambda temperature, P_0, sigma_l, d_b, flow_g, tank_diameter, u_g0: (
+    function=lambda temperature, P_bottom, sigma_l, d_b, flow_g, tank_diameter, u_g0: (
         get_eps_g(
             T=temperature,
-            P_0=P_0,
+            P_0=P_bottom,
             sigma_l=sigma_l,
             d_b=d_b,
             flow_g=flow_g,
@@ -219,7 +221,7 @@ eps_g = Correlation(
         "m/s",
     ],
 )
-correlations.append(eps_g)
+all_correlations.append(eps_g)
 
 h_l_higbie = Correlation(
     identifier="h_l_higbie",
@@ -231,7 +233,7 @@ h_l_higbie = Correlation(
     description="mass transfer coefficient for tritium in liquid FLiBe using Higbie penetration model",
     input_units=["m**2/s", "m/s", "m"],
 )
-correlations.append(h_l_higbie)
+all_correlations.append(h_l_higbie)
 
 h_l_malara = Correlation(
     identifier="h_l_malara",
@@ -243,7 +245,7 @@ h_l_malara = Correlation(
     description="mass transfer coefficient for tritium in liquid FLiBe using Malara 1995 correlation (used for inert gas stripping from breeder droplets, may not be valid here)",
     input_units=["m**2/s", "m"],
 )
-correlations.append(h_l_malara)
+all_correlations.append(h_l_malara)
 
 h_l_briggs = Correlation(
     identifier="h_l_briggs",
@@ -255,7 +257,7 @@ h_l_briggs = Correlation(
     description="mass transfer coefficient for tritium in liquid FLiBe using Briggs 1970 correlation",
     input_units=["dimensionless", "dimensionless", "m**2/s", "m"],
 )
-correlations.append(h_l_briggs)
+all_correlations.append(h_l_briggs)
 
 E_g = Correlation(
     identifier="E_g",
@@ -267,7 +269,41 @@ E_g = Correlation(
     description="gas phase axial dispersion coefficient [m2/s], Malara 1995 correlation models dispersion of the gas velocity distribution around the mean bubble velocity",
     input_units=["m", "m/s"],
 )
-correlations.append(E_g)
+all_correlations.append(E_g)
+
+drho = Correlation(
+    identifier="drho",
+    function=lambda rho_l, rho_g: (rho_l - rho_g).to(
+        "kg/m**3"
+    ),  # density difference between liquid and gas
+    corr_type=CorrelationType.DENSITY,
+    input_units=["kg/m**3", "kg/m**3"],
+)
+all_correlations.append(drho)
+
+
+he_molar_mass = ureg("4.003e-3 kg/mol")
+rho_g = Correlation(
+    identifier="rho_g",
+    function=lambda temperature, P_bottom: ureg.Quantity(
+        (P_bottom * he_molar_mass / (const_R * temperature.to("kelvin"))).to("kg/m**3")
+    ),  # ideal gas law for density of gas phase
+    corr_type=CorrelationType.DENSITY,
+    description="density of gas phase calculated using ideal gas law",
+    input_units=["kelvin", "Pa"],
+)
+all_correlations.append(rho_g)
+
+P_bottom = Correlation(
+    identifier="P_bottom",
+    function=lambda P_top, rho_l, height: (
+        P_top + rho_l * const_g * height
+    ),  # convert pressure to Pascals
+    corr_type=CorrelationType.PRESSURE,
+    description="pressure at the bottom of the system, converted to Pascals",
+    input_units=["Pa"],
+)
+all_correlations.append(P_bottom)
 
 
 def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
@@ -290,27 +326,7 @@ def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
     )
 
 
-def get_Re(input: "SimulationInput") -> float:
-    try:
-        u = input.u_g0
-        Re_old = input.Re
-    except AttributeError:
-        if VERBOSE:
-            print("in get_Re, use default bubble velocity")
-        u = U_G0_DEFAULT * ureg("m/s")
-        Re_old = 0
-
-    Re = input.rho_l * u * input.d_b / input.mu_l
-    if (
-        Re_old != 0 and np.abs(np.log10(Re / Re_old)) > 1
-    ):  # check if Reynolds number changed by more than an order of magnitude
-        warnings.warn(
-            f"Re number changed significantly from {Re_old:.2e} to {Re:.2e}, bubble velocity u = {u} might be off. Check assumed bubble velocity in initial Reynolds number calculation"
-        )
-    return Re.to("dimensionless")
-
-
-def get_u_g0(Eo, Mo, Re, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
+def get_u_g0(Eo, Mo, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
     """
     bubble initial velocity [m/s], correlation for terminal velocity from Clift 1978
     """
@@ -322,10 +338,8 @@ def get_u_g0(Eo, Mo, Re, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
     elif H > 2:
         J = 0.94 * H**0.757
     else:
-        J = Re * Mo**0.149 + 0.857
-        warnings.warn(
-            f"Warning: low Reynolds number {Re:.2e}, bubble size d_b = {d_b} m might be too small."
-            f"Clift correlation will use default value for bubble velocity u_g0 = {U_G0_DEFAULT} m/s"
+        raise ValueError(
+            f"Clift correlation is not valid for H = {H}, which is calculated based on the input parameters. Check the input parameters and the validity of the correlation for the given range of parameters."
         )
     u_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
     if u_g0 > ureg("1 m/s") or u_g0 < ureg("0.1 m/s"):
