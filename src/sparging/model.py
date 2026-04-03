@@ -34,6 +34,25 @@ SEPARATOR_KEYWORD = "from"
 
 
 class SimulationInput:
+    P_0: pint.Quantity
+    eps_l: pint.Quantity
+    eps_g: pint.Quantity
+    E_g: pint.Quantity
+    D_l: pint.Quantity
+    h_l: pint.Quantity
+    K_s: pint.Quantity
+    tank_height: pint.Quantity
+    tank_diameter: pint.Quantity
+    nozzle_diameter: pint.Quantity
+    nb_nozzle: int
+    T: pint.Quantity
+    flow_g: pint.Quantity
+    d_b: pint.Quantity
+    Eo: pint.Quantity
+    Mo: pint.Quantity
+    Sc: pint.Quantity
+    Re: pint.Quantity
+
     def __init__(self, input_dict: dict):
         self.input_dict = input_dict.copy()
         self.quantities_dict = {
@@ -63,9 +82,8 @@ class SimulationInput:
         self.nu_l = self.mu_l / self.rho_l
         self.D_l = self._get("D_l").to("m**2/s")
         self.K_s = self._get("K_s").to("mol/m**3/Pa")
-        self.P_0 = (self.P_top + self.rho_l * const_g * self.tank_height).to(
-            "bar"
-        )  # gas inlet pressure [Pa] = hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
+        self.P_0 = (self.P_top + self.rho_l * const_g * self.tank_height).to("bar")
+        # gas inlet pressure [Pa] = hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
         self.flow_g_vol = (self.flow_g.to("mol/s") * const_R * self.T / self.P_0).to(
             "m**3/s"
         )  # inlet gas volumetric flow rate
@@ -319,18 +337,23 @@ def solve(
 ):
     dt = 0.2 * ureg("hours").to("seconds").magnitude
     # unpack parameters
-    tank_height, a, h_l, K_s, P_0, T, eps_g, eps_l, E_g, D_l = (
-        input.tank_height.to("m").magnitude,
-        input.a.to("1/m").magnitude,
-        input.h_l.to("m/s").magnitude,
-        input.K_s.to("mol/m**3/Pa").magnitude,
-        input.P_0.to("Pa").magnitude,
-        input.T.to("K").magnitude,
-        input.eps_g.to("dimensionless").magnitude,
-        input.eps_l.to("dimensionless").magnitude,
-        input.E_g.to("m**2/s").magnitude,
-        input.D_l.to("m**2/s").magnitude,
-    )
+    tank_height = input.tank_height.to("m").magnitude
+    tank_area = input.tank_area.to("m**2").magnitude
+    tank_volume = input.tank_volume.to("m**3").magnitude
+    a = input.a.to("1/m").magnitude
+    h_l = input.h_l.to("m/s").magnitude
+    K_s = input.K_s.to("mol/m**3/Pa").magnitude
+    P_0 = input.P_0.to("Pa").magnitude
+    T = input.T.to("K").magnitude
+    eps_g = input.eps_g.to("dimensionless").magnitude
+    eps_l = input.eps_l.to("dimensionless").magnitude
+    E_g = input.E_g.to("m**2/s").magnitude
+    D_l = input.D_l.to("m**2/s").magnitude
+    u_g0 = input.u_g0.to("m/s").magnitude
+    # convert T generation rate to T2 generation rate for the gas phase [mol T2 /m3/s],
+    # assuming bred T immediately combines to T2
+    source_T2 = input.source_T.to("molT2/s/m**3").magnitude
+
     # tank_area = np.pi * (params["D"] / 2) ** 2
     # tank_volume = tank_area * tank_height
 
@@ -350,19 +373,16 @@ def solve(
     c_T2, y_T2 = ufl.split(u)
     c_T2_n, y_T2_n = ufl.split(u_n)
 
-    vel_x = input.u_g0.magnitude  # TODO velocity should vary with hydrostatic pressure
+    vel_x = u_g0  # TODO velocity should vary with hydrostatic pressure
     vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
 
     """ vel = fem_func(U)
         v,interpolate(lambda x: v0 + 2*x[0])"""
 
-    h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(input.h_l.magnitude))
+    h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
 
-    source_T2 = input.source_T.to(
-        "molT2/s/m**3"
-    )  # convert T generation rate to T2 generation rate for the gas phase [mol T2 /m3/s], assuming bred T immediately combines to T2
     gen_T2 = dolfinx.fem.Constant(
-        mesh, PETSc.ScalarType(source_T2.magnitude)
+        mesh, PETSc.ScalarType(source_T2)
     )  # generation term [mol T2 /m3/s]
 
     # VARIATIONAL FORMULATION
@@ -481,17 +501,12 @@ def solve(
         c_T2_solutions.append(c_T2_vals.copy())
         y_T2_solutions.append(y_T2_vals.copy())
         sources_T2.append(
-            gen_T2.value.copy() * input.tank_volume.magnitude
+            gen_T2.value.copy() * tank_volume
         )  # total T generation rate in the tank [mol/s]
 
         flux_T2 = dolfinx.fem.assemble_scalar(
             dolfinx.fem.form(
-                input.tank_area.magnitude
-                * vel_x
-                * P_0
-                / (const.R * T)
-                * y_T2_post
-                * ds(2)
+                tank_area * vel_x * P_0 / (const.R * T) * y_T2_post * ds(2)
             )
         )  # total T flux at the outlet [mol/s]
 
@@ -512,7 +527,7 @@ def solve(
             dolfinx.fem.form(-E_g * ufl.inner(ufl.grad(P_0 * y_T2_post), n) * ds(1))
         )  # total T dispersive flux at the inlet [Pa T2 /s/m2]
         flux_T2_inlet *= 1 / (const.R * T) * T2_to_T  # convert to mol T/s/m2
-        flux_T2_inlet *= input.tank_area.magnitude  # convert to mol T/s
+        flux_T2_inlet *= tank_area  # convert to mol T/s
 
         # fluxes_T2.append(flux_T2 + flux_T2_inlet)
         fluxes_T2.append(flux_T2)
@@ -520,9 +535,7 @@ def solve(
         inventory_T2_salt = dolfinx.fem.assemble_scalar(
             dolfinx.fem.form(c_T2_post * ufl.dx)
         )
-        inventory_T2_salt *= (
-            input.tank_area.magnitude
-        )  # get total amount of T2 in [mol]
+        inventory_T2_salt *= tank_area  # get total amount of T2 in [mol]
         inventories_T2_salt.append(inventory_T2_salt)
 
         # advance time
@@ -530,6 +543,8 @@ def solve(
 
     inventories_T2_salt = np.array(inventories_T2_salt)
 
+    # TODO reattach units using wrapping
+    # https://pint.readthedocs.io/en/stable/advanced/performance.html#a-safer-method-wrapping
     results = SimulationResults(
         times=times,
         c_T2_solutions=c_T2_solutions,
