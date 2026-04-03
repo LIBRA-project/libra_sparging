@@ -1,6 +1,6 @@
 import yaml
 import numpy as np
-from config import *
+from sparging.config import *
 
 
 # TODO this could be a dataclass?

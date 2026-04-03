@@ -13,13 +13,13 @@ from datetime import datetime
 
 # from dolfinx import log
 import yaml
-import helpers
+import sparging.helpers as helpers
 import json
 
 import inspect
-import correlations as c
+import sparging.correlations as c
 
-from config import *
+from sparging.config import *
 
 
 @dataclass

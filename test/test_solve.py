@@ -1,5 +1,5 @@
-import model
-from helpers import get_input
+import sparging.model as model
+from sparging.helpers import get_input
 import pytest
 
 

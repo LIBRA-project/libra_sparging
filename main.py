@@ -1,8 +1,8 @@
-import model
+import src.sparging.model as model
 import sys
 import os
-from animation import create_animation
-from helpers import get_input
+from sparging.animation import create_animation
+from sparging.helpers import get_input
 
 
 ANIMATE = True

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from config import *
+from sparging.config import *
 import numpy as np
 import scipy.constants as const
 import warnings

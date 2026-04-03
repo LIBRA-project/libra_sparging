@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from matplotlib.widgets import Slider, Button
-from model import SimulationResults
+from sparging.model import SimulationResults
 
 molar_mass_T2 = 3.016 * 2  # g/mol T2
 specific_activity_tritium = 3.57e14  # Bq/g
