@@ -8,57 +8,266 @@ import numpy as np
 import scipy.constants as const
 import warnings
 
+from dataclasses import dataclass
+import enum
+
+
+class CorrelationType(enum.Enum):
+    MASS_TRANSFER_COEFF = "h_l"
+    DENSITY = "rho_l"
+    DIFFUSIVITY = "D_l"
+    SOLUBILITY = "K_S"
+    VISCOSITY = "mu"
+    SURFACE_TENSION = "sigma"
+    GAS_VOID_FRACTION = "eps_g"
+    BUBBLE_DIAMETER = "d_b"
+    EOTVOS_NUMBER = "Eo"
+    MORTON_NUMBER = "Mo"
+    SCHMIDT_NUMBER = "Sc"
+    REYNOLDS_NUMBER = "Re"
+    BUBBLE_VELOCITY = "u_g0"
+    GAS_PHASE_DISPERSION = "E_g"
+
+
+@dataclass
+class Correlation:
+    identifier: str
+    function: callable
+    corr_type: CorrelationType
+    source: str | None = None
+    description: str | None = None
+    input_units: list[str] | None = None
+
+    def __call__(self, **kwargs):
+
+        # check the dimensions are correct
+        if self.input_units is not None:
+            for arg_name, expected_dimension in zip(kwargs, self.input_units):
+                arg = kwargs[arg_name]
+                if not isinstance(arg, ureg.Quantity):
+                    raise ValueError(
+                        f"Invalid input: expected a pint.Quantity with units of {expected_dimension}, got {arg} of type {type(arg)}"
+                    )
+                if not arg.check(expected_dimension):
+                    raise ValueError(
+                        f"Invalid input: expected dimensions of {expected_dimension}, got {arg.dimensionality}"
+                    )
+        return self.function(**kwargs).to_base_units()
+
+    # TODO add a method that checks the validity of the input parameters based on the range of validity of the correlation, if provided in the description or source. This method could be called before running the simulation to warn the user if they are using a correlation outside of its validated range.
+
+
+class CorrelationGroup(list[Correlation]):
+    def __call__(self, identifier: str) -> Correlation:
+        for corr in self:
+            if corr.identifier == identifier:
+                return corr
+        raise ValueError(f"Correlation with identifier {identifier} not found in group")
+
+
+correlations = CorrelationGroup([])
+
 U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
 
-
-correlations_dict = {
-    "rho_l": lambda input: ureg.Quantity(
-        2245 - 0.424 * input.T.to("celsius").magnitude, "kg/m**3"
+rho_l = Correlation(
+    identifier="rho_l",
+    function=lambda temperature: ureg.Quantity(
+        2245 - 0.424 * temperature.to("celsius").magnitude, "kg/m**3"
     ),  # density of Li2BeF4, Vidrio 2022
-    "mu_l": lambda input: ureg.Quantity(
-        0.116e-3 * np.exp(3755 / input.T.to("kelvin").magnitude), "Pa*s"
+    corr_type=CorrelationType.DENSITY,
+    source="Vidrio 2022",
+    description="density of Li2BeF4 as a function of temperature",
+    input_units=["kelvin"],
+)
+correlations.append(rho_l)
+
+mu_l = Correlation(
+    identifier="mu_l",
+    function=lambda temperature: ureg.Quantity(
+        0.116e-3 * np.exp(3755 / temperature.to("kelvin").magnitude), "Pa*s"
     ),  # kinematic viscosity of Li2BeF4, Cantor 1968
-    "sigma_l": lambda input: ureg.Quantity(
-        260 - 0.12 * input.T.to("celsius").magnitude, "dyn/cm"
+    corr_type=CorrelationType.VISCOSITY,
+    source="Cantor 1968",
+    description="dynamic viscosity of Li2BeF4 as a function of temperature",
+    input_units=["kelvin"],
+)
+correlations.append(mu_l)
+
+sigma_l = Correlation(
+    identifier="sigma_l",
+    function=lambda temperature: ureg.Quantity(
+        260 - 0.12 * temperature.to("celsius").magnitude, "dyn/cm"
     ).to("N/m"),  # surface tension of Li2BeF4,Cantor 1968
-    "D_l": lambda input: ureg.Quantity(
-        9.3e-7 * np.exp(-42e3 / (const.R * input.T.to("kelvin").magnitude)), "m**2/s"
+    corr_type=CorrelationType.SURFACE_TENSION,
+    source="Cantor 1968",
+    description="surface tension of Li2BeF4 as a function of temperature",
+    input_units=["kelvin"],
+)
+correlations.append(sigma_l)
+
+# TODO this could leverage HTM
+D_l = Correlation(
+    identifier="D_l",
+    function=lambda temperature: ureg.Quantity(
+        9.3e-7 * np.exp(-42e3 / (const_R * temperature.to("kelvin").magnitude)),
+        "m**2/s",
     ),  # diffusivity of T in FLiBe, Calderoni 2008
-    "K_s": lambda input: ureg.Quantity(
-        7.9e-2 * np.exp(-35e3 / (const.R * input.T.to("kelvin").magnitude)),
+    corr_type=CorrelationType.DIFFUSIVITY,
+    source="Calderoni 2008",
+    description="diffusivity of tritium in liquid FLiBe as a function of temperature",
+    input_units=["kelvin"],
+)
+correlations.append(D_l)
+
+K_s = Correlation(
+    identifier="K_s",
+    function=lambda temperature: ureg.Quantity(
+        7.9e-2 * np.exp(-35e3 / (const_R * temperature.to("kelvin").magnitude)),
         "mol/m**3/Pa",
     ),  # solubility of T in FLiBe, Calderoni 2008
-    "d_b": lambda input: get_d_b(
-        flow_g_vol=input.flow_g_vol,
-        nozzle_diameter=input.nozzle_diameter,
-        nb_nozzle=input.nb_nozzle,
+    corr_type=CorrelationType.SOLUBILITY,
+    source="Calderoni 2008",
+    description="solubility of tritium in liquid FLiBe as a function of temperature",
+    input_units=["kelvin"],
+)
+correlations.append(K_s)
+
+d_b = Correlation(
+    identifier="d_b",
+    function=lambda flow_g_vol, nozzle_diameter, nb_nozzle: get_d_b(
+        flow_g_vol=flow_g_vol, nozzle_diameter=nozzle_diameter, nb_nozzle=nb_nozzle
     ),  # mean bubble diameter, Kanai 2017
-    "Eo": lambda input: (const_g * input.drho * input.d_b**2 / input.sigma_l).to(
+    corr_type=CorrelationType.BUBBLE_DIAMETER,
+    input_units=["m**3/s", "m", "dimensionless"],
+)
+correlations.append(d_b)
+
+E_o = Correlation(
+    identifier="Eo",
+    function=lambda drho, d_b, sigma_l: (const_g * drho * d_b**2 / sigma_l).to(
         "dimensionless"
     ),  # Eotvos number
-    "Mo": lambda input: (
-        input.drho * const_g * input.mu_l**4 / (input.rho_l**2 * input.sigma_l**3)
+    corr_type=CorrelationType.EOTVOS_NUMBER,
+    input_units=["kg/m**3", "m", "N/m"],
+)
+correlations.append(E_o)
+
+Mo = Correlation(
+    identifier="Mo",
+    function=lambda drho, mu_l, rho_l, sigma_l: (
+        drho * const_g * mu_l**4 / (rho_l**2 * sigma_l**3)
     ).to("dimensionless"),  # Morton number
-    "Sc": lambda input: (input.nu_l / input.D_l).to("dimensionless"),  # Schmidt number
-    "Re": lambda input: get_Re(input),  # Reynolds number
-    "u_g0": lambda input: get_u_g0(input),  # initial gas velocity
-    "eps_g": lambda input: get_eps_g(input),  # gas void fraction
-    "h_l_malara": lambda input: get_h_malara(
-        input.D_l, input.d_b
-    ),  # mass transfer coefficient with Malara correlation
-    "h_l_briggs": lambda input: get_h_briggs(
-        input.Re, input.Sc, input.D_l, input.d_b
-    ),  # mass transfer coefficient with Briggs correlation
-    "h_l_higbie": lambda input: get_h_higbie(
-        input.D_l, input.u_g0, input.d_b
+    corr_type=CorrelationType.MORTON_NUMBER,
+    input_units=["kg/m**3", "Pa*s", "kg/m**3", "N/m"],
+)
+correlations.append(Mo)
+
+Sc = Correlation(
+    identifier="Sc",
+    function=lambda nu_l, D_l: (nu_l / D_l).to("dimensionless"),  # Schmidt number
+    corr_type=CorrelationType.SCHMIDT_NUMBER,
+    input_units=["m**2/s", "m**2/s"],
+)
+correlations.append(Sc)
+
+# NOTE on temporise
+# Re = Correlation(
+#     identifier="Re",
+#     function=lambda input: get_Re(input),  # Reynolds number
+#     corr_type=CorrelationType.REYNOLDS_NUMBER,
+#     input_units=None,  # TODO this correlation needs access to multiple input parameters, need to figure out how to handle this
+# )
+
+u_g0 = Correlation(
+    identifier="u_g0",
+    function=lambda Eo, Mo, Re, mu_l, rho_l, d_b: get_u_g0(
+        Eo=Eo, Mo=Mo, Re=Re, mu_l=mu_l, rho_l=rho_l, d_b=d_b
+    ),  # initial gas velocity
+    corr_type=CorrelationType.BUBBLE_VELOCITY,
+    input_units=[
+        "dimensionless",
+        "dimensionless",
+        "dimensionless",
+        "Pa*s",
+        "kg/m**3",
+        "m",
+    ],
+)
+correlations.append(u_g0)
+
+eps_g = Correlation(
+    identifier="eps_g",
+    function=lambda temperature, P_0, sigma_l, d_b, flow_g, tank_diameter, u_g0: (
+        get_eps_g(
+            T=temperature,
+            P_0=P_0,
+            sigma_l=sigma_l,
+            d_b=d_b,
+            flow_g=flow_g,
+            tank_diameter=tank_diameter,
+            u_g0=u_g0,
+        )
+    ),  # gas void fraction
+    corr_type=CorrelationType.GAS_VOID_FRACTION,
+    input_units=[
+        "kelvin",
+        "Pa",
+        "N/m",
+        "m",
+        "m**3/s",
+        "m",
+        "m/s",
+    ],
+)
+correlations.append(eps_g)
+
+h_l_higbie = Correlation(
+    identifier="h_l_higbie",
+    function=lambda D_l, u_g, d_b: get_h_higbie(
+        D_l=D_l, u_g=u_g, d_b=d_b
     ),  # mass transfer coefficient with Higbie correlation
-    "E_g": lambda input: get_E_g(
-        input.tank_diameter, input.u_g0
+    corr_type=CorrelationType.MASS_TRANSFER_COEFF,
+    source="Higbie 1935",
+    description="mass transfer coefficient for tritium in liquid FLiBe using Higbie penetration model",
+    input_units=["m**2/s", "m/s", "m"],
+)
+correlations.append(h_l_higbie)
+
+h_l_malara = Correlation(
+    identifier="h_l_malara",
+    function=lambda D_l, d_b: get_h_malara(
+        D_l=D_l, d_b=d_b
+    ),  # mass transfer coefficient with Malara correlation
+    corr_type=CorrelationType.MASS_TRANSFER_COEFF,
+    source="Malara 1995",
+    description="mass transfer coefficient for tritium in liquid FLiBe using Malara 1995 correlation (used for inert gas stripping from breeder droplets, may not be valid here)",
+    input_units=["m**2/s", "m"],
+)
+correlations.append(h_l_malara)
+
+h_l_briggs = Correlation(
+    identifier="h_l_briggs",
+    function=lambda Re, Sc, D_l, d_b: get_h_briggs(
+        Re=Re, Sc=Sc, D_l=D_l, d_b=d_b
+    ),  # mass transfer coefficient with Briggs correlation
+    corr_type=CorrelationType.MASS_TRANSFER_COEFF,
+    source="Briggs 1970",
+    description="mass transfer coefficient for tritium in liquid FLiBe using Briggs 1970 correlation",
+    input_units=["dimensionless", "dimensionless", "m**2/s", "m"],
+)
+correlations.append(h_l_briggs)
+
+E_g = Correlation(
+    identifier="E_g",
+    function=lambda diameter, u_g: get_E_g(
+        diameter=diameter, u_g=u_g
     ),  # gas phase axial dispersion coefficient
-    "source_T": lambda input: (
-        input.tbr * input.n_gen_rate / (input.tank_volume)
-    ),  # tritium generation source term
-}
+    corr_type=CorrelationType.GAS_PHASE_DISPERSION,
+    source="Malara 1995",
+    description="gas phase axial dispersion coefficient [m2/s], Malara 1995 correlation models dispersion of the gas velocity distribution around the mean bubble velocity",
+    input_units=["m", "m/s"],
+)
+correlations.append(E_g)
 
 
 def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
@@ -101,38 +310,37 @@ def get_Re(input: "SimulationInput") -> float:
     return Re.to("dimensionless")
 
 
-def get_u_g0(input: "SimulationInput") -> float:  # TODO move inside class ?
+def get_u_g0(Eo, Mo, Re, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
     """
     bubble initial velocity [m/s], correlation for terminal velocity from Clift 1978
     """
-    H = (4 / 3 * input.Eo.magnitude * input.Mo.magnitude**-0.149) * (
-        input.mu_l.magnitude / 0.0009
+    H = (4 / 3 * Eo.magnitude * Mo.magnitude**-0.149) * (
+        mu_l.magnitude / 0.0009
     ) ** -0.14
     if H > 59.3:
         J = 3.42 * H**0.441
     elif H > 2:
         J = 0.94 * H**0.757
     else:
-        J = input.Re * input.Mo**0.149 + 0.857
+        J = Re * Mo**0.149 + 0.857
         warnings.warn(
-            f"Warning: low Reynolds number {input.Re:.2e}, bubble size d_b = {input.d_b} m might be too small."
+            f"Warning: low Reynolds number {Re:.2e}, bubble size d_b = {d_b} m might be too small."
             f"Clift correlation will use default value for bubble velocity u_g0 = {U_G0_DEFAULT} m/s"
         )
-    u_g0 = input.mu_l / (input.rho_l * input.d_b) * input.Mo**-0.149 * (J - 0.857)
+    u_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
     if u_g0 > ureg("1 m/s") or u_g0 < ureg("0.1 m/s"):
         warnings.warn(f"Warning: bubble velocity {u_g0} is out of the typical range")
 
     return u_g0
 
 
-def get_eps_g(input: "SimulationInput") -> float:
-    """computes gas void fraction from ideal gas law and Young-Laplace pressure in the bubbles (neglecting hydrostatic pressure variation)"""
+def get_eps_g(T, P_0, sigma_l, d_b, flow_g, tank_diameter, u_g0) -> float:
     eps_g = (
         const_R
-        * input.T
-        / (input.P_0 + 4 * input.sigma_l / input.d_b)
-        * input.flow_g
-        / (np.pi * (input.tank_diameter / 2) ** 2 * input.u_g0)
+        * T
+        / (P_0 + 4 * sigma_l / d_b)
+        * flow_g
+        / (np.pi * (tank_diameter / 2) ** 2 * u_g0)
     )
     if eps_g > 1 or eps_g < 0:
         warnings.warn(f"Warning: unphysical gas fraction: {eps_g}")
