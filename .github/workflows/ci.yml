@@ -8,15 +8,15 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v5
 
     - name: Set up Conda
-      uses: conda-incubator/setup-miniconda@v2
+      uses: conda-incubator/setup-miniconda@v3
       with:
         activate-environment: libra_sparging
         environment-file: environment.yml
         miniforge-version: latest
-        # use-mamba: true
+        use-mamba: false
         channels: conda-forge
 
     - name: Install pytest
