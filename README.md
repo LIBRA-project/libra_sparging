@@ -19,3 +19,15 @@ conda activate libra_sparging
 ```
 python model.py
 ```
+
+## How to run tests
+
+1. Install pytest
+
+```
+python -m pip install pytest
+```
+
+```
+python -m pytest test
+```
