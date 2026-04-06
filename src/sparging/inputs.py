@@ -87,29 +87,6 @@ class SimulationInput:
                     f"Invalid input for '{key}': expected a pint.Quantity, got {value} of type {type(value)}"
                 )
 
-    def resolve(self) -> "SimulationInput":
-        arguments_as_quantities = {
-            key: getattr(self, key)
-            for key in self.__dict__.keys()
-            if isinstance(getattr(self, key), pint.Quantity)
-            # TODO handle case when no units are given (float) to attach default units
-        }
-
-        for key in self.__dict__.keys():
-            value = getattr(self, key)
-            # if it's a correlation
-            if callable(value):
-                self.resolve_parameters(key, value, arguments_as_quantities)
-
-        new_input = SimulationInput(
-            **{
-                key: value
-                for key, value in arguments_as_quantities.items()
-                if key in self.__dataclass_fields__.keys()
-            }
-        )
-        return new_input
-
     @classmethod
     def from_parameters(
         cls,
