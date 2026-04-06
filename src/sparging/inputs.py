@@ -217,31 +217,3 @@ def resolve_correlation(
         f"Missing arguments: {[arg for arg in corr_args if arg not in previously_resolved]}"
     )
     return correlation.function(**{arg: previously_resolved[arg] for arg in corr_args})
-
-
-def resolve_parameters(key: str, value: callable, args_quant: dict, all_args: dict):
-    corr_args = inspect.signature(value).parameters.keys()
-    if all(arg in args_quant for arg in corr_args):
-        args_quant[key] = value(**{arg: args_quant[arg] for arg in corr_args})
-
-    else:
-        for arg in corr_args:
-            if arg not in args_quant.keys():
-                # means it's a callable/correlation
-                if arg in all_args.keys():
-                    arg_value = all_args[arg]
-                else:
-                    arg_value = all_correlations(arg)
-                    all_args[arg] = arg_value  # cache it for future use
-
-                    assert isinstance(arg_value, Correlation), (
-                        f"Expected a correlation for argument '{arg}', got {arg_value} of type {type(arg_value)}"
-                    )
-                if callable(arg_value):
-                    resolve_parameters(arg, arg_value.function, args_quant, all_args)
-
-        # after resolving all arguments, we can resolve the correlation itself
-        try:
-            args_quant[key] = value(**{arg: args_quant[arg] for arg in corr_args})
-        except Exception as e:
-            breakpoint()
