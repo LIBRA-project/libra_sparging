@@ -38,23 +38,24 @@ class BreederMaterial:
 @dataclass
 class OperatingParameters:
     temperature: pint.Quantity
-    flow_g_vol: pint.Quantity
     irradiation_signal: pint.Quantity
     t_sparging: pint.Quantity
+    flow_g_vol: pint.Quantity | None = None
+    flow_g_mol: pint.Quantity | None = None
     P_bottom: pint.Quantity | Correlation | None = None
     P_top: pint.Quantity | None = None
-    source_T: pint.Quantity | Correlation | None = (
-        None  # source term for tritium generation, in molT/m^3/s
-    )
+    tbr: pint.Quantity | None = None
+    n_gen_rate: pint.Quantity | None = None
+    source_T: pint.Quantity | Correlation | None = None
 
 
 @dataclass
 class SpargingParameters:
     h_l: pint.Quantity | Correlation
-    eps_g: pint.Quantity | Correlation
-    u_g0: pint.Quantity | Correlation
-    d_b: pint.Quantity | Correlation
-    rho_g: pint.Quantity | Correlation
+    eps_g: pint.Quantity | Correlation | None = None
+    u_g0: pint.Quantity | Correlation | None = None
+    d_b: pint.Quantity | Correlation | None = None
+    rho_g: pint.Quantity | Correlation | None = None
     E_g: pint.Quantity | Correlation | None = None
     a: pint.Quantity | Correlation | None = None
 

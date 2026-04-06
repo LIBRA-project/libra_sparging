@@ -24,33 +24,30 @@ geom = ColumnGeometry(
 
 flibe = BreederMaterial(
     name="FLiBe",
-    density=1940 * ureg.kg / ureg.m**3,
 )
 
 operating_params = OperatingParameters(
     temperature=600 * ureg.celsius,
     P_top=1 * ureg.atm,
-    flow_g_vol=0.1 * ureg.m**3 / ureg.s,
+    # flow_g_vol=0.1 * ureg.m**3 / ureg.s,
+    flow_g_mol=10000 * ureg.sccm,
     irradiation_signal=1,  # ignored for now
     t_sparging=60 * ureg.s,
-    source_T=1
-    * ureg.molT
-    / ureg.m**3
-    / ureg.s,  # placeholder, will be calculated from TBR and neutron generation rate
+    tbr=0.1 * ureg("triton / neutron"),
+    n_gen_rate=1e9 * ureg("neutron / s"),
 )
 
 sparging_params = SpargingParameters(
     h_l=all_correlations("h_l_malara"),
-    eps_g=all_correlations("eps_g"),
-    u_g0=all_correlations("u_g0"),
-    d_b=all_correlations("d_b"),
-    rho_g=all_correlations("rho_g"),
 )
+
 # class method from_parameters that takes in objects like ColumnGeometry, BreederMaterial, OperatingParameters and returns a SimulationInput object with the appropriate correlations for the given parameters. This method should be able to handle cases where some of the parameters are already provided as correlations and should not overwrite them.
 my_input = SimulationInput.from_parameters(
     geom, flibe, operating_params, sparging_params
 )
+
 assert isinstance(my_input, SimulationInput)
+
 # inputs = SimulationInput(
 #     nozzle_diameter=0.001 * ureg.m,
 #     nb_nozzle=12 * ureg.dimensionless,
@@ -125,8 +122,11 @@ assert isinstance(my_input, SimulationInput)
 
 print(my_input)
 output = solve(
-    my_input, t_final=7 * ureg.h, t_irr=[0, 1] * ureg.h, t_sparging=[0, 1] * ureg.h
+    my_input,
+    t_final=6 * ureg.days,
+    t_irr=[0, 96] * ureg.h,
+    t_sparging=[24, 1e9] * ureg.h,
 )
 from sparging import animation
 
-animation.create_animation(output)
+animation.create_animation(output, show_activity=True)

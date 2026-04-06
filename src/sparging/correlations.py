@@ -11,6 +11,8 @@ import warnings
 from dataclasses import dataclass
 import enum
 
+U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
+
 
 class CorrelationType(enum.Enum):
     MASS_TRANSFER_COEFF = "h_l"
@@ -30,6 +32,7 @@ class CorrelationType(enum.Enum):
     PRESSURE = "P"
     FLOW_RATE = "flow_g_mol"
     INTERFACIAL_AREA = "a"
+    TRITIUM_SOURCE = "source_T"
 
 
 @dataclass
@@ -40,6 +43,7 @@ class Correlation:
     source: str | None = None
     description: str | None = None
     input_units: list[str] | None = None
+    output_units: str | None = None
 
     def __call__(self, **kwargs):
 
@@ -55,7 +59,10 @@ class Correlation:
                     raise ValueError(
                         f"Invalid input: expected dimensions of {expected_dimension}, got {arg.dimensionality}"
                     )
-        return self.function(**kwargs).to_base_units()
+        result = self.function(**kwargs)
+        if self.output_units is not None:
+            result = result.to(self.output_units)
+        return result.to_base_units()
 
     # TODO add a method that checks the validity of the input parameters based on the range of validity of the correlation, if provided in the description or source. This method could be called before running the simulation to warn the user if they are using a correlation outside of its validated range.
 
@@ -70,7 +77,6 @@ class CorrelationGroup(list[Correlation]):
 
 all_correlations = CorrelationGroup([])
 
-U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
 
 rho_l = Correlation(
     identifier="rho_l",
@@ -320,6 +326,18 @@ flow_g_mol = Correlation(
 )
 all_correlations.append(flow_g_mol)
 
+flow_g_vol = Correlation(
+    identifier="flow_g_vol",
+    function=lambda flow_g_mol, temperature, P_bottom: (
+        flow_g_mol * const_R * temperature / P_bottom
+    ),  # convert molar flow rate to volumetric flow rate using ideal gas law
+    corr_type=CorrelationType.FLOW_RATE,
+    description="volumetric flow rate of gas phase calculated from molar flow rate using ideal gas law",
+    input_units=["mol/s", "kelvin", "Pa"],
+)
+all_correlations.append(flow_g_vol)
+
+
 specific_interfacial_area = Correlation(
     identifier="a",
     function=lambda d_b, eps_g: (
@@ -330,6 +348,16 @@ specific_interfacial_area = Correlation(
     input_units=["m", "dimensionless"],
 )
 all_correlations.append(specific_interfacial_area)
+
+source_T_from_tbr = Correlation(
+    identifier="source_T",
+    function=lambda tbr, n_gen_rate, tank_volume: (
+        tbr * n_gen_rate / tank_volume
+    ),  # source term for tritium generation calculated from TBR and neutron generation rate
+    corr_type=CorrelationType.TRITIUM_SOURCE,
+    input_units=["dimensionless", "neutron/s", "m**3"],
+)
+all_correlations.append(source_T_from_tbr)
 
 
 def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
