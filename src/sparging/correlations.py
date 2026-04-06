@@ -46,10 +46,10 @@ class Correlation:
     output_units: str | None = None
 
     def __call__(self, **kwargs):
-
         # check the dimensions are correct
         if self.input_units is not None:
             for arg_name, expected_dimension in zip(kwargs, self.input_units):
+                print(f"Checking input for '{arg_name}': expected {expected_dimension}")
                 arg = kwargs[arg_name]
                 if not isinstance(arg, ureg.Quantity):
                     raise ValueError(
@@ -57,11 +57,12 @@ class Correlation:
                     )
                 if not arg.check(expected_dimension):
                     raise ValueError(
-                        f"Invalid input: expected dimensions of {expected_dimension}, got {arg.dimensionality}"
+                        f"Invalid input when resolving for {self.identifier}: expected dimensions of {expected_dimension}, got {arg.dimensionality}"
                     )
         result = self.function(**kwargs)
         if self.output_units is not None:
             result = result.to(self.output_units)
+            breakpoint()
         return result.to_base_units()
 
     # TODO add a method that checks the validity of the input parameters based on the range of validity of the correlation, if provided in the description or source. This method could be called before running the simulation to warn the user if they are using a correlation outside of its validated range.
@@ -72,7 +73,9 @@ class CorrelationGroup(list[Correlation]):
         for corr in self:
             if corr.identifier == identifier:
                 return corr
-        raise ValueError(f"Correlation with identifier {identifier} not found in group")
+        raise ValueError(
+            f"Correlation with identifier {identifier} not found in correlation group"
+        )
 
 
 all_correlations = CorrelationGroup([])
@@ -346,6 +349,7 @@ specific_interfacial_area = Correlation(
     corr_type=CorrelationType.INTERFACIAL_AREA,
     description="specific interfacial area calculated from bubble diameter and gas void fraction, assuming spherical bubbles",
     input_units=["m", "dimensionless"],
+    output_units="1/m",
 )
 all_correlations.append(specific_interfacial_area)
 

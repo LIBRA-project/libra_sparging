@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from statistics import correlation
 from sparging.correlations import Correlation
 import pint
 
@@ -194,4 +195,5 @@ def resolve_correlation(
         f"Could not resolve all arguments for correlation '{correlation.identifier}'. "
         f"Missing arguments: {[arg for arg in corr_args if arg not in previously_resolved]}"
     )
-    return correlation.function(**{arg: previously_resolved[arg] for arg in corr_args})
+    # return correlation.function(**{arg: previously_resolved[arg] for arg in corr_args})
+    return correlation(**{arg: previously_resolved[arg] for arg in corr_args})
