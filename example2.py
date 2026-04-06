@@ -25,8 +25,6 @@ geom = ColumnGeometry(
 flibe = BreederMaterial(
     name="FLiBe",
     density=1940 * ureg.kg / ureg.m**3,
-    diffusivity=all_correlations("D_l"),
-    solubility=all_correlations("K_s"),
 )
 
 operating_params = OperatingParameters(
@@ -35,6 +33,10 @@ operating_params = OperatingParameters(
     flow_g_vol=0.1 * ureg.m**3 / ureg.s,
     irradiation_signal=1,  # ignored for now
     t_sparging=60 * ureg.s,
+    source_T=1
+    * ureg.molT
+    / ureg.m**3
+    / ureg.s,  # placeholder, will be calculated from TBR and neutron generation rate
 )
 
 sparging_params = SpargingParameters(
@@ -76,13 +78,13 @@ assert isinstance(my_input, SimulationInput)
 #     },
 # )
 
-inputs = get_simulation_input(
-    geometry=ColumnGeometry(diameter=0.5 * ureg.m, height=tank_height * ureg.m),
-    breeder=BreederMaterial(...),
-    operating_params=OperatingParameters(...),
-)
+# inputs = get_simulation_input(
+#     geometry=ColumnGeometry(diameter=0.5 * ureg.m, height=tank_height * ureg.m),
+#     breeder=BreederMaterial(...),
+#     operating_params=OperatingParameters(...),
+# )
 
-inputs.nb_nozzle = 20000
+# inputs.nb_nozzle = 20000
 
 # inputs = SimulationInput(
 #     nozzle_diameter=0.01 * ureg.m,  # diameter of the gas injection nozzle [m]
@@ -107,16 +109,24 @@ inputs.nb_nozzle = 20000
 # inputs.to_yaml(f"input_{tank_height}m.yml")
 # inputs.to_json(f"input_{tank_height}m.json")
 
-unpacked_inputs = inputs.resolve()
+# unpacked_inputs = inputs.resolve()
 
 # inputs = SimulationInput.from_yaml(f"input_{tank_height}m.yml")
 # inputs.T = 500
 # inputs.to_yaml(f"input_{tank_height}m_modified.yml")
-output = solve(unpacked_inputs)
+# output = solve(unpacked_inputs)
 
 # save output to file
-output.profiles_to_csv(f"output_{tank_height}m.csv")
+# output.profiles_to_csv(f"output_{tank_height}m.csv")
 
 # plot results
 # from sparging import plotting
 # plotting.plot_animation(output)
+
+print(my_input)
+output = solve(
+    my_input, t_final=7 * ureg.h, t_irr=[0, 1] * ureg.h, t_sparging=[0, 1] * ureg.h
+)
+from sparging import animation
+
+animation.create_animation(output)

@@ -16,12 +16,20 @@ class ColumnGeometry:
     nozzle_diameter: pint.Quantity
     nb_nozzle: int
 
+    @property
+    def tank_diameter(self):
+        return np.sqrt(4 * self.area / np.pi)
+
+    @property
+    def tank_volume(self):
+        return self.area * self.height
+
 
 @dataclass
 class BreederMaterial:
     name: str
-    diffusivity: pint.Quantity | Correlation
-    solubility: pint.Quantity | Correlation
+    D_l: pint.Quantity | Correlation | None = None
+    K_s: pint.Quantity | Correlation | None = None
     density: pint.Quantity | Correlation | None = None
     viscosity: pint.Quantity | Correlation | None = None
     surface_tension: pint.Quantity | Correlation | None = None
@@ -35,6 +43,9 @@ class OperatingParameters:
     t_sparging: pint.Quantity
     P_bottom: pint.Quantity | Correlation | None = None
     P_top: pint.Quantity | None = None
+    source_T: pint.Quantity | Correlation | None = (
+        None  # source term for tritium generation, in molT/m^3/s
+    )
 
 
 @dataclass
@@ -44,22 +55,28 @@ class SpargingParameters:
     u_g0: pint.Quantity | Correlation
     d_b: pint.Quantity | Correlation
     rho_g: pint.Quantity | Correlation
+    E_g: pint.Quantity | Correlation | None = None
+    a: pint.Quantity | Correlation | None = None
 
 
 @dataclass
 class SimulationInput:
     height: pint.Quantity
     area: pint.Quantity
-    u_g0: pint.Quantity | callable
+    u_g0: pint.Quantity
     temperature: pint.Quantity
-    h_l: pint.Quantity | callable
-    K_s: pint.Quantity | callable
-    P_0: pint.Quantity
-    eps_g: pint.Quantity | callable
-    eps_l: pint.Quantity | callable
-    E_g: pint.Quantity | callable
-    D_l: pint.Quantity | callable
-    source_T: pint.Quantity | callable
+    a: pint.Quantity
+    h_l: pint.Quantity
+    K_s: pint.Quantity
+    P_bottom: pint.Quantity
+    eps_g: pint.Quantity
+    E_g: pint.Quantity
+    D_l: pint.Quantity
+    source_T: pint.Quantity
+
+    @property
+    def volume(self):
+        return self.area * self.height
 
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error
@@ -69,8 +86,6 @@ class SimulationInput:
                 raise ValueError(
                     f"Invalid input for '{key}': expected a pint.Quantity, got {value} of type {type(value)}"
                 )
-
-        self._name_to_method = {"Re": self.get_Re, "Eo": all_correlations("Eo")}
 
     def resolve(self) -> "SimulationInput":
         arguments_as_quantities = {
@@ -103,33 +118,105 @@ class SimulationInput:
         operating_params: OperatingParameters,
         sparging_params: SpargingParameters,
     ):
-        all_params = {
-            **column_geometry.__dict__,
-            **breeder_material.__dict__,
-            **operating_params.__dict__,
-            **sparging_params.__dict__,
-        }
         # remove None from all_params
-        all_params = {
-            key: value for key, value in all_params.items() if value is not None
-        }
-        arguments_as_pint_quantities = {}
-        for key, value in all_params.items():
-            if isinstance(value, pint.Quantity):
-                arguments_as_pint_quantities[key] = value
-
+        previously_resolved = {}
+        all_params = [
+            column_geometry,
+            breeder_material,
+            operating_params,
+            sparging_params,
+        ]
+        needed_values = {}
         required_keys = cls.__dataclass_fields__.keys()
-        for key in required_keys:
-            if key in all_params.keys():
-                value = all_params[key]
-                if isinstance(value, Correlation):
-                    resolve_parameters(
-                        key, value.function, arguments_as_pint_quantities, all_params
-                    )
-            else:
-                raise ValueError(f"Missing required parameter '{key}'")
+        for needed_key in required_keys:
+            for prms in all_params:
+                if hasattr(prms, needed_key):
+                    value = getattr(prms, needed_key)
 
-        return cls(**arguments_as_pint_quantities)
+                    if isinstance(value, pint.Quantity):
+                        needed_values[needed_key] = value  # TODO do we even need this?
+                    elif isinstance(value, Correlation):
+                        quantity = resolve_correlation(
+                            value,
+                            column_geometry,
+                            breeder_material,
+                            operating_params,
+                            sparging_params,
+                            previously_resolved=previously_resolved,
+                        )
+                        needed_values[needed_key] = quantity
+                    elif value is None:
+                        # try to find a default correlation for this key
+                        print(
+                            f"Value for '{needed_key}' is None, looking for a default correlation..."
+                        )
+                        if default_correlation := all_correlations(needed_key):
+                            quantity = resolve_correlation(
+                                default_correlation,
+                                column_geometry,
+                                breeder_material,
+                                operating_params,
+                                sparging_params,
+                                previously_resolved=previously_resolved,
+                            )
+                            needed_values[needed_key] = quantity
+
+        return cls(**needed_values)
+
+
+def resolve_correlation(
+    correlation: Correlation,
+    column_geometry,
+    breeder_material,
+    operating_params,
+    sparging_params,
+    previously_resolved={},
+):
+    all_params = [
+        column_geometry,
+        breeder_material,
+        operating_params,
+        sparging_params,
+    ]
+    corr_args = inspect.signature(correlation.function).parameters.keys()
+    for arg in corr_args:
+        for prms in all_params:
+            if hasattr(prms, arg):
+                value = getattr(prms, arg)
+                if isinstance(value, pint.Quantity):
+                    previously_resolved[arg] = value  # TODO do we even need this?
+                    break
+                elif isinstance(value, Correlation):
+                    previously_resolved[arg] = resolve_correlation(
+                        value,
+                        column_geometry,
+                        breeder_material,
+                        operating_params,
+                        sparging_params,
+                        previously_resolved,
+                    )
+                    break
+
+        # if the arg is not in the params, find a default correlation
+        if arg not in previously_resolved.keys():
+            print(
+                f"Argument '{arg}' not found in input parameters, looking for a default correlation..."
+            )
+            if default_correlation := all_correlations(arg):
+                previously_resolved[arg] = resolve_correlation(
+                    default_correlation,
+                    column_geometry,
+                    breeder_material,
+                    operating_params,
+                    sparging_params,
+                    previously_resolved,
+                )
+
+    assert all(arg in previously_resolved for arg in corr_args), (
+        f"Could not resolve all arguments for correlation '{correlation.identifier}'. "
+        f"Missing arguments: {[arg for arg in corr_args if arg not in previously_resolved]}"
+    )
+    return correlation.function(**{arg: previously_resolved[arg] for arg in corr_args})
 
 
 def resolve_parameters(key: str, value: callable, args_quant: dict, all_args: dict):

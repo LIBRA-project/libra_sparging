@@ -28,6 +28,8 @@ class CorrelationType(enum.Enum):
     BUBBLE_VELOCITY = "u_g0"
     GAS_PHASE_DISPERSION = "E_g"
     PRESSURE = "P"
+    FLOW_RATE = "flow_g_mol"
+    INTERFACIAL_AREA = "a"
 
 
 @dataclass
@@ -201,13 +203,13 @@ all_correlations.append(u_g0)
 
 eps_g = Correlation(
     identifier="eps_g",
-    function=lambda temperature, P_bottom, sigma_l, d_b, flow_g, tank_diameter, u_g0: (
+    function=lambda temperature, P_bottom, sigma_l, d_b, flow_g_mol, tank_diameter, u_g0: (
         get_eps_g(
             T=temperature,
             P_0=P_bottom,
             sigma_l=sigma_l,
             d_b=d_b,
-            flow_g=flow_g,
+            flow_g=flow_g_mol,
             tank_diameter=tank_diameter,
             u_g0=u_g0,
         )
@@ -263,8 +265,8 @@ all_correlations.append(h_l_briggs)
 
 E_g = Correlation(
     identifier="E_g",
-    function=lambda diameter, u_g: get_E_g(
-        diameter=diameter, u_g=u_g
+    function=lambda tank_diameter, u_g0: get_E_g(
+        diameter=tank_diameter, u_g=u_g0
     ),  # gas phase axial dispersion coefficient
     corr_type=CorrelationType.GAS_PHASE_DISPERSION,
     source="Malara 1995",
@@ -306,6 +308,28 @@ P_bottom = Correlation(
     input_units=["Pa"],
 )
 all_correlations.append(P_bottom)
+
+flow_g_mol = Correlation(
+    identifier="flow_g_mol",
+    function=lambda flow_g_vol, temperature, P_bottom: (
+        flow_g_vol / (const_R * temperature) * P_bottom
+    ),  # convert volumetric flow rate to molar flow rate using ideal gas law
+    corr_type=CorrelationType.FLOW_RATE,
+    description="molar flow rate of gas phase calculated from volumetric flow rate using ideal gas law",
+    input_units=["m**3/s", "kelvin", "Pa"],
+)
+all_correlations.append(flow_g_mol)
+
+specific_interfacial_area = Correlation(
+    identifier="a",
+    function=lambda d_b, eps_g: (
+        6 * eps_g / d_b
+    ),  # specific interfacial area for spherical bubbles
+    corr_type=CorrelationType.INTERFACIAL_AREA,
+    description="specific interfacial area calculated from bubble diameter and gas void fraction, assuming spherical bubbles",
+    input_units=["m", "dimensionless"],
+)
+all_correlations.append(specific_interfacial_area)
 
 
 def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
@@ -358,9 +382,9 @@ def get_eps_g(T, P_0, sigma_l, d_b, flow_g, tank_diameter, u_g0) -> float:
         * flow_g
         / (np.pi * (tank_diameter / 2) ** 2 * u_g0)
     )
-    if eps_g > 1 or eps_g < 0:
+    if eps_g > 1 * ureg("dimensionless") or eps_g < 0 * ureg("dimensionless"):
         warnings.warn(f"Warning: unphysical gas fraction: {eps_g}")
-    elif eps_g > 0.1:
+    elif eps_g > 0.1 * ureg("dimensionless"):
         warnings.warn(
             f"Warning: high gas fraction: {eps_g}, models assumptions may not hold"
         )

@@ -21,6 +21,8 @@ import sparging.correlations as c
 
 from sparging.config import ureg, const_R, const_g, VERBOSE
 
+from sparging.inputs import SimulationInput
+
 hours_to_seconds = 3600
 days_to_seconds = 24 * hours_to_seconds
 T2_to_T = 2
@@ -332,21 +334,21 @@ class SimulationResults:
         df_y_T2.to_csv(output_path + "_y_T2.csv", index=False)
 
 
-def solve(
-    input: SimulationInput, t_final: float, t_irr: float | list, t_sparging: list = None
-):
+def solve(input: SimulationInput, t_final: float, t_irr, t_sparging):
+    t_final = t_final.to("seconds").magnitude
+    t_irr = t_irr.to("seconds").magnitude
+    t_sparging = t_sparging.to("seconds").magnitude
     dt = 0.2 * ureg("hours").to("seconds").magnitude
     # unpack parameters
-    tank_height = input.tank_height.to("m").magnitude
-    tank_area = input.tank_area.to("m**2").magnitude
-    tank_volume = input.tank_volume.to("m**3").magnitude
+    tank_height = input.height.to("m").magnitude
+    tank_area = input.area.to("m**2").magnitude
+    tank_volume = input.volume.to("m**3").magnitude
     a = input.a.to("1/m").magnitude
     h_l = input.h_l.to("m/s").magnitude
     K_s = input.K_s.to("mol/m**3/Pa").magnitude
-    P_0 = input.P_0.to("Pa").magnitude
-    T = input.T.to("K").magnitude
+    P_0 = input.P_bottom.to("Pa").magnitude
+    T = input.temperature.to("K").magnitude
     eps_g = input.eps_g.to("dimensionless").magnitude
-    eps_l = input.eps_l.to("dimensionless").magnitude
     E_g = input.E_g.to("m**2/s").magnitude
     D_l = input.D_l.to("m**2/s").magnitude
     u_g0 = input.u_g0.to("m/s").magnitude
@@ -354,12 +356,14 @@ def solve(
     # assuming bred T immediately combines to T2
     source_T2 = input.source_T.to("molT2/s/m**3").magnitude
 
+    eps_l = 1 - eps_g
+
     # tank_area = np.pi * (params["D"] / 2) ** 2
     # tank_volume = tank_area * tank_height
 
     # MESH AND FUNCTION SPACES
     mesh = dolfinx.mesh.create_interval(
-        MPI.COMM_WORLD, 1000, points=[0, input.tank_height.magnitude]
+        MPI.COMM_WORLD, 1000, points=[0, input.height.magnitude]
     )
     fdim = mesh.topology.dim - 1
     cg_el = basix.ufl.element("Lagrange", mesh.basix_cell(), degree=1, shape=(2,))
