@@ -8,18 +8,14 @@ from dolfinx.fem.petsc import NonlinearProblem
 from petsc4py import PETSc
 from dataclasses import dataclass
 
-import warnings
 from datetime import datetime
 
 # from dolfinx import log
 import yaml
 import sparging.helpers as helpers
 import json
-import pint
-import inspect
-import sparging.correlations as c
 
-from sparging.config import ureg, const_R, const_g
+from sparging.config import ureg
 
 from sparging.inputs import SimulationInput
 
@@ -32,199 +28,6 @@ EPS = 1e-26
 SEPARATOR_KEYWORD = "from"
 
 # log.set_log_level(log.LogLevel.INFO)
-
-
-class SimulationInputBak:
-    P_0: pint.Quantity
-    eps_l: pint.Quantity
-    eps_g: pint.Quantity
-    E_g: pint.Quantity
-    D_l: pint.Quantity
-    h_l: pint.Quantity
-    K_s: pint.Quantity
-    tank_height: pint.Quantity
-    tank_diameter: pint.Quantity
-    nozzle_diameter: pint.Quantity
-    nb_nozzle: int
-    T: pint.Quantity
-    flow_g: pint.Quantity
-    d_b: pint.Quantity
-    Eo: pint.Quantity
-    Mo: pint.Quantity
-    Sc: pint.Quantity
-    Re: pint.Quantity
-
-    def __init__(self, input_dict: dict):
-        self.input_dict = input_dict.copy()
-        self.quantities_dict = {
-            "inputed": {},
-            "computed": {},
-        }  # to keep track of inputed and calculated quantities and the correlation used, for output purposes
-        # TODO useless, can use self.__dict__
-
-        # -- System parameters --
-        self.tank_height = self._get("tank_height").to("metre")
-        self.tank_diameter = self._get("tank_diameter").to("metre")
-        self.tank_area = np.pi * (self.tank_diameter / 2) ** 2
-        self.tank_volume = self.tank_area * self.tank_height
-        self.source_T = self._get("source_T").to(
-            "molT/s/m**3"
-        )  # tritium generation source term
-        self.nozzle_diameter = self._get("nozzle_diameter").to("millimetre")
-        self.nb_nozzle = self._get("nb_nozzle")
-        self.P_top = self._get("P_top").to("bar")
-        self.T = self._get("T").to("kelvin")  # temperature
-        self.flow_g = self._get("flow_g").to("mol/s")  # inlet gas flow rate [mol/s]
-
-        # -- FLiBe and tritium physical properties --
-        self.rho_l = self._get("rho_l").to("kg/m**3")
-        self.mu_l = self._get("mu_l").to("Pa*s")
-        self.sigma_l = self._get("sigma_l").to("N/m")
-        self.nu_l = self.mu_l / self.rho_l
-        self.D_l = self._get("D_l").to("m**2/s")
-        self.K_s = self._get("K_s").to("mol/m**3/Pa")
-        self.P_0 = (self.P_top + self.rho_l * const_g * self.tank_height).to("bar")
-        # gas inlet pressure [Pa] = hydrostatic pressure at the bottom of the tank (neglecting gas fraction)
-        self.flow_g_vol = (self.flow_g.to("mol/s") * const_R * self.T / self.P_0).to(
-            "m**3/s"
-        )  # inlet gas volumetric flow rate
-
-        # -- bubbles properties --
-        self.d_b = self._get("d_b").to("millimetre")  # bubble diameter
-        he_molar_mass = ureg("4.003e-3 kg/mol")
-        self.rho_g = (self.P_0 * he_molar_mass / (const_R * self.T)).to(
-            "kg/m**3"
-        )  # bubbles density, using ideal gas law for He
-        self.drho = self.rho_l - self.rho_g  # density difference between liquid and gas
-
-        self.Eo = self._get("Eo")  # Eotvos number
-        self.Mo = self._get("Mo")  # Morton number
-        self.Sc = self._get("Sc")  # Schmidt number
-        self.Re = self._get("Re")  # Reynolds number
-
-        self.u_g0 = self._get("u_g0").to("m/s")  # mean bubble velocity
-
-        self.Re = self._get("Re").to(
-            "dimensionless"
-        )  # update Reynolds number with the calculated bubble velocity
-
-        self.eps_g = self._get("eps_g").to("dimensionless")  # gas void fraction
-        self.eps_l = 1 - self.eps_g
-        self.a = (6 * self.eps_g / self.d_b).to("1/m")  # specific interfacial area
-
-        self.h_l = self._get("h_l", corr_name="h_l_briggs").to(
-            "m/s"
-        )  # mass transfer coefficient
-
-        self.E_g = self._get("E_g").to(
-            "m**2/s"
-        )  # gas phase axial dispersion coefficient
-
-        if input_dict:
-            warnings.warn(f"Unused input parameters:{input_dict}")
-
-        if VERBOSE:
-            print(self)
-
-    def _get(
-        self,
-        key: str,
-        corr_name: str = None,
-    ):
-        """get a parameter value from input_dict, or compute it from correlation if not specified in input_dict
-        - key: name of the parameter to get in the input_dict
-        - corr_name: name of the correlation to use if not specified in input_dict, will be the key itself by default
-        """
-        # try keys (several names possible in input dictionary, for retrocompatibility)
-        if key in self.input_dict.keys():
-            print(key, f"found {key} in input_dict")
-            quantity = get_quantity_or_correlation(self.input_dict, key)
-            if callable(quantity):
-                # if it's a correlation function, compute the quantity using the correlation
-                return quantity(self)
-            return quantity
-
-        else:
-            quantity = self.get_quantity_from_default_correlation(key, corr_name)
-
-        if VERBOSE:
-            print(f"{key} = {quantity} \t calculated using default correlation")
-
-        return quantity
-
-    # TODO simplify this
-    def get_quantity_from_default_correlation(self, key, corr_name=None):
-        # nothing found in input_dict -> use default correlation
-        while True:
-            # default corr_name is the name of the key itself
-            corr_name = key if corr_name is None else corr_name
-            # compute quantity using correlation, and if needed retrieve quantities it depends on
-            if corr_name not in c.correlations_dict.keys():
-                raise KeyError(
-                    f"Correlation for '{key}' not found in correlations dictionary. Missing a required input or wrongcorrelation name. Available correlations: {list(c.correlations_dict.keys())}"
-                )
-            try:
-                # compute the quantity using the default correlation function
-                quantity = c.correlations_dict[corr_name](self)
-                break
-            except AttributeError as e:
-                missing_attr = str(e).split("attribute '")[1].split("'")[0]
-                print(f"AttributeError: missing attribute '{missing_attr}'")
-                setattr(
-                    self, missing_attr, self._get(missing_attr)
-                )  # recursively get missing attributes
-
-        return quantity
-
-    def __str__(self):
-        members = inspect.getmembers(self)
-        return "\n".join(
-            [
-                f"{name}: {value}"
-                for name, value in members
-                if not name.startswith("_") and not inspect.isfunction(value)
-            ]
-        )
-
-
-def find_correlation_from_library(corr_name) -> callable:
-    if corr_name not in c.correlations_dict:
-        raise KeyError(
-            f"Correlation '{corr_name}' not found in correlations dictionary. Available correlations: {list(c.correlations_dict.keys())}"
-        )
-
-    func = c.correlations_dict[corr_name]
-    assert callable(func), f"Correlation '{corr_name}' is not a function"
-    return func
-
-
-def get_correlation_from_string(s) -> callable | None:
-    """
-    If the input is a string that contains the keyword `SEPARATOR_KEYWORD`, we assume it's a correlation name
-    and return the corresponding function from the correlations library, otherwise return None
-    """
-    # if the value is a string that contains keyword "from", we assume it's a correlation name
-    if isinstance(s, str) and SEPARATOR_KEYWORD in s:
-        return s.split(SEPARATOR_KEYWORD + " ")[1]
-    return None
-
-
-def get_quantity_or_correlation(input_dict, key) -> callable | pint.Quantity:
-    value = input_dict[key]
-    input_dict.pop(key)  # to keep track of unused input parameters, if any
-
-    corr_name = get_correlation_from_string(value)
-    if corr_name:
-        corr_func = find_correlation_from_library(corr_name)
-        return corr_func
-
-    else:
-        # The quantity is directly provided as a quantity
-        # TODO implement logger
-        if VERBOSE:
-            print(f"{key} = {value} \t provided by input")
-        quantity = ureg.parse_expression(str(value))
-        return quantity
 
 
 @dataclass
