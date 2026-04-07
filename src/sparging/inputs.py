@@ -161,6 +161,7 @@ def check_input(
     required_node: str, input_objs: list[object]
 ) -> pint.Quantity | Correlation | None:
     """look for pint.Quantity or Correlation given in input objects"""
+    result = None
     for object in input_objs:
         # scan for the required node in the attributes of the object
         if (result := getattr(object, required_node, None)) is not None:
@@ -181,6 +182,7 @@ def check_input(
                 raise ValueError(
                     f"In check_input: found result for '{required_node}': but expected a Correlation or a pint.Quantity, got {result} of type {type(result)}"
                 )
+    return result
 
 
 def resolve_correlation(
