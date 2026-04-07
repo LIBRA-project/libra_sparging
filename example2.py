@@ -19,7 +19,7 @@ geom = ColumnGeometry(
     area=0.2 * ureg.m**2,
     height=1.0 * ureg.m,
     nozzle_diameter=0.001 * ureg.m,
-    nb_nozzle=12 * ureg.dimensionless,
+    nb_nozzle=10 * ureg.dimensionless,
 )
 
 flibe = BreederMaterial(
@@ -30,7 +30,7 @@ operating_params = OperatingParameters(
     temperature=600 * ureg.celsius,
     P_top=1 * ureg.atm,
     # flow_g_vol=0.1 * ureg.m**3 / ureg.s,
-    flow_g_mol=10000 * ureg.sccm,
+    flow_g_mol=400 * ureg.sccm,
     irradiation_signal=1,  # ignored for now
     t_sparging=60 * ureg.s,
     tbr=0.1 * ureg("triton / neutron"),
