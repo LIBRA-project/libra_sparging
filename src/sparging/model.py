@@ -29,7 +29,6 @@ T2_to_T = 2
 T_to_T2 = 1 / T2_to_T
 
 EPS = 1e-26
-# VERBOSE = False
 SEPARATOR_KEYWORD = "from"
 
 # log.set_log_level(log.LogLevel.INFO)

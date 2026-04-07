@@ -113,6 +113,15 @@ class SimulationInput:
 
         return cls(**{arg: resolved_parameters[arg] for arg in required_keys})
 
+    def __str__(self):
+        return "\n".join(
+            [
+                f"{name}: {value}"
+                for name in self.__dataclass_fields__
+                for value in [getattr(self, name)]
+            ]
+        )
+
 
 def find_in_graph(
     required_node: str,
