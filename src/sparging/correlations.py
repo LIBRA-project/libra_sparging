@@ -50,7 +50,6 @@ class Correlation:
         # check the dimensions are correct
         if self.input_units is not None:
             for arg_name, expected_dimension in zip(kwargs, self.input_units):
-                print(f"Checking input for '{arg_name}': expected {expected_dimension}")
                 arg = kwargs[arg_name]
                 if not isinstance(arg, ureg.Quantity):
                     raise ValueError(
