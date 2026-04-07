@@ -35,40 +35,15 @@ sparging_params = SpargingParameters(
 )
 
 
-# def test_get():
-#     # BUILD
-#     input_dict = {"h_l": "from h_l_malara"}
-#     # RUN
-#     quantity = sparging.model.get_quantity_or_correlation(input_dict, "h_l")
-
-#     # TEST
-#     assert callable(quantity), f"Expected a correlation function, got {quantity}"
-
-
-# def test_get_source_T():
-#     # BUILD
-#     params = sparging.helpers.get_input("test/test_input.yml")
-#     # RUN
-#     quantity = sparging.model.get_quantity_or_correlation(params, "source_T")
-
-#     # TEST
-#     assert callable(quantity), "Expected a correlation function"
-
-
-# def test_get_from_file():
-#     # BUILD
-#     params = sparging.helpers.get_input("test/test_input.yml")
-#     sparging.model.SimulationInput(params)
-
-
-def test_find_in_graph():
+def test_find_in_graph(tmp_path):
     from sparging.inputs import find_in_graph
     import difflib
     import logging
     from pathlib import Path
 
     reference_log_path = Path(__file__).with_name("test_find_in_graph.reference.log")
-    generated_log_path = Path(__file__).with_name("test_find_in_graph.generated.log")
+    generated_log_path = Path(tmp_path).joinpath("test_find_in_graph.generated.log")
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(levelname)s:%(name)s:%(message)s",
