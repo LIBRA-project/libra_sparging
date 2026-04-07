@@ -32,13 +32,13 @@ operating_params = OperatingParameters(
     # flow_g_vol=0.1 * ureg.m**3 / ureg.s,
     flow_g_mol=400 * ureg.sccm,
     irradiation_signal=1,  # ignored for now
-    t_sparging=60 * ureg.s,
+    t_sparging=60 * ureg.s,  # TODO implement
     tbr=0.1 * ureg("triton / neutron"),
     n_gen_rate=1e9 * ureg("neutron / s"),
 )
 
 sparging_params = SpargingParameters(
-    h_l=all_correlations("h_l_malara"),
+    h_l=all_correlations("h_l_briggs"),
 )
 
 # class method from_parameters that takes in objects like ColumnGeometry, BreederMaterial, OperatingParameters and returns a SimulationInput object with the appropriate correlations for the given parameters. This method should be able to handle cases where some of the parameters are already provided as correlations and should not overwrite them.
@@ -123,9 +123,9 @@ assert isinstance(my_input, SimulationInput)
 print(my_input)
 output = solve(
     my_input,
-    t_final=6 * ureg.days,
-    t_irr=[0, 96] * ureg.h,
-    t_sparging=[24, 1e9] * ureg.h,
+    t_final=3 * ureg.days,
+    t_irr=[0, 12] * ureg.h,
+    t_sparging=[0, 1e9] * ureg.h,
 )
 from sparging import animation
 
