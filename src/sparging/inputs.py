@@ -79,8 +79,6 @@ class SimulationInput:
     def volume(self):
         return self.area * self.height
 
-    # TODO __str__ method
-
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error
         for key in self.__dataclass_fields__.keys():

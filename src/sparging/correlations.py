@@ -354,18 +354,6 @@ P_bottom = Correlation(
 )
 all_correlations.append(P_bottom)
 
-flow_g_mol = Correlation(
-    identifier="flow_g_mol",
-    function=lambda flow_g_vol, temperature, P_bottom: (
-        flow_g_vol / (const_R * temperature) * P_bottom
-    ),  # convert volumetric flow rate to molar flow rate using ideal gas law
-    corr_type=CorrelationType.FLOW_RATE,
-    description="molar flow rate of gas phase calculated from volumetric flow rate using ideal gas law",
-    input_units=["m**3/s", "kelvin", "Pa"],
-    output_units="mol/s",
-)
-all_correlations.append(flow_g_mol)
-
 flow_g_vol = Correlation(
     identifier="flow_g_vol",
     function=lambda flow_g_mol, temperature, P_bottom: (

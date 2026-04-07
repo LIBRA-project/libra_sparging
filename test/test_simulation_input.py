@@ -11,7 +11,7 @@ from sparging.inputs import (
 )
 
 import pytest
-from dataclasses import replace
+import dataclasses
 
 # define standard LIBRA input parameters to be used in multiple tests
 geom = ColumnGeometry(
@@ -121,28 +121,33 @@ def test_find_in_graph_result(in_discovered: bool):
     )
 
 
-def test_find_in_graph_unresolvable():
+@pytest.mark.parametrize("missing_param", ("nb_nozzle", "flow_g_mol"))
+def test_find_in_graph_unresolvable(missing_param: str):
     """
     Test that find_in_graph raises an error when a parameter cannot be resolved.
     """
     # BUILD
-    broken_geom = replace(geom, nb_nozzle=None)
+    broken_geom = dataclasses.replace(geom)
+    broken_op_params = dataclasses.replace(operating_params)
+    match missing_param:
+        case "nb_nozzle":
+            setattr(broken_geom, missing_param, None)
+        case "flow_g_mol":
+            pass
+            setattr(broken_op_params, missing_param, None)
     # RUN
-    try:
+    with pytest.raises(
+        ValueError,
+        match=f"Could not find path to required node '{missing_param}' in the graph or in the default correlations",
+    ):
         find_in_graph(
             "d_b",
             discovered_nodes={},  # no discovered nodes provided
             graph=[
                 broken_geom,
-                operating_params,
+                broken_op_params,
             ],  # missing necessary parameters for d_b correlation
         )
-    # TEST
-    except ValueError as e:
-        assert (
-            str(e)
-            == "Could not find path to required node 'nb_nozzle' in the graph or in the default correlations"
-        ), f"Unexpected error message: {e}"
 
 
 @pytest.mark.parametrize("required_node", ("flow_g_mol", "non_existent_param"))
@@ -151,7 +156,7 @@ def test_check_input_none(required_node: str):
     Test that check_input returns None when the required node is not found in the graph.
     """
     # BUILD
-    broken_op_params = replace(operating_params, flow_g_mol=None)
+    broken_op_params = dataclasses.replace(operating_params, flow_g_mol=None)
     # RUN
     result = check_input(required_node, [geom, broken_op_params])
     # TEST
@@ -163,16 +168,12 @@ def test_check_input_unexpected_type():
     Test that check_input raises an error when it finds a parameter in the graph but it is not a pint.Quantity or Correlation.
     """
     # BUILD
-    broken_op_params = replace(operating_params, tbr=13)
+    broken_op_params = dataclasses.replace(operating_params, tbr=13)
     # RUN
     result = -1
-    try:
+    with pytest.raises(
+        ValueError,
+        match="In check_input: found result for 'tbr': but expected a Correlation or a pint.Quantity, got 13 of type <class 'int'>",
+    ):
         result = check_input("tbr", [geom, broken_op_params])
-    # TEST
-    except ValueError as e:
-        assert (
-            str(e)
-            == "In check_input: found result for 'tbr': but expected a Correlation or a pint.Quantity, got 13 of type <class 'int'>"
-        ), f"Unexpected error message: {e}"
-    else:
         assert False, f"Expected ValueError, got {result}"
