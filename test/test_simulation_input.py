@@ -8,6 +8,7 @@ from sparging.inputs import (
     SpargingParameters,
     find_in_graph,
     check_input,
+    SimulationInput,
 )
 
 import pytest
@@ -36,6 +37,25 @@ operating_params = OperatingParameters(
 sparging_params = SpargingParameters(
     h_l=all_correlations("h_l_briggs"),
 )
+
+
+def test_from_parameters_success():
+    """
+    Test that SimulationInput.from_parameters successfully creates a SimulationInput object from minimal input objects
+    """
+    sim_input = SimulationInput.from_parameters(
+        geom, flibe, operating_params, sparging_params
+    )
+
+    assert isinstance(sim_input, SimulationInput), (
+        "Expected from_parameters to return a SimulationInput instance"
+    )
+    # Check that all fields are populated and have the correct types
+    for field in dataclasses.fields(sim_input):
+        value = getattr(sim_input, field.name)
+        assert isinstance(value, ureg.Quantity), (
+            f"Expected field '{field.name}' to be a pint.Quantity, got {type(value)}"
+        )
 
 
 def test_find_in_graph_logging(tmp_path):
@@ -121,7 +141,7 @@ def test_find_in_graph_result(in_discovered: bool):
     )
 
 
-@pytest.mark.parametrize("missing_param", ("nb_nozzle", "flow_g_mol"))
+@pytest.mark.parametrize("missing_param", ("nb_nozzle", "flow_g_mol", "n_gen_rate"))
 def test_find_in_graph_unresolvable(missing_param: str):
     """
     Test that find_in_graph raises an error when a parameter cannot be resolved.
@@ -129,11 +149,16 @@ def test_find_in_graph_unresolvable(missing_param: str):
     # BUILD
     broken_geom = dataclasses.replace(geom)
     broken_op_params = dataclasses.replace(operating_params)
+    to_find = str()
     match missing_param:
         case "nb_nozzle":
+            to_find = "d_b"
             setattr(broken_geom, missing_param, None)
         case "flow_g_mol":
-            pass
+            to_find = "d_b"
+            setattr(broken_op_params, missing_param, None)
+        case "n_gen_rate":
+            to_find = "source_T"
             setattr(broken_op_params, missing_param, None)
     # RUN
     with pytest.raises(
@@ -141,7 +166,7 @@ def test_find_in_graph_unresolvable(missing_param: str):
         match=f"Could not find path to required node '{missing_param}' in the graph or in the default correlations",
     ):
         find_in_graph(
-            "d_b",
+            to_find,
             discovered_nodes={},  # no discovered nodes provided
             graph=[
                 broken_geom,
