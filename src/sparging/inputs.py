@@ -38,12 +38,12 @@ class BreederMaterial:
 @dataclass
 class OperatingParameters:
     temperature: pint.Quantity
+    flow_g_mol: pint.Quantity
+    P_top: pint.Quantity
     # irradiation_signal: pint.Quantity # TODO implement
     # t_sparging: pint.Quantity # TODO implement
     flow_g_vol: pint.Quantity | None = None
-    flow_g_mol: pint.Quantity | None = None
     P_bottom: pint.Quantity | Correlation | None = None
-    P_top: pint.Quantity | None = None
     tbr: pint.Quantity | None = None
     n_gen_rate: pint.Quantity | None = None
     source_T: pint.Quantity | Correlation | None = None

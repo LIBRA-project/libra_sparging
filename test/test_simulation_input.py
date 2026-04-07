@@ -42,6 +42,7 @@ def test_find_in_graph_logging(tmp_path):
     """
     Test that the `find_in_graph` function logs the expected output when searching for a parameter in the graph.
     """
+    # BUILD
     import difflib
     import logging
     from pathlib import Path
@@ -56,8 +57,10 @@ def test_find_in_graph_logging(tmp_path):
         force=True,  # reset handlers so pytest/previous tests don't interfere
     )
 
+    # RUN
     find_in_graph("drho", {}, [geom, flibe, operating_params, sparging_params])
 
+    # TEST
     logging.shutdown()
 
     assert reference_log_path.exists(), (
@@ -122,8 +125,9 @@ def test_find_in_graph_unresolvable():
     """
     Test that find_in_graph raises an error when a parameter cannot be resolved.
     """
+    # BUILD
     broken_geom = replace(geom, nb_nozzle=None)
-
+    # RUN
     try:
         find_in_graph(
             "d_b",
@@ -133,6 +137,7 @@ def test_find_in_graph_unresolvable():
                 operating_params,
             ],  # missing necessary parameters for d_b correlation
         )
+    # TEST
     except ValueError as e:
         assert (
             str(e)
@@ -145,10 +150,11 @@ def test_check_input_none(required_node: str):
     """
     Test that check_input returns None when the required node is not found in the graph.
     """
-    op_params = OperatingParameters(
-        temperature=600 * ureg.celsius,
-    )
-    result = check_input(required_node, [geom, op_params])
+    # BUILD
+    broken_op_params = replace(operating_params, flow_g_mol=None)
+    # RUN
+    result = check_input(required_node, [geom, broken_op_params])
+    # TEST
     assert result is None, f"Expected None for non-existent parameter, got {result}"
 
 
@@ -156,10 +162,13 @@ def test_check_input_unexpected_type():
     """
     Test that check_input raises an error when it finds a parameter in the graph but it is not a pint.Quantity or Correlation.
     """
-    op_params = replace(operating_params, tbr=13)
+    # BUILD
+    broken_op_params = replace(operating_params, tbr=13)
+    # RUN
     result = -1
     try:
-        result = check_input("tbr", [geom, op_params])
+        result = check_input("tbr", [geom, broken_op_params])
+    # TEST
     except ValueError as e:
         assert (
             str(e)
