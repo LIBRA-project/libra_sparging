@@ -68,17 +68,16 @@ def test_find_in_graph_logging(tmp_path):
     generated_text = generated_log_path.read_text(encoding="utf-8")
     reference_text = reference_log_path.read_text(encoding="utf-8")
 
-    if generated_text != reference_text:
-        diff = "\n".join(
-            difflib.unified_diff(
-                reference_text.splitlines(),
-                generated_text.splitlines(),
-                fromfile=str(reference_log_path.name),
-                tofile=str(generated_log_path.name),
-                lineterm="",
-            )
+    diff = "\n".join(
+        difflib.unified_diff(
+            reference_text.splitlines(),
+            generated_text.splitlines(),
+            fromfile=str(reference_log_path.name),
+            tofile=str(generated_log_path.name),
+            lineterm="",
         )
-        raise AssertionError(f"Log output mismatch:\n{diff}")
+    )
+    assert generated_text == reference_text, f"Log output mismatch:\n{diff}"
 
 
 @pytest.mark.parametrize("in_discovered", (True, False))
