@@ -1,4 +1,4 @@
-from sparging.config import ureg, const_R, const_g
+from sparging.config import ureg
 from sparging import all_correlations
 from sparging.model import solve
 from sparging.inputs import (
@@ -8,7 +8,6 @@ from sparging.inputs import (
     SpargingParameters,
     SimulationInput,
 )
-import numpy as np
 
 
 def source_from_tbr(tbr, n_gen_rate, tank_volume):

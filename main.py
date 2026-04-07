@@ -13,6 +13,7 @@ OUTPUT_FOLDER = os.path.join(
 )
 
 if __name__ == "__main__":
+    assert False
     params = get_input(YAML_INPUT_PATH)
     sim_input = model.SimulationInput(params)
 

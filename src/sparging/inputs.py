@@ -1,13 +1,11 @@
 from dataclasses import dataclass
-from statistics import correlation
 from sparging.correlations import Correlation
 import pint
 from typing import List
 import inspect
-import warnings
 import numpy as np
-from .config import ureg, const_R, const_g, VERBOSE
-from .correlations import all_correlations, U_G0_DEFAULT
+from .config import VERBOSE
+from .correlations import all_correlations
 
 
 @dataclass

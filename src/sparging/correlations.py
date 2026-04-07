@@ -76,10 +76,6 @@ class CorrelationGroup(list[Correlation]):
         raise ValueError(
             f"Correlation with identifier {identifier} not found in correlation group"
         )
-        # warnings.warn(
-        #     f"Correlation with identifier {identifier} not found in correlation group"
-        # )
-        # return None
 
     def __contains__(self, key: str | Correlation):
         if isinstance(key, str):
