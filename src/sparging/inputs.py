@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from statistics import correlation
 from sparging.correlations import Correlation
 import pint
-
+from typing import List
 import inspect
 import warnings
 import numpy as np
@@ -117,7 +117,11 @@ class SimulationInput:
 
 
 def find_in_graph(
-    required_node: str, discovered_nodes: dict, graph: list[object]
+    required_node: str,
+    discovered_nodes: dict,
+    graph: List[
+        SpargingParameters | OperatingParameters | BreederMaterial | ColumnGeometry
+    ],
 ) -> dict:
     """Abstracts SimulationInput construction as a graph search problem. "Correlation" object are seen as a path to the corresponding node
     - required_node: parameter we want to obtain (e.g. h_l)
@@ -132,17 +136,16 @@ def find_in_graph(
         return discovered_nodes
 
     # then check if the required node is given as input (either as a pint.Quantity or as a Correlation)
-    result = check_input(required_node, graph)
-
-    if result is None:
+    if (result := check_input(required_node, graph)) is None:
         # look for default correlation
-        if (result := all_correlations(required_node)) is not None:
+        if required_node in all_correlations:
+            result = all_correlations(required_node)
             if VERBOSE:
                 print(
                     f"Found default correlation for required node '{required_node}': {result.identifier}"
                 )
         else:
-            raise KeyError(
+            raise ValueError(
                 f"Could not find path to required node '{required_node}' in the graph or in the default correlations"
             )
     if isinstance(result, Correlation):

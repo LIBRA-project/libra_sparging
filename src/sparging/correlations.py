@@ -56,7 +56,6 @@ class Correlation:
                         f"Invalid input: expected a pint.Quantity with units of {expected_dimension}, got {arg} of type {type(arg)}"
                     )
                 if not arg.dimensionality == ureg(expected_dimension).dimensionality:
-                    breakpoint()
                     raise ValueError(
                         f"Invalid input when resolving for {self.identifier}: expected dimensions of {expected_dimension}, got {arg.dimensionality}"
                     )
@@ -74,10 +73,26 @@ class CorrelationGroup(list[Correlation]):
         for corr in self:
             if corr.identifier == identifier:
                 return corr
-        warnings.warn(
+        raise ValueError(
             f"Correlation with identifier {identifier} not found in correlation group"
         )
-        return None
+        # warnings.warn(
+        #     f"Correlation with identifier {identifier} not found in correlation group"
+        # )
+        # return None
+
+    def __contains__(self, key: str | Correlation):
+        if isinstance(key, str):
+            for corr in self:
+                if corr.identifier == key:
+                    return True
+            return False
+        elif isinstance(key, Correlation):
+            return super().__contains__(key)
+        else:
+            raise TypeError(
+                f"Type not valid for correlation group membership check, expected str or Correlation, got {type(key)}"
+            )
 
 
 all_correlations = CorrelationGroup([])
