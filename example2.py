@@ -12,11 +12,7 @@ from sparging.inputs import (
 import logging
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
-
-
-# def source_from_tbr(tbr, n_gen_rate, tank_volume):
-#     return tbr * n_gen_rate / tank_volume
+logging.basicConfig(level=logging.WARNING)
 
 
 geom = ColumnGeometry(
@@ -45,11 +41,6 @@ sparging_params = SpargingParameters(
 )
 
 
-# from sparging.inputs import find_in_graph
-
-# dict = find_in_graph("drho", {}, [geom, flibe, operating_params, sparging_params])
-
-# breakpoint()
 # class method from_parameters that takes in objects like ColumnGeometry, BreederMaterial, OperatingParameters and returns a SimulationInput object with the appropriate correlations for the given parameters. This method should be able to handle cases where some of the parameters are already provided as correlations and should not overwrite them.
 my_input = SimulationInput.from_parameters(
     geom, flibe, operating_params, sparging_params
@@ -57,22 +48,22 @@ my_input = SimulationInput.from_parameters(
 
 assert isinstance(my_input, SimulationInput)
 
-# inputs.to_yaml(f"input_{tank_height}m.yml")
-# inputs.to_json(f"input_{tank_height}m.json")
+# # inputs.to_yaml(f"input_{tank_height}m.yml")
+# # inputs.to_json(f"input_{tank_height}m.json")
 
-# unpacked_inputs = inputs.resolve()
+# # unpacked_inputs = inputs.resolve()
 
-# inputs = SimulationInput.from_yaml(f"input_{tank_height}m.yml")
-# inputs.T = 500
-# inputs.to_yaml(f"input_{tank_height}m_modified.yml")
-# output = solve(unpacked_inputs)
+# # inputs = SimulationInput.from_yaml(f"input_{tank_height}m.yml")
+# # inputs.T = 500
+# # inputs.to_yaml(f"input_{tank_height}m_modified.yml")
+# # output = solve(unpacked_inputs)
 
-# save output to file
-# output.profiles_to_csv(f"output_{tank_height}m.csv")
+# # save output to file
+# # output.profiles_to_csv(f"output_{tank_height}m.csv")
 
-# plot results
-# from sparging import plotting
-# plotting.plot_animation(output)
+# # plot results
+# # from sparging import plotting
+# # plotting.plot_animation(output)
 
 logger.info(my_input)
 output = solve(
