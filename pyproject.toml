@@ -50,3 +50,9 @@ addopts = "-v"
 
 [tool.setuptools.package-data]
 sparging = ["*.yaml", "*.yml"]
+
+[tool.coverage.run]
+source = ["src/sparging"]
+omit = [
+    "src/sparging/animation.py"   
+]

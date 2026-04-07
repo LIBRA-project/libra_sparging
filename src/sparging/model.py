@@ -19,6 +19,11 @@ from sparging.config import ureg
 
 from sparging.inputs import SimulationInput
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pint
+
 hours_to_seconds = 3600
 days_to_seconds = 24 * hours_to_seconds
 T2_to_T = 2
@@ -53,12 +58,6 @@ class SimulationResults:
         "fluxes_T2",
         "sim_input",
     ]
-
-    # FIXME
-    namespace = {
-        "ramp": lambda s, e: helpers.string_to_ramp(times, s, e),
-        "step": lambda s: helpers.string_to_step(times, s),
-    }
 
     def to_yaml(self, output_path: str):
         sim_dict = self.sim_input.__dict__.copy()
@@ -136,7 +135,12 @@ class SimulationResults:
         df_y_T2.to_csv(output_path + "_y_T2.csv", index=False)
 
 
-def solve(input: SimulationInput, t_final: float, t_irr, t_sparging):
+def solve(
+    input: SimulationInput,
+    t_final: pint.Quantity,
+    t_irr: list[pint.Quantity],
+    t_sparging: list[pint.Quantity],
+):
     t_final = t_final.to("seconds").magnitude
     t_irr = t_irr.to("seconds").magnitude
     t_sparging = t_sparging.to("seconds").magnitude
@@ -159,9 +163,6 @@ def solve(input: SimulationInput, t_final: float, t_irr, t_sparging):
     source_T2 = input.source_T.to("molT2/s/m**3").magnitude
 
     eps_l = 1 - eps_g
-
-    # tank_area = np.pi * (params["D"] / 2) ** 2
-    # tank_volume = tank_area * tank_height
 
     # MESH AND FUNCTION SPACES
     mesh = dolfinx.mesh.create_interval(

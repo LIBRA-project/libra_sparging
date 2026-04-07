@@ -1,34 +1,82 @@
 import sparging.model as model
-from sparging.helpers import get_input
+from sparging.inputs import SimulationInput
+from sparging.config import ureg
 import pytest
+import dataclasses
+from pint import DimensionalityError
 
 
-# def test_model_solve():
-#     """
-#     Tests that `model.solve` runs without errors for a simple test case. Does not check results.
-#     """
-#     params = get_input("test/test_input.yml")
-#     sim_input = model.SimulationInput(params)
-
-#     # TODO integrate to input file
-#     t_sparging_hr = [24, 1e20]  # time interval when sparger is ON
-#     t_irr_hr = [0, 96]  # time interval when irradiation is ON
-#     t_final = 1 * model.days_to_seconds
-
-#     model.solve(
-#         sim_input,
-#         t_final=t_final,
-#         t_irr=[t * model.hours_to_seconds for t in t_irr_hr],
-#         t_sparging=[t * model.hours_to_seconds for t in t_sparging_hr],
-#     )
+standard_input = SimulationInput(
+    height=1.0 * ureg.m,
+    area=0.2 * ureg.m**2,
+    u_g0=0.25 * ureg("m/s"),
+    temperature=600 * ureg.celsius,
+    a=0.5 * ureg("1/m"),
+    h_l=3e-5 * ureg("m/s"),
+    K_s=1e-4 * ureg("mol/m**3/Pa"),
+    P_bottom=1.2 * ureg.bar,
+    eps_g=0.001 * ureg.dimensionless,
+    E_g=1e-2 * ureg("m^2/s"),
+    D_l=3e-9 * ureg("m^2/s"),
+    source_T=8e-16 * ureg("molT/m^3/s"),
+)
 
 
-# def test_model_solve_incomplete_input():
-#     """
-#     Tests SimulationInput raises error when required input is missing.
-#     """
-#     params = get_input("test/test_input.yml")
-#     params.pop("tank_diameter")  # remove bubble velocity to test default value
+def test_model_solve_successfull():
+    """
+    Tests that `model.solve` runs without errors for a simple test case. Does not check results.
+    """
+    # TODO integrate to input file
+    t_sparging = [0, 1e20] * ureg.hours  # time interval when sparger is ON
+    t_irr = [0, 36] * ureg.hours  # time interval when irradiation is ON
+    t_final = 0.2 * ureg.day
 
-#     with pytest.raises(KeyError, match="Missing a required input"):
-#         model.SimulationInput(params)
+    output = model.solve(
+        standard_input,
+        t_final=t_final,
+        t_irr=t_irr,
+        t_sparging=t_sparging,
+    )
+
+
+def test_model_solve_missing_input():
+    """
+    Tests SimulationInput raises error when required input is missing.
+    """
+    broken_input = dataclasses.replace(standard_input)
+    del broken_input.u_g0  # missing required parameter
+
+    t_sparging = [0, 1e20] * ureg.hours  # time interval when sparger is ON
+    t_irr = [0, 36] * ureg.hours  # time interval when irradiation is ON
+    t_final = 1 * ureg.day
+
+    with pytest.raises(
+        AttributeError, match="'SimulationInput' object has no attribute 'u_g0'"
+    ):
+        model.solve(
+            broken_input,
+            t_final=t_final,
+            t_irr=t_irr,
+            t_sparging=t_sparging,
+        )
+
+
+def test_model_solve_wrong_input():
+    """
+    Tests SimulationInput raises error when required input has wrong dimensionality
+    """
+    broken_input = dataclasses.replace(
+        standard_input, u_g0=3 * ureg("m^2/s")
+    )  # wrong units
+
+    t_sparging = [0, 1e20] * ureg.hours  # time interval when sparger is ON
+    t_irr = [0, 36] * ureg.hours  # time interval when irradiation is ON
+    t_final = 1 * ureg.day
+
+    with pytest.raises(DimensionalityError, match="Cannot convert from"):
+        model.solve(
+            broken_input,
+            t_final=t_final,
+            t_irr=t_irr,
+            t_sparging=t_sparging,
+        )
