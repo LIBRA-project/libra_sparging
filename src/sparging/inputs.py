@@ -80,13 +80,15 @@ class SimulationInput:
     def volume(self):
         return self.area * self.height
 
+    # TODO __str__ method
+
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error
         for key in self.__dataclass_fields__.keys():
             value = getattr(self, key)
             if not isinstance(value, pint.Quantity):
                 raise ValueError(
-                    f"Invalid input for '{key}': expected a pint.Quantity, got {value} of type {type(value)}"
+                    f"In {self.__class__.__name__}: Invalid type for '{key}': expected a pint.Quantity, got {value} of type {type(value)}"
                 )
 
     @classmethod
@@ -97,103 +99,105 @@ class SimulationInput:
         operating_params: OperatingParameters,
         sparging_params: SpargingParameters,
     ):
-        # remove None from all_params
-        previously_resolved = {}
-        all_params = [
+        input_objects = [
             column_geometry,
             breeder_material,
             operating_params,
             sparging_params,
         ]
-        needed_values = {}
-        required_keys = cls.__dataclass_fields__.keys()
-        for needed_key in required_keys:
-            for prms in all_params:
-                if hasattr(prms, needed_key):
-                    value = getattr(prms, needed_key)
+        resolved_parameters = {}
+        required_keys = (
+            cls.__dataclass_fields__.keys()
+        )  # these parameters will be used to solve the model
 
-                    if isinstance(value, pint.Quantity):
-                        needed_values[needed_key] = value  # TODO do we even need this?
-                    elif isinstance(value, Correlation):
-                        quantity = resolve_correlation(
-                            value,
-                            column_geometry,
-                            breeder_material,
-                            operating_params,
-                            sparging_params,
-                            previously_resolved=previously_resolved,
-                        )
-                        needed_values[needed_key] = quantity
-                    elif value is None:
-                        # try to find a default correlation for this key
-                        print(
-                            f"Value for '{needed_key}' is None, looking for a default correlation..."
-                        )
-                        if default_correlation := all_correlations(needed_key):
-                            quantity = resolve_correlation(
-                                default_correlation,
-                                column_geometry,
-                                breeder_material,
-                                operating_params,
-                                sparging_params,
-                                previously_resolved=previously_resolved,
-                            )
-                            needed_values[needed_key] = quantity
+        for required_key in required_keys:
+            find_in_graph(required_key, resolved_parameters, graph=input_objects)
 
-        return cls(**needed_values)
+        return cls(**{arg: resolved_parameters[arg] for arg in required_keys})
+
+
+def find_in_graph(
+    required_node: str, discovered_nodes: dict, graph: list[object]
+) -> dict:
+    """Abstracts SimulationInput construction as a graph search problem. "Correlation" object are seen as a path to the corresponding node
+    - required_node: parameter we want to obtain (e.g. h_l)
+    - discovered_nodes: already discovered parameters as pint.Quantity
+    - graph: list of objects in which to search
+    - returns the updated discovered_nodes with the required_node added
+    """
+    # first check if the required node is already discovered
+    if required_node in discovered_nodes:
+        if VERBOSE:
+            print(f"Found required node '{required_node}' in discovered nodes...")
+        return discovered_nodes
+
+    # then check if the required node is given as input (either as a pint.Quantity or as a Correlation)
+    result = check_input(required_node, graph)
+
+    if result is None:
+        # look for default correlation
+        if (result := all_correlations(required_node)) is not None:
+            if VERBOSE:
+                print(
+                    f"Found default correlation for required node '{required_node}': {result.identifier}"
+                )
+        else:
+            raise KeyError(
+                f"Could not find path to required node '{required_node}' in the graph or in the default correlations"
+            )
+    if isinstance(result, Correlation):
+        result, discovered_nodes = resolve_correlation(
+            corr=result, resolved_quantities=discovered_nodes, graph=graph
+        )  # also update discovered_nodes with the nodes possibly discovered during recursive search
+
+    assert isinstance(result, pint.Quantity), (
+        f"Result for required node '{required_node}' is not a pint.Quantity after resolution, got {result} of type {type(result)}"
+    )
+    discovered_nodes.update({required_node: result})
+    return discovered_nodes
+
+
+def check_input(
+    required_node: str, input_objs: list[object]
+) -> pint.Quantity | Correlation | None:
+    """look for pint.Quantity or Correlation given in input objects"""
+    for object in input_objs:
+        # scan for the required node in the attributes of the object
+        if (result := getattr(object, required_node, None)) is not None:
+            if isinstance(result, pint.Quantity):
+                # required node was found
+                if VERBOSE:
+                    print(
+                        f"Found Quantity for required node '{required_node}' in graph: {result}"
+                    )
+                break
+            elif isinstance(result, Correlation):
+                if VERBOSE:
+                    print(
+                        f"Found correlation for required node '{required_node}' in graph: {result.identifier}"
+                    )
+                break
+            else:
+                raise ValueError(
+                    f"In check_input: found result for '{required_node}': but expected a Correlation or a pint.Quantity, got {result} of type {type(result)}"
+                )
 
 
 def resolve_correlation(
-    correlation: Correlation,
-    column_geometry,
-    breeder_material,
-    operating_params,
-    sparging_params,
-    previously_resolved={},
-):
-    all_params = [
-        column_geometry,
-        breeder_material,
-        operating_params,
-        sparging_params,
-    ]
-    corr_args = inspect.signature(correlation.function).parameters.keys()
+    corr: Correlation, resolved_quantities: dict, graph: list[object]
+) -> dict:
+    corr_args = inspect.signature(corr.function).parameters.keys()
     for arg in corr_args:
-        for prms in all_params:
-            if hasattr(prms, arg):
-                value = getattr(prms, arg)
-                if isinstance(value, pint.Quantity):
-                    previously_resolved[arg] = value  # TODO do we even need this?
-                    break
-                elif isinstance(value, Correlation):
-                    previously_resolved[arg] = resolve_correlation(
-                        value,
-                        column_geometry,
-                        breeder_material,
-                        operating_params,
-                        sparging_params,
-                        previously_resolved,
-                    )
-                    break
+        if VERBOSE:
+            print(f"Resolving argument '{arg}' for correlation '{corr.identifier}'...")
+        resolved_quantities = find_in_graph(arg, resolved_quantities, graph)
 
-        # if the arg is not in the params, find a default correlation
-        if arg not in previously_resolved.keys():
-            print(
-                f"Argument '{arg}' not found in input parameters, looking for a default correlation..."
-            )
-            if default_correlation := all_correlations(arg):
-                previously_resolved[arg] = resolve_correlation(
-                    default_correlation,
-                    column_geometry,
-                    breeder_material,
-                    operating_params,
-                    sparging_params,
-                    previously_resolved,
-                )
-
-    assert all(arg in previously_resolved for arg in corr_args), (
-        f"Could not resolve all arguments for correlation '{correlation.identifier}'. "
-        f"Missing arguments: {[arg for arg in corr_args if arg not in previously_resolved]}"
+    assert all(arg in resolved_quantities for arg in corr_args), (
+        f"Could not resolve all arguments for correlation '{corr.identifier}'. "
+        f"Missing arguments: {[arg for arg in corr_args if arg not in resolved_quantities]}"
     )
-    # return correlation.function(**{arg: previously_resolved[arg] for arg in corr_args})
-    return correlation(**{arg: previously_resolved[arg] for arg in corr_args})
+
+    return (
+        corr(**{arg: resolved_quantities[arg] for arg in corr_args}),
+        resolved_quantities,
+    )
