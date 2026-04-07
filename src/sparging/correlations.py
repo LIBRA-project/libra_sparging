@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sparging.model import SimulationInput
+    import pint
 import numpy as np
 import scipy.constants as const
 import warnings
@@ -55,15 +56,16 @@ class Correlation:
                     raise ValueError(
                         f"Invalid input: expected a pint.Quantity with units of {expected_dimension}, got {arg} of type {type(arg)}"
                     )
-                if not arg.check(expected_dimension):
+                if not arg.dimensionality == ureg(expected_dimension).dimensionality:
+                    breakpoint()
                     raise ValueError(
                         f"Invalid input when resolving for {self.identifier}: expected dimensions of {expected_dimension}, got {arg.dimensionality}"
                     )
         result = self.function(**kwargs)
         if self.output_units is not None:
-            result = result.to(self.output_units)
-            breakpoint()
-        return result.to_base_units()
+            return result.to(self.output_units)
+        else:
+            return result.to_base_units()
 
     # TODO add a method that checks the validity of the input parameters based on the range of validity of the correlation, if provided in the description or source. This method could be called before running the simulation to warn the user if they are using a correlation outside of its validated range.
 
@@ -73,9 +75,10 @@ class CorrelationGroup(list[Correlation]):
         for corr in self:
             if corr.identifier == identifier:
                 return corr
-        raise ValueError(
+        warnings.warn(
             f"Correlation with identifier {identifier} not found in correlation group"
         )
+        return None
 
 
 all_correlations = CorrelationGroup([])
@@ -129,6 +132,7 @@ D_l = Correlation(
     source="Calderoni 2008",
     description="diffusivity of tritium in liquid FLiBe as a function of temperature",
     input_units=["kelvin"],
+    output_units="m**2/s",
 )
 all_correlations.append(D_l)
 
@@ -143,6 +147,7 @@ K_s = Correlation(
     source="Calderoni 2008",
     description="solubility of tritium in liquid FLiBe as a function of temperature",
     input_units=["kelvin"],
+    output_units="mol/m**3/Pa",
 )
 all_correlations.append(K_s)
 
@@ -153,6 +158,7 @@ d_b = Correlation(
     ),  # mean bubble diameter, Kanai 2017
     corr_type=CorrelationType.BUBBLE_DIAMETER,
     input_units=["m**3/s", "m", "dimensionless"],
+    output_units="m",
 )
 all_correlations.append(d_b)
 
@@ -202,11 +208,11 @@ u_g0 = Correlation(
     input_units=[
         "dimensionless",
         "dimensionless",
-        "dimensionless",
         "Pa*s",
         "kg/m**3",
         "m",
     ],
+    output_units="m/s",
 )
 all_correlations.append(u_g0)
 
@@ -229,10 +235,11 @@ eps_g = Correlation(
         "Pa",
         "N/m",
         "m",
-        "m**3/s",
+        "mol/s",
         "m",
         "m/s",
     ],
+    output_units="dimensionless",
 )
 all_correlations.append(eps_g)
 
@@ -245,6 +252,7 @@ h_l_higbie = Correlation(
     source="Higbie 1935",
     description="mass transfer coefficient for tritium in liquid FLiBe using Higbie penetration model",
     input_units=["m**2/s", "m/s", "m"],
+    output_units="m/s",
 )
 all_correlations.append(h_l_higbie)
 
@@ -257,6 +265,7 @@ h_l_malara = Correlation(
     source="Malara 1995",
     description="mass transfer coefficient for tritium in liquid FLiBe using Malara 1995 correlation (used for inert gas stripping from breeder droplets, may not be valid here)",
     input_units=["m**2/s", "m"],
+    output_units="m/s",
 )
 all_correlations.append(h_l_malara)
 
@@ -269,6 +278,7 @@ h_l_briggs = Correlation(
     source="Briggs 1970",
     description="mass transfer coefficient for tritium in liquid FLiBe using Briggs 1970 correlation",
     input_units=["dimensionless", "dimensionless", "m**2/s", "m"],
+    output_units="m/s",
 )
 all_correlations.append(h_l_briggs)
 
@@ -281,6 +291,7 @@ E_g = Correlation(
     source="Malara 1995",
     description="gas phase axial dispersion coefficient [m2/s], Malara 1995 correlation models dispersion of the gas velocity distribution around the mean bubble velocity",
     input_units=["m", "m/s"],
+    output_units="m**2/s",
 )
 all_correlations.append(E_g)
 
@@ -314,7 +325,8 @@ P_bottom = Correlation(
     ),  # convert pressure to Pascals
     corr_type=CorrelationType.PRESSURE,
     description="pressure at the bottom of the system, converted to Pascals",
-    input_units=["Pa"],
+    input_units=["Pa", "kg/m**3", "m"],
+    output_units="Pa",
 )
 all_correlations.append(P_bottom)
 
@@ -326,6 +338,7 @@ flow_g_mol = Correlation(
     corr_type=CorrelationType.FLOW_RATE,
     description="molar flow rate of gas phase calculated from volumetric flow rate using ideal gas law",
     input_units=["m**3/s", "kelvin", "Pa"],
+    output_units="mol/s",
 )
 all_correlations.append(flow_g_mol)
 
@@ -337,6 +350,7 @@ flow_g_vol = Correlation(
     corr_type=CorrelationType.FLOW_RATE,
     description="volumetric flow rate of gas phase calculated from molar flow rate using ideal gas law",
     input_units=["mol/s", "kelvin", "Pa"],
+    output_units="m**3/s",
 )
 all_correlations.append(flow_g_vol)
 
@@ -359,12 +373,15 @@ source_T_from_tbr = Correlation(
         tbr * n_gen_rate / tank_volume
     ),  # source term for tritium generation calculated from TBR and neutron generation rate
     corr_type=CorrelationType.TRITIUM_SOURCE,
-    input_units=["dimensionless", "neutron/s", "m**3"],
+    input_units=["triton/neutron", "neutron/s", "m**3"],
+    output_units="molT/m**3/s",
 )
 all_correlations.append(source_T_from_tbr)
 
 
-def get_d_b(flow_g_vol: float, nozzle_diameter: float, nb_nozzle: int) -> float:
+def get_d_b(
+    flow_g_vol: pint.Quantity, nozzle_diameter: pint.Quantity, nb_nozzle: pint.Quantity
+) -> float:
     """
     mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
     """
