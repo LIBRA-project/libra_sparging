@@ -130,7 +130,7 @@ def find_in_graph(
     graph: List[
         SpargingParameters | OperatingParameters | BreederMaterial | ColumnGeometry
     ],
-) -> dict:
+) -> None:
     """Abstracts SimulationInput construction as a graph search problem. "Correlation" object are seen as a path to the corresponding node
     - required_node: parameter we want to obtain (e.g. h_l)
     - discovered_nodes: already discovered parameters as pint.Quantity
@@ -140,11 +140,11 @@ def find_in_graph(
     # first check if the required node is already discovered
     if required_node in discovered_nodes:
         logger.info(f"Found required node '{required_node}' in discovered nodes...")
-        return discovered_nodes
+        return
 
     # then check if the required node is given as input (either as a pint.Quantity or as a Correlation)
     if (result := check_input(required_node, graph)) is None:
-        # look for default correlation
+        # if it's not, look for default correlation
         if required_node in all_correlations:
             result = all_correlations(required_node)
             logger.info(
@@ -155,7 +155,7 @@ def find_in_graph(
                 f"Could not find path to required node '{required_node}' in the graph or in the default correlations"
             )
     if isinstance(result, Correlation):
-        result, discovered_nodes = resolve_correlation(
+        result = resolve_correlation(
             corr=result, resolved_quantities=discovered_nodes, graph=graph
         )  # also update discovered_nodes with the nodes possibly discovered during recursive search
 
@@ -163,7 +163,6 @@ def find_in_graph(
         f"Result for required node '{required_node}' is not a pint.Quantity after resolution, got {result} of type {type(result)}"
     )
     discovered_nodes.update({required_node: result})
-    return discovered_nodes
 
 
 def check_input(
@@ -194,20 +193,17 @@ def check_input(
 
 def resolve_correlation(
     corr: Correlation, resolved_quantities: dict, graph: list[object]
-) -> dict:
+) -> pint.Quantity:
     corr_args = inspect.signature(corr.function).parameters.keys()
     for arg in corr_args:
         logger.info(
             f"Resolving argument '{arg}' for correlation '{corr.identifier}'..."
         )
-        resolved_quantities = find_in_graph(arg, resolved_quantities, graph)
+        find_in_graph(arg, resolved_quantities, graph)
 
     assert all(arg in resolved_quantities for arg in corr_args), (
         f"Could not resolve all arguments for correlation '{corr.identifier}'. "
         f"Missing arguments: {[arg for arg in corr_args if arg not in resolved_quantities]}"
     )
 
-    return (
-        corr(**{arg: resolved_quantities[arg] for arg in corr_args}),
-        resolved_quantities,
-    )
+    return corr(**{arg: resolved_quantities[arg] for arg in corr_args})
