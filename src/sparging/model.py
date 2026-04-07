@@ -19,7 +19,7 @@ import pint
 import inspect
 import sparging.correlations as c
 
-from sparging.config import ureg, const_R, const_g, VERBOSE
+from sparging.config import ureg, const_R, const_g
 
 from sparging.inputs import SimulationInput
 

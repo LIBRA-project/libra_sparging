@@ -1,5 +1,5 @@
 from __future__ import annotations
-from sparging.config import ureg, const_R, const_g, VERBOSE
+from sparging.config import ureg, const_R, const_g
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

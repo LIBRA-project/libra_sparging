@@ -1,11 +1,12 @@
 from dataclasses import dataclass
-from sparging.correlations import Correlation
+from sparging.correlations import Correlation, all_correlations
 import pint
 from typing import List
 import inspect
 import numpy as np
-from .config import VERBOSE
-from .correlations import all_correlations
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -114,7 +115,7 @@ class SimulationInput:
         return cls(**{arg: resolved_parameters[arg] for arg in required_keys})
 
     def __str__(self):
-        return "\n".join(
+        return "\n\t".join(
             [
                 f"{name}: {value}"
                 for name in self.__dataclass_fields__
@@ -138,8 +139,7 @@ def find_in_graph(
     """
     # first check if the required node is already discovered
     if required_node in discovered_nodes:
-        if VERBOSE:
-            print(f"Found required node '{required_node}' in discovered nodes...")
+        logger.info(f"Found required node '{required_node}' in discovered nodes...")
         return discovered_nodes
 
     # then check if the required node is given as input (either as a pint.Quantity or as a Correlation)
@@ -147,10 +147,9 @@ def find_in_graph(
         # look for default correlation
         if required_node in all_correlations:
             result = all_correlations(required_node)
-            if VERBOSE:
-                print(
-                    f"Found default correlation for required node '{required_node}': {result.identifier}"
-                )
+            logger.info(
+                f"Found default correlation for required node '{required_node}': {result.identifier}"
+            )
         else:
             raise ValueError(
                 f"Could not find path to required node '{required_node}' in the graph or in the default correlations"
@@ -177,16 +176,14 @@ def check_input(
         if (result := getattr(object, required_node, None)) is not None:
             if isinstance(result, pint.Quantity):
                 # required node was found
-                if VERBOSE:
-                    print(
-                        f"Found Quantity for required node '{required_node}' in graph: {result}"
-                    )
+                logger.info(
+                    f"Found Quantity for required node '{required_node}' in graph: {result}"
+                )
                 break
             elif isinstance(result, Correlation):
-                if VERBOSE:
-                    print(
-                        f"Found correlation for required node '{required_node}' in graph: {result.identifier}"
-                    )
+                logger.info(
+                    f"Found correlation for required node '{required_node}' in graph: {result.identifier}"
+                )
                 break
             else:
                 raise ValueError(
@@ -200,8 +197,9 @@ def resolve_correlation(
 ) -> dict:
     corr_args = inspect.signature(corr.function).parameters.keys()
     for arg in corr_args:
-        if VERBOSE:
-            print(f"Resolving argument '{arg}' for correlation '{corr.identifier}'...")
+        logger.info(
+            f"Resolving argument '{arg}' for correlation '{corr.identifier}'..."
+        )
         resolved_quantities = find_in_graph(arg, resolved_quantities, graph)
 
     assert all(arg in resolved_quantities for arg in corr_args), (
