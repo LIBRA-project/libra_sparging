@@ -22,13 +22,14 @@ standard_input = SimulationInput(
 )
 
 
-def test_model_solve_successfull():
+def test_model_solve_successfull(tmp_path):
     """
     Tests that `model.solve` runs without errors for a simple test case. Does not check results.
+    Also tests successful exporting results to yaml, json and csv files.
     """
     # TODO integrate to input file
-    t_sparging = [0, 1e20] * ureg.hours  # time interval when sparger is ON
-    t_irr = [0, 36] * ureg.hours  # time interval when irradiation is ON
+    t_sparging = [2, 1e20] * ureg.hours  # time interval when sparger is ON
+    t_irr = [1, 3] * ureg.hours  # time interval when irradiation is ON
     t_final = 0.2 * ureg.day
 
     output = model.solve(
@@ -37,6 +38,11 @@ def test_model_solve_successfull():
         t_irr=t_irr,
         t_sparging=t_sparging,
     )
+    from pathlib import Path
+
+    output.to_yaml(Path(tmp_path).joinpath("dummy.yaml"))
+    output.to_json(Path(tmp_path).joinpath("dummy.json"))
+    output.profiles_to_csv(Path(tmp_path))
 
 
 def test_model_solve_missing_input():
@@ -47,7 +53,7 @@ def test_model_solve_missing_input():
     del broken_input.u_g0  # missing required parameter
 
     t_sparging = [0, 1e20] * ureg.hours  # time interval when sparger is ON
-    t_irr = [0, 36] * ureg.hours  # time interval when irradiation is ON
+    t_irr = [0, 4] * ureg.hours  # time interval when irradiation is ON
     t_final = 1 * ureg.day
 
     with pytest.raises(

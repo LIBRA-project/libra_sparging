@@ -14,6 +14,7 @@ from datetime import datetime
 import yaml
 import sparging.helpers as helpers
 import json
+from pathlib import Path
 
 from sparging.config import ureg
 
@@ -59,7 +60,7 @@ class SimulationResults:
         "sim_input",
     ]
 
-    def to_yaml(self, output_path: str):
+    def to_yaml(self, output_path: Path):
         sim_dict = self.sim_input.__dict__.copy()
         helpers.setup_yaml()
 
@@ -70,13 +71,10 @@ class SimulationResults:
                 "date": datetime.now().isoformat(),
             },
         }
-        sim_dict.pop(
-            "quantities_dict"
-        )  # remove quantities_dict from input for cleaner output
 
-        output["input"] = {}
+        output["simulation parameters"] = {}
         for key, value in sim_dict.items():
-            output["input"][key] = str(value)
+            output["simulation parameters"][key] = str(value)
 
         output["results"] = self.__dict__.copy()
         # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
@@ -86,8 +84,8 @@ class SimulationResults:
         with open(output_path, "w") as f:
             yaml.dump(output, f, sort_keys=False)
 
-    def to_json(self, output_path: str):
-        sim_dict = self.sim_input.quantities_dict.copy()
+    def to_json(self, output_path: Path):
+        sim_dict = self.sim_input.__dict__.copy()
 
         # structure the output
         output = {
@@ -96,10 +94,9 @@ class SimulationResults:
                 "date": datetime.now().isoformat(),
             },
         }
-        if sim_dict.get("inputed"):
-            output["input parameters"] = sim_dict["inputed"]
-        if sim_dict.get("computed"):
-            output["calculated properties"] = sim_dict["computed"]
+        output["simulation parameters"] = {}
+        for key, value in sim_dict.items():
+            output["simulation parameters"][key] = str(value)
         output["results"] = self.__dict__.copy()
 
         # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
@@ -117,7 +114,7 @@ class SimulationResults:
         with open(output_path, "w") as f:
             json.dump(output, f, indent=3)
 
-    def profiles_to_csv(self, output_path: str):
+    def profiles_to_csv(self, output_path: Path):
         """save c_T2 and y_T2 profiles at all time steps to csv files, one for c_T2 and one for y_T2, with columns for each time step"""
         import pandas as pd
 
@@ -131,8 +128,8 @@ class SimulationResults:
             df_c_T2[f"c_T2_t{i}"] = c_T2_profile
             df_y_T2[f"y_T2_t{i}"] = y_T2_profile
 
-        df_c_T2.to_csv(output_path + "_c_T2.csv", index=False)
-        df_y_T2.to_csv(output_path + "_y_T2.csv", index=False)
+        df_c_T2.to_csv(output_path.joinpath("_c_T2.csv"), index=False)
+        df_y_T2.to_csv(output_path.joinpath("_y_T2.csv"), index=False)
 
 
 def solve(
