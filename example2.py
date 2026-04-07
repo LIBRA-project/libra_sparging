@@ -29,7 +29,8 @@ flibe = BreederMaterial(
 operating_params = OperatingParameters(
     temperature=600 * ureg.celsius,
     P_top=1 * ureg.atm,
-    flow_g_mol=400 * ureg.sccm,
+    flow_g_mol=400
+    * ureg.sccm,  # TODO infinite recursion when not providing both flow_g_mol and flow_g_vol because of circular correlations
     irradiation_signal=1,  # ignored for now
     t_sparging=60 * ureg.s,  # TODO implement
     tbr=0.1 * ureg("triton / neutron"),

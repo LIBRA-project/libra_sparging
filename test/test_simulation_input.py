@@ -7,9 +7,11 @@ from sparging.inputs import (
     OperatingParameters,
     SpargingParameters,
     find_in_graph,
+    check_input,
 )
 
 import pytest
+from dataclasses import replace
 
 # define standard LIBRA input parameters to be used in multiple tests
 geom = ColumnGeometry(
@@ -27,8 +29,6 @@ operating_params = OperatingParameters(
     temperature=600 * ureg.celsius,
     P_top=1 * ureg.atm,
     flow_g_mol=400 * ureg.sccm,
-    irradiation_signal=1,  # ignored for now
-    t_sparging=60 * ureg.s,  # TODO implement
     tbr=0.1 * ureg("triton / neutron"),
     n_gen_rate=1e9 * ureg("neutron / s"),
 )
@@ -81,7 +81,7 @@ def test_find_in_graph_logging(tmp_path):
 
 
 @pytest.mark.parametrize("in_discovered", (True, False))
-def test_find_in_graph(in_discovered: bool):
+def test_find_in_graph_result(in_discovered: bool):
     """
     Test finding a node in the graph.
     This test checks that the `find_in_graph` function can successfully find the `d_b` parameter
@@ -90,21 +90,6 @@ def test_find_in_graph(in_discovered: bool):
     function can handle both scenarios correctly.
     """
     # BUILD
-    operating_params = OperatingParameters(
-        temperature=600 * ureg.celsius,
-        P_top=1 * ureg.atm,
-        flow_g_mol=400 * ureg.sccm if not in_discovered else None,
-        irradiation_signal=1,  # ignored for now
-        t_sparging=60 * ureg.s,  # TODO implement
-    )
-
-    geom = ColumnGeometry(
-        nb_nozzle=10 * ureg.dimensionless,
-        nozzle_diameter=2 * ureg.m,
-        area=2 * ureg.m**2,
-        height=3 * ureg.m,
-    )
-
     discovered_nodes = {}
     if in_discovered:
         discovered_nodes["flow_g_vol"] = 0.01 * ureg.m**3 / ureg.s
@@ -131,3 +116,54 @@ def test_find_in_graph(in_discovered: bool):
     assert discovered_nodes["d_b"] == expected_value, (
         f"Expected d_b to be {expected_value}, got {discovered_nodes['d_b']}"
     )
+
+
+def test_find_in_graph_unresolvable():
+    """
+    Test that find_in_graph raises an error when a parameter cannot be resolved.
+    """
+    broken_geom = replace(geom, nb_nozzle=None)
+
+    try:
+        find_in_graph(
+            "d_b",
+            discovered_nodes={},  # no discovered nodes provided
+            graph=[
+                broken_geom,
+                operating_params,
+            ],  # missing necessary parameters for d_b correlation
+        )
+    except ValueError as e:
+        assert (
+            str(e)
+            == "Could not find path to required node 'nb_nozzle' in the graph or in the default correlations"
+        ), f"Unexpected error message: {e}"
+
+
+@pytest.mark.parametrize("required_node", ("flow_g_mol", "non_existent_param"))
+def test_check_input_none(required_node: str):
+    """
+    Test that check_input returns None when the required node is not found in the graph.
+    """
+    op_params = OperatingParameters(
+        temperature=600 * ureg.celsius,
+    )
+    result = check_input(required_node, [geom, op_params])
+    assert result is None, f"Expected None for non-existent parameter, got {result}"
+
+
+def test_check_input_unexpected_type():
+    """
+    Test that check_input raises an error when it finds a parameter in the graph but it is not a pint.Quantity or Correlation.
+    """
+    op_params = replace(operating_params, tbr=13)
+    result = -1
+    try:
+        result = check_input("tbr", [geom, op_params])
+    except ValueError as e:
+        assert (
+            str(e)
+            == "In check_input: found result for 'tbr': but expected a Correlation or a pint.Quantity, got 13 of type <class 'int'>"
+        ), f"Unexpected error message: {e}"
+    else:
+        assert False, f"Expected ValueError, got {result}"
