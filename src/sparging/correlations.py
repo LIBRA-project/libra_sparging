@@ -107,6 +107,19 @@ mu_l = Correlation(
 )
 all_correlations.append(mu_l)
 
+nu_l = Correlation(
+    identifier="nu_l",
+    function=lambda mu_l, rho_l: (
+        mu_l / rho_l
+    ),  # kinematic viscosity of Li2BeF4 calculated from dynamic viscosity and density
+    corr_type=CorrelationType.VISCOSITY,
+    source="calculated from mu_l and rho_l",
+    description="kinematic viscosity of Li2BeF4 calculated from dynamic viscosity and density",
+    input_units=["Pa*s", "kg/m**3"],
+    output_units="m**2/s",
+)
+all_correlations.append(nu_l)
+
 sigma_l = Correlation(
     identifier="sigma_l",
     function=lambda temperature: ureg.Quantity(
@@ -191,12 +204,13 @@ all_correlations.append(Sc)
 
 Re = Correlation(
     identifier="Re",
-    function=lambda rho_l, u, d_b, mu_l: (rho_l * u * d_b / mu_l).to(
+    function=lambda rho_l, u_g0, d_b, mu_l: (rho_l * u_g0 * d_b / mu_l).to(
         "dimensionless"
     ),  # Reynolds number
     corr_type=CorrelationType.REYNOLDS_NUMBER,
     input_units=["kg/m**3", "m/s", "m", "Pa*s"],
 )
+all_correlations.append(Re)
 
 u_g0 = Correlation(
     identifier="u_g0",
