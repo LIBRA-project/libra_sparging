@@ -15,7 +15,7 @@ import enum
 U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
 
 
-class CorrelationType(enum.Enum):
+class CorrelationType(enum.Enum):  # TODO do we really use it ?
     MASS_TRANSFER_COEFF = "h_l"
     DENSITY = "rho_l"
     DIFFUSIVITY = "D_l"
@@ -41,24 +41,23 @@ class Correlation:
     identifier: str
     function: callable
     corr_type: CorrelationType
+    input_units: list[str]
     source: str | None = None
     description: str | None = None
-    input_units: list[str] | None = None
     output_units: str | None = None
 
-    def __call__(self, **kwargs):
+    def __call__(self, **kwargs: pint.Quantity) -> pint.Quantity:
         # check the dimensions are correct
-        if self.input_units is not None:
-            for arg_name, expected_dimension in zip(kwargs, self.input_units):
-                arg = kwargs[arg_name]
-                if not isinstance(arg, ureg.Quantity):
-                    raise ValueError(
-                        f"Invalid input: expected a pint.Quantity with units of {expected_dimension}, got {arg} of type {type(arg)}"
-                    )
-                if not arg.dimensionality == ureg(expected_dimension).dimensionality:
-                    raise ValueError(
-                        f"Invalid input when resolving for {self.identifier}: expected dimensions of {expected_dimension}, got {arg.dimensionality}"
-                    )
+        for arg_name, expected_dimension in zip(kwargs, self.input_units):
+            arg = kwargs[arg_name]
+            if not isinstance(arg, ureg.Quantity):
+                raise ValueError(
+                    f"Invalid input: expected a pint.Quantity with units of {expected_dimension}, got {arg} of type {type(arg)}"
+                )
+            if not arg.dimensionality == ureg(expected_dimension).dimensionality:
+                raise ValueError(
+                    f"Invalid input when resolving for {self.identifier}: expected dimensions of {expected_dimension}, got {arg.dimensionality}"
+                )
         result = self.function(**kwargs)
         if self.output_units is not None:
             return result.to(self.output_units)
@@ -66,6 +65,7 @@ class Correlation:
             return result.to_base_units()
 
     # TODO add a method that checks the validity of the input parameters based on the range of validity of the correlation, if provided in the description or source. This method could be called before running the simulation to warn the user if they are using a correlation outside of its validated range.
+    # TODO add __post_init__ to check that user defined correlation has same number of input_units as the number of arguments in the function, and that the output of the function is a pint.Quantity with the correct units if output_units is provided
 
 
 class CorrelationGroup(list[Correlation]):

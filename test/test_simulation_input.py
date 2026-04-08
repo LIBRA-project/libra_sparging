@@ -1,6 +1,6 @@
 import sparging
 from sparging.config import ureg
-from sparging import all_correlations
+from sparging import all_correlations, CorrelationGroup, Correlation
 from sparging.inputs import (
     ColumnGeometry,
     BreederMaterial,
@@ -202,3 +202,75 @@ def test_check_input_unexpected_type():
     ):
         result = check_input("tbr", [geom, broken_op_params])
         assert False, f"Expected ValueError, got {result}"
+
+
+def test_correlation_group():
+    """
+    Test that CorrelationGroup __contains__ and __call__ behave as expected.
+    """
+    # BUILD
+    corr_str = "dummy_corr"
+    corr_str_typo = "dummy_coor"
+    corr_str_wrong_type = ureg.Quantity(5, ureg.s)
+
+    my_corr_obj = Correlation(
+        identifier=corr_str,
+        function=lambda: None,
+        corr_type="dummy",
+        input_units=[],
+    )
+    corr_group = CorrelationGroup([my_corr_obj])
+
+    # TEST __contains__
+    if corr_str in corr_group:  # should be found
+        pass
+    if my_corr_obj in corr_group:  # should be found
+        pass
+    if corr_str_typo in corr_group:  # should not be found
+        assert False, (
+            f"Expected '{corr_str_typo}' not to be found in CorrelationGroup, but it was"
+        )
+    with pytest.raises(
+        TypeError,
+        match="Type not valid for correlation group membership check, expected str or Correlation, got <class 'pint.Quantity'>",
+    ):
+        if corr_str_wrong_type in corr_group:  # wrong type, should raise TypeError
+            pass
+
+    # TEST __call__
+    correlation_found = corr_group(corr_str)  # return a Correlation
+    assert isinstance(correlation_found, Correlation), (
+        "Expected to find dummy_corr Correlation"
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=f"Correlation with identifier {corr_str_typo} not found",
+    ):
+        corr_group(corr_str_typo)  # non-existent correlation, should raise ValueError
+
+
+def test_correlation():
+    """
+    Test Correlation raises an error when:
+    - providing wrong input (missing arguments/wrong dimensionality)"""
+
+    # BUILD
+    my_corr_obj = Correlation(
+        identifier="dummy_corr",
+        function=lambda a, b: a * ureg.s,
+        corr_type="dummy",
+        input_units=[
+            "m"
+        ],  # TODO should raise an error if input_units length doesn't match function arguments when constructing the correlation
+    )
+
+    # RUN
+    assert isinstance(my_corr_obj(a=5 * ureg.m, b=None), ureg.Quantity), (
+        "Expected a pint.Quantity as output"
+    )  # should work
+
+    with pytest.raises(ValueError, match="expected a pint.Quantity"):
+        my_corr_obj(a=5, b=None)  # wrong input type, should be a pint.Quantity
+    with pytest.raises(ValueError, match="expected dimensions"):
+        my_corr_obj(a=5 * ureg.s, b=None)  # wrong units, should raise ValueError
