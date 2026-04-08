@@ -10,6 +10,10 @@ from sparging.inputs import (
     SimulationInput,
 )
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pint
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.WARNING)
@@ -45,11 +49,20 @@ my_input = SimulationInput.from_parameters(
 )
 logger.info(my_input)
 
+
+def profile_source_T(z: pint.Quantity):
+    import numpy as np
+
+    # return np.sin(np.pi / (1 * ureg.m) * z)
+    return 0.5 * (1 + np.cos(0.5 * np.pi / (1 * ureg.m) * z))
+
+
 my_simulation = Simulation(
     my_input,
     t_final=3 * ureg.days,
     signal_irr=lambda t: 1 if t < 12 * ureg.hour else 0,
     signal_sparging=lambda t: 1,
+    profile_source_T=profile_source_T,
 )
 output = my_simulation.solve()
 

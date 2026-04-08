@@ -136,8 +136,13 @@ class SimulationResults:
 class Simulation:
     sim_input: SimulationInput
     t_final: pint.Quantity
-    signal_irr: callable
-    signal_sparging: callable
+    signal_irr: callable[pint.Quantity]
+    signal_sparging: callable[pint.Quantity]
+    profile_source_T: callable[pint.Quantity] | None = None
+
+    def __post_init__(self):
+        if self.profile_source_T is None:
+            self.profile_source_T = lambda x: 1
 
     def solve(self, dt: pint.Quantity | None = None, dx: pint.Quantity | None = None):
         # unpack pint.Quantities
@@ -166,8 +171,10 @@ class Simulation:
         )
         fdim = mesh.topology.dim - 1
         cg_el = basix.ufl.element("Lagrange", mesh.basix_cell(), degree=1, shape=(2,))
+        profile_el = basix.ufl.element("Lagrange", mesh.basix_cell(), degree=1)
 
         V = dolfinx.fem.functionspace(mesh, cg_el)
+        V_profile = dolfinx.fem.functionspace(mesh, profile_el)
 
         u = dolfinx.fem.Function(V)
         u_n = dolfinx.fem.Function(V)
@@ -179,14 +186,12 @@ class Simulation:
         vel_x = u_g0  # TODO velocity should vary with hydrostatic pressure
         vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
 
-        """ vel = fem_func(U)
-            v,interpolate(lambda x: v0 + 2*x[0])"""
-
         h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
 
-        gen_T2 = dolfinx.fem.Constant(
-            mesh, PETSc.ScalarType(source_T2)
-        )  # generation term [mol T2 /m3/s]
+        # gen_T2 = dolfinx.fem.Constant(
+        #     mesh, PETSc.ScalarType(source_T2)
+        # )  # generation term [mol T2 /m3/s]
+        gen_T2 = dolfinx.fem.Function(V_profile)
 
         # VARIATIONAL FORMULATION
 
@@ -277,7 +282,14 @@ class Simulation:
         # SOLVE
         t = 0
         while t < t_final:
-            gen_T2.value = source_T2 * self.signal_irr(t * ureg.s)
+            gen_T2.interpolate(
+                lambda x: (
+                    x[0] * 0  # why do I need to put x[0] at all cost???
+                    + self.profile_source_T(x[0] * ureg.m)
+                    * source_T2
+                    * self.signal_irr(t * ureg.s)
+                )
+            )
             h_l_const.value = h_l * self.signal_sparging(t * ureg.s)
             """ utiliser ufl.conditional TODO"""
 
@@ -298,8 +310,8 @@ class Simulation:
             c_T2_solutions.append(c_T2_vals.copy())
             y_T2_solutions.append(y_T2_vals.copy())
             sources_T2.append(
-                gen_T2.value.copy() * tank_volume
-            )  # total T generation rate in the tank [mol/s]
+                source_T2 * self.signal_irr(t * ureg.s) * tank_volume
+            )  # total T generation rate in the tank [mol/s] TODO useless: signal_irr is already given
 
             flux_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
