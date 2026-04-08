@@ -210,5 +210,6 @@ __marimo__/
 *.csv
 mwe.py
 *.json
+!standard_input.json
 *.ipynb
 *.code-workspace
