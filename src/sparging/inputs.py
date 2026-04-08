@@ -88,6 +88,14 @@ class SimulationInput:
                     f"In {self.__class__.__name__}: Invalid type for '{key}': expected a pint.Quantity, got {value} of type {type(value)}"
                 )
 
+    def to_json(self, path: str):
+        import json
+
+        with open(path, "w") as f:
+            json.dump(
+                {key: str(value) for key, value in self.__dict__.items()}, f, indent=2
+            )
+
     @classmethod
     def from_parameters(
         cls,

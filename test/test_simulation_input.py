@@ -13,6 +13,9 @@ from sparging.inputs import (
 
 import pytest
 import dataclasses
+import difflib
+import logging
+from pathlib import Path
 
 # define standard LIBRA input parameters to be used in multiple tests
 geom = ColumnGeometry(
@@ -39,9 +42,10 @@ sparging_params = SpargingParameters(
 )
 
 
-def test_from_parameters_success():
+def test_from_parameters_success(tmp_path):
     """
     Test that SimulationInput.from_parameters successfully creates a SimulationInput object from minimal input objects
+    and that the generated SimulationInput is consistent with the standard input it should yield
     """
     sim_input = SimulationInput.from_parameters(
         geom, flibe, operating_params, sparging_params
@@ -57,16 +61,31 @@ def test_from_parameters_success():
             f"Expected field '{field.name}' to be a pint.Quantity, got {type(value)}"
         )
 
+    reference_path = Path(__file__).with_name("standard_input.json")
+    generated_path = Path(tmp_path).joinpath("generated_input.json")
+
+    sim_input.to_json(generated_path)
+
+    generated_text = generated_path.read_text(encoding="utf-8")
+    reference_text = reference_path.read_text(encoding="utf-8")
+
+    diff = "\n".join(
+        difflib.unified_diff(
+            reference_text.splitlines(),
+            generated_text.splitlines(),
+            fromfile=str(reference_path.name),
+            tofile=str(generated_path.name),
+            lineterm="",
+        )
+    )
+    assert generated_text == reference_text, f"Log output mismatch:\n{diff}"
+
 
 def test_find_in_graph_logging(tmp_path):
     """
     Test that the `find_in_graph` function logs the expected output when searching for a parameter in the graph.
     """
     # BUILD
-    import difflib
-    import logging
-    from pathlib import Path
-
     reference_log_path = Path(__file__).with_name("test_find_in_graph.reference.log")
     generated_log_path = Path(tmp_path).joinpath("test_find_in_graph.generated.log")
 
