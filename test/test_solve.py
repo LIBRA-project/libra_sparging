@@ -1,4 +1,4 @@
-import sparging.model as model
+from sparging.model import Simulation
 from sparging.inputs import SimulationInput
 from sparging.config import ureg
 import pytest
@@ -21,23 +21,21 @@ standard_input = SimulationInput(
     source_T=8e-16 * ureg("molT/m^3/s"),
 )
 
+standard_simulation = Simulation(
+    standard_input,
+    t_final=6 * ureg.hours,
+    signal_irr=lambda t: 1 if t > 1 * ureg.hour and t < 3 * ureg.hour else 0,
+    signal_sparging=lambda t: 1,
+)
+
 
 def test_model_solve_successfull(tmp_path):
     """
     Tests that `model.solve` runs without errors for a simple test case. Does not check results.
     Also tests successful exporting results to yaml, json and csv files.
     """
-    # TODO integrate to input file
-    t_sparging = [2, 1e20] * ureg.hours  # time interval when sparger is ON
-    t_irr = [1, 3] * ureg.hours  # time interval when irradiation is ON
-    t_final = 0.2 * ureg.day
 
-    output = model.solve(
-        standard_input,
-        t_final=t_final,
-        t_irr=t_irr,
-        t_sparging=t_sparging,
-    )
+    output = standard_simulation.solve(dt=0.05 * ureg.hour, dx=0.01 * ureg.m)
     from pathlib import Path
 
     output.to_yaml(Path(tmp_path).joinpath("dummy.yaml"))
@@ -47,42 +45,38 @@ def test_model_solve_successfull(tmp_path):
 
 def test_model_solve_missing_input():
     """
-    Tests SimulationInput raises error when required input is missing.
+    Tests SimulationInput raises error when a required input quantity is missing.
     """
+    # BUILD
     broken_input = dataclasses.replace(standard_input)
     del broken_input.u_g0  # missing required parameter
+    standard_simulation.sim_input = broken_input
 
-    t_sparging = [0, 1e20] * ureg.hours  # time interval when sparger is ON
-    t_irr = [0, 4] * ureg.hours  # time interval when irradiation is ON
-    t_final = 1 * ureg.day
-
+    # TEST
     with pytest.raises(
         AttributeError, match="'SimulationInput' object has no attribute 'u_g0'"
     ):
-        model.solve(
-            broken_input,
-            t_final=t_final,
-            t_irr=t_irr,
-            t_sparging=t_sparging,
-        )
+        standard_simulation.solve(dt=0.05 * ureg.hour, dx=0.01 * ureg.m)
 
 
 def test_model_solve_wrong_input():
     """
-    Tests SimulationInput raises error when required input has wrong dimensionality
+    Tests Simulation.solve() raises error when required input has wrong dimensionality
     """
+    # BUILD
     broken_input = dataclasses.replace(
         standard_input, u_g0=3 * ureg("m^2/s")
     )  # wrong units
+    standard_simulation.sim_input = broken_input
 
-    t_sparging = [0, 1e20] * ureg.hours  # time interval when sparger is ON
-    t_irr = [0, 36] * ureg.hours  # time interval when irradiation is ON
-    t_final = 1 * ureg.day
-
+    # TEST
     with pytest.raises(DimensionalityError, match="Cannot convert from"):
-        model.solve(
-            broken_input,
-            t_final=t_final,
-            t_irr=t_irr,
-            t_sparging=t_sparging,
-        )
+        standard_simulation.solve(dt=0.05 * ureg.hour, dx=0.01 * ureg.m)
+
+
+def test_model_solve_wrong_argument():
+    """
+    Tests Simulation.solve() can't be given a timestep without specifying the units
+    """
+    with pytest.raises(AttributeError, match="object has no attribute 'to'"):
+        standard_simulation.solve(dt=0.01)

@@ -1,7 +1,7 @@
 from sparging.config import ureg
 from sparging import all_correlations
 from sparging import animation
-from sparging.model import solve
+from sparging.model import Simulation
 from sparging.inputs import (
     ColumnGeometry,
     BreederMaterial,
@@ -43,32 +43,22 @@ sparging_params = SpargingParameters(
 my_input = SimulationInput.from_parameters(
     geom, flibe, operating_params, sparging_params
 )
-
-assert isinstance(my_input, SimulationInput)
-
-# # inputs.to_yaml(f"input_{tank_height}m.yml")
-# # inputs.to_json(f"input_{tank_height}m.json")
-
-# # unpacked_inputs = inputs.resolve()
-
-# # inputs = SimulationInput.from_yaml(f"input_{tank_height}m.yml")
-# # inputs.T = 500
-# # inputs.to_yaml(f"input_{tank_height}m_modified.yml")
-# # output = solve(unpacked_inputs)
-
-# # save output to file
-# # output.profiles_to_csv(f"output_{tank_height}m.csv")
-
-# # plot results
-# # from sparging import plotting
-# # plotting.plot_animation(output)
-
 logger.info(my_input)
-output = solve(
+
+my_simulation = Simulation(
     my_input,
     t_final=3 * ureg.days,
-    t_irr=[0, 12] * ureg.h,
-    t_sparging=[0, 1e9] * ureg.h,
+    signal_irr=lambda t: 1 if t < 12 * ureg.hour else 0,
+    signal_sparging=lambda t: 1,
 )
+output = my_simulation.solve()
+
+# # save output to file
+# output.profiles_to_csv(f"output_{tank_height}m.csv")
+
+# # plot results
+# from sparging import plotting
+# plotting.plot_animation(output)
+
 
 animation.create_animation(output, show_activity=True)
