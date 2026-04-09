@@ -140,10 +140,6 @@ class Simulation:
     signal_sparging: callable[pint.Quantity]
     profile_source_T: callable[pint.Quantity] | None = None
 
-    def __post_init__(self):
-        if self.profile_source_T is None:
-            self.profile_source_T = lambda x: 1
-
     def solve(self, dt: pint.Quantity | None = None, dx: pint.Quantity | None = None):
         # unpack pint.Quantities
         t_final = self.t_final.to("seconds").magnitude
@@ -188,10 +184,18 @@ class Simulation:
 
         h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
 
-        # gen_T2 = dolfinx.fem.Constant(
-        #     mesh, PETSc.ScalarType(source_T2)
-        # )  # generation term [mol T2 /m3/s]
-        gen_T2 = dolfinx.fem.Function(V_profile)
+        gen_T2_mag = dolfinx.fem.Constant(
+            mesh, source_T2 * self.signal_irr(0 * ureg.s)
+        )  # magnitude of the generation term
+        gen_T2 = None
+        if self.profile_source_T is not None:  # spatially varying profile is provided
+            gen_T2_prof = dolfinx.fem.Function(V_profile)
+            gen_T2_prof.interpolate(
+                lambda x: x[0] * 0 + self.profile_source_T(x[0] * ureg.m)
+            )
+            gen_T2 = gen_T2_mag * gen_T2_prof
+        else:  # homogeneous generation
+            gen_T2 = gen_T2_mag
 
         # VARIATIONAL FORMULATION
 
@@ -282,14 +286,7 @@ class Simulation:
         # SOLVE
         t = 0
         while t < t_final:
-            gen_T2.interpolate(
-                lambda x: (
-                    x[0] * 0  # why do I need to put x[0] at all cost???
-                    + self.profile_source_T(x[0] * ureg.m)
-                    * source_T2
-                    * self.signal_irr(t * ureg.s)
-                )
-            )
+            gen_T2_mag.value = source_T2 * self.signal_irr(t * ureg.s)
             h_l_const.value = h_l * self.signal_sparging(t * ureg.s)
             """ utiliser ufl.conditional TODO"""
 

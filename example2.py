@@ -62,7 +62,6 @@ my_simulation = Simulation(
     t_final=3 * ureg.days,
     signal_irr=lambda t: 1 if t < 12 * ureg.hour else 0,
     signal_sparging=lambda t: 1,
-    profile_source_T=profile_source_T,
 )
 output = my_simulation.solve()
 
