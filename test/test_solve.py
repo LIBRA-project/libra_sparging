@@ -13,6 +13,7 @@ standard_input = SimulationInput(
     temperature=600 * ureg.celsius,
     a=0.5 * ureg("1/m"),
     h_l=3e-5 * ureg("m/s"),
+    rho_l=2000 * ureg("kg/m^3"),
     K_s=1e-4 * ureg("mol/m**3/Pa"),
     P_bottom=1.2 * ureg.bar,
     eps_g=0.001 * ureg.dimensionless,

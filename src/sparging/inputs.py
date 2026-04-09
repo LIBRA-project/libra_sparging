@@ -70,6 +70,7 @@ class SimulationInput:
     h_l: pint.Quantity
     K_s: pint.Quantity
     P_bottom: pint.Quantity
+    rho_l: pint.Quantity
     eps_g: pint.Quantity
     E_g: pint.Quantity
     D_l: pint.Quantity

@@ -16,7 +16,7 @@ import sparging.helpers as helpers
 import json
 from pathlib import Path
 
-from sparging.config import ureg
+from sparging.config import ureg, const_g
 
 from sparging.inputs import SimulationInput
 
@@ -139,6 +139,13 @@ class Simulation:
     signal_irr: callable[pint.Quantity]
     signal_sparging: callable[pint.Quantity]
     profile_source_T: callable[pint.Quantity] | None = None
+    profile_pressure_hydrostatic: bool = False
+
+    def hydrostatic_pressure(self, x: pint.Quantity) -> pint.Quantity:
+        """returns the hydrostatic pressure at a given height x in the tank given P_bottom"""
+        rho = self.sim_input.rho_l
+        g = const_g
+        return (self.sim_input.P_bottom + rho * g * x).to("Pa")
 
     def solve(self, dt: pint.Quantity | None = None, dx: pint.Quantity | None = None):
         # unpack pint.Quantities
@@ -197,24 +204,34 @@ class Simulation:
         else:  # homogeneous generation
             gen_T2 = gen_T2_mag
 
+        P = None
+        if self.profile_pressure_hydrostatic:
+            P_prof = dolfinx.fem.Function(V_profile)
+            P_prof.interpolate(
+                lambda x: self.hydrostatic_pressure(x[0] * ureg.m).magnitude
+            )
+            P = P_prof
+        else:
+            P = dolfinx.fem.Constant(mesh, PETSc.ScalarType(P_0))
+
         # VARIATIONAL FORMULATION
 
         # mass transfer rate
         J_T2 = (
-            a * h_l_const * (c_T2 - K_s * (P_0 * y_T2 + EPS))
+            a * h_l_const * (c_T2 - K_s * (P * y_T2 + EPS))
         )  # TODO pressure shouldn't be a constant (use hydrostatic pressure profile), how to deal with this ? -> use fem.Expression ?
 
         F = 0  # variational formulation
 
         # transient terms
         F += eps_l * ((c_T2 - c_T2_n) / dt) * v_c * ufl.dx
-        F += eps_g * 1 / (const.R * T) * (P_0 * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
+        F += eps_g * 1 / (const.R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
         # diffusion/dispersion terms #TODO shouldn't use D_l, transport of T in liquid is dominated by dispersive effects due to gas sparging, find dispersion coeff for steady liquid in gas bubbles
         F += eps_l * D_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
 
         # NOTE remove diffusive term for gas for now for mass balance
-        # F += eps_g * E_g * ufl.dot(ufl.grad(P_0 * y_T2), ufl.grad(v_y)) * ufl.dx
+        # F += eps_g * E_g * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y)) * ufl.dx
 
         # mass exchange (coupling term)
         F += J_T2 * v_c * ufl.dx - J_T2 * v_y * ufl.dx
@@ -226,7 +243,7 @@ class Simulation:
         F += (
             1
             / (const.R * T)
-            * ufl.inner(ufl.dot(ufl.grad(P_0 * y_T2), vel), v_y)
+            * ufl.inner(ufl.dot(ufl.grad(P * y_T2), vel), v_y)
             * ufl.dx
         )
 
@@ -312,7 +329,7 @@ class Simulation:
 
             flux_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
-                    tank_area * vel_x * P_0 / (const.R * T) * y_T2_post * ds(2)
+                    tank_area * vel_x * P / (const.R * T) * y_T2_post * ds(2)
                 )
             )  # total T flux at the outlet [mol/s]
 
@@ -330,7 +347,7 @@ class Simulation:
 
             n = ufl.FacetNormal(mesh)
             flux_T2_inlet = dolfinx.fem.assemble_scalar(
-                dolfinx.fem.form(-E_g * ufl.inner(ufl.grad(P_0 * y_T2_post), n) * ds(1))
+                dolfinx.fem.form(-E_g * ufl.inner(ufl.grad(P * y_T2_post), n) * ds(1))
             )  # total T dispersive flux at the inlet [Pa T2 /s/m2]
             flux_T2_inlet *= 1 / (const.R * T) * T2_to_T  # convert to mol T/s/m2
             flux_T2_inlet *= tank_area  # convert to mol T/s
