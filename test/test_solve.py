@@ -18,6 +18,7 @@ standard_input = SimulationInput(
     P_bottom=1.2 * ureg.bar,
     eps_g=0.001 * ureg.dimensionless,
     E_g=1e-2 * ureg("m^2/s"),
+    E_l=1e-1 * ureg("m^2/s"),
     D_l=3e-9 * ureg("m^2/s"),
     source_T=8e-16 * ureg("molT/m^3/s"),
 )

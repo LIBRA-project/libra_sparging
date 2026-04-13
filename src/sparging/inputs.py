@@ -57,6 +57,7 @@ class SpargingParameters:
     d_b: pint.Quantity | Correlation | None = None
     rho_g: pint.Quantity | Correlation | None = None
     E_g: pint.Quantity | Correlation | None = None
+    E_l: pint.Quantity | Correlation | None = None
     a: pint.Quantity | Correlation | None = None
 
 
@@ -73,6 +74,7 @@ class SimulationInput:
     rho_l: pint.Quantity
     eps_g: pint.Quantity
     E_g: pint.Quantity
+    E_l: pint.Quantity
     D_l: pint.Quantity
     source_T: pint.Quantity
 

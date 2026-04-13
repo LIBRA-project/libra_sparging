@@ -60,7 +60,7 @@ def profile_source_T(z: pint.Quantity):
 my_simulation = Simulation(
     my_input,
     t_final=5 * ureg.days,
-    signal_irr=lambda t: 1 if t < 8 * ureg.hour else 0,
+    signal_irr=lambda t: 1 if t < 3 * ureg.days else 0,
     signal_sparging=lambda t: 1,
     profile_pressure_hydrostatic=False,
     # profile_source_T=profile_source_T,
@@ -76,4 +76,4 @@ if __name__ == "__main__":
     # from sparging import plotting
     # plotting.plot_animation(output)
 
-    animation.create_animation(output, show_activity=False)
+    animation.create_animation(output, show_activity=True)

@@ -164,7 +164,8 @@ class Simulation:
         T = self.sim_input.temperature.to("K").magnitude
         eps_g = self.sim_input.eps_g.to("dimensionless").magnitude
         E_g = self.sim_input.E_g.to("m**2/s").magnitude
-        D_l = self.sim_input.D_l.to("m**2/s").magnitude
+        E_l = self.sim_input.E_l.to("m**2/s").magnitude
+        D_l = self.sim_input.D_l.to("m**2/s").magnitude  # not needed (included in h_l)
         u_g0 = self.sim_input.u_g0.to("m/s").magnitude
         source_T2 = self.sim_input.source_T.to("molT2/s/m**3").magnitude
 
@@ -240,10 +241,8 @@ class Simulation:
         F += eps_l * ((c_T2 - c_T2_n) / dt) * v_c * ufl.dx
         F += eps_g * 1 / (const.R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
-        # diffusion/dispersion terms #TODO shouldn't use D_l, transport of T in liquid is dominated by dispersive effects due to gas sparging, find dispersion coeff for steady liquid in gas bubbles
-        F += eps_l * D_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
-
-        # NOTE remove diffusive term for gas for now for mass balance
+        # dispersive terms NOTE removed dispersive terms for now for mass balance
+        # F += eps_l * E_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
         # F += eps_g * E_g * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y)) * ufl.dx
 
         # mass exchange (coupling term)

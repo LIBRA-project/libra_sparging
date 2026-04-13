@@ -30,6 +30,7 @@ class CorrelationType(enum.Enum):  # TODO do we really use it ?
     REYNOLDS_NUMBER = "Re"
     BUBBLE_VELOCITY = "u_g0"
     GAS_PHASE_DISPERSION = "E_g"
+    LIQUID_PHASE_DISPERSION = "E_l"
     PRESSURE = "P"
     FLOW_RATE = "flow_g_mol"
     INTERFACIAL_AREA = "a"
@@ -306,10 +307,23 @@ h_l_briggs = Correlation(
 )
 all_correlations.append(h_l_briggs)
 
+E_l = Correlation(
+    identifier="E_l",
+    function=lambda tank_diameter, u_g0: ureg.Quantity(
+        0.678 * tank_diameter.magnitude**1.4 * u_g0.magnitude**0.3, "m**2/s"
+    ),  # liquid phase axial dispersion coefficient
+    corr_type=CorrelationType.LIQUID_PHASE_DISPERSION,
+    source="Deckwer 1974",
+    description="liquid phase axial dispersion coefficient, assumed equal to diffusivity of tritium in liquid FLiBe",
+    input_units=["m", "m/s"],
+    output_units="m**2/s",
+)
+all_correlations.append(E_l)
+
 E_g = Correlation(
     identifier="E_g",
-    function=lambda tank_diameter, u_g0: get_E_g(
-        diameter=tank_diameter, u_g=u_g0
+    function=lambda tank_diameter, u_g0: (
+        0.2 * ureg("1/m") * tank_diameter**2 * u_g0
     ),  # gas phase axial dispersion coefficient
     corr_type=CorrelationType.GAS_PHASE_DISPERSION,
     source="Malara 1995",
@@ -474,10 +488,3 @@ def get_h_briggs(Re: float, Sc: float, D_l: float, d_b: float) -> float:
     Sh = 0.089 * Re**0.69 * Sc**0.33  # Sherwood number
     h_l = Sh * D_l / d_b
     return h_l
-
-
-def get_E_g(diameter: float, u_g: float) -> float:
-    """gas phase axial dispersion coefficient [m2/s], Malara 1995 correlation
-    models dispersion of the gas velocity distribution around the mean bubble velocity"""
-    E_g = 0.2 * ureg("1/m") * diameter**2 * u_g
-    return E_g
