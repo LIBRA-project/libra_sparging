@@ -216,7 +216,9 @@ class Simulation:
 
         gen_T2_prof_normalized = gen_T2_prof / integral_gen_T2
 
-        gen_T2 = gen_T2_mag * gen_T2_prof_normalized
+        gen_T2 = (
+            gen_T2_mag * gen_T2_prof_normalized
+        )  # so that integral over volume of gen_T2 = source_T2
 
         P_prof = dolfinx.fem.Function(V_profile)
         if self.profile_pressure_hydrostatic:
@@ -270,12 +272,12 @@ class Simulation:
             dolfinx.fem.Constant(mesh, 0.0),
             dolfinx.fem.locate_dofs_topological(V.sub(1), fdim, gas_inlet_facets),
             V.sub(1),
-        )
+        )  # y_T2 = 0 at gas inlet
         bc2 = dolfinx.fem.dirichletbc(
             dolfinx.fem.Constant(mesh, 0.0),
             dolfinx.fem.locate_dofs_topological(V.sub(0), fdim, gas_outlet_facets),
             V.sub(0),
-        )
+        )  # c_T2 = 0 at gas outlet TODO should apply Neumann BC rather
 
         # Custom measure
         all_facets = np.concatenate((gas_inlet_facets, gas_outlet_facets))
@@ -344,12 +346,18 @@ class Simulation:
                 source_T2 * self.signal_irr(t * ureg.s) * tank_volume
             )  # total T generation rate in the tank [mol/s] TODO useless: signal_irr is already given
 
+            n = ufl.FacetNormal(mesh)
+
+            # flux_T2 = dolfinx.fem.assemble_scalar(
+            #     dolfinx.fem.form(
+            #         eps_g * vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
+            #     )
+            # )  # total T flux at the outlet [mol/s]
             flux_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
-                    tank_area * vel_x * P / (const.R * T) * y_T2_post * ds(2)
+                    vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
                 )
-            )  # total T flux at the outlet [mol/s]
-
+            )
             # flux_T_inlet = dolfinx.fem.assemble_scalar(
             #     dolfinx.fem.form(
             #         tank_area
@@ -362,18 +370,19 @@ class Simulation:
             #     )
             # )  # total T dispersive flux at the inlet [mol/s]
 
-            n = ufl.FacetNormal(mesh)
-            flux_T2_inlet = dolfinx.fem.assemble_scalar(
-                dolfinx.fem.form(-E_g * ufl.inner(ufl.grad(P * y_T2_post), n) * ds(1))
-            )  # total T dispersive flux at the inlet [Pa T2 /s/m2]
-            flux_T2_inlet *= 1 / (const.R * T) * T2_to_T  # convert to mol T/s/m2
-            flux_T2_inlet *= tank_area  # convert to mol T/s
+            # flux_T2_inlet = dolfinx.fem.assemble_scalar(
+            #     dolfinx.fem.form(-E_g * ufl.inner(ufl.grad(P * y_T2_post), n) * ds(1))
+            # )  # total T dispersive flux at the inlet [Pa T2 /s/m2]
+            # flux_T2_inlet *= 1 / (const.R * T) * T2_to_T  # convert to mol T/s/m2
+            # flux_T2_inlet *= tank_area  # convert to mol T/s
 
             # fluxes_T2.append(flux_T2 + flux_T2_inlet)
             fluxes_T2.append(flux_T2)
 
             inventory_T2_salt = dolfinx.fem.assemble_scalar(
-                dolfinx.fem.form(c_T2_post * ufl.dx)
+                dolfinx.fem.form(
+                    c_T2_post * tank_height * ufl.dx
+                )  # NOTE looks like dx € [0,1], inventory should be constant no matter the height when specifying tbr and n_gen_rate
             )
             inventory_T2_salt *= tank_area  # get total amount of T2 in [mol]
             inventories_T2_salt.append(inventory_T2_salt)
