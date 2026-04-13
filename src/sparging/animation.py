@@ -43,7 +43,7 @@ class ConcentrationAnimator:
         self.x_y = results.x_y
         self.inventories_T2_salt = results.inventories_T2_salt
         self.source_T2 = (
-            None if results.source_T2 is None else np.array(results.source_T2)
+            None if results.sources_T2 is None else np.array(results.sources_T2)
         )
         self.fluxes_T2 = (
             None if results.fluxes_T2 is None else np.array(results.fluxes_T2)

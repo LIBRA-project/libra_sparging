@@ -37,20 +37,24 @@ SEPARATOR_KEYWORD = "from"
 
 
 @dataclass
-class SimulationResults:
+class SimulationResults:  # TODO implement pint in this class # TODO change list to np.array
     times: list
     c_T2_solutions: list
     y_T2_solutions: list
+    J_T2_solutions: list
     x_ct: np.ndarray
     x_y: np.ndarray
     inventories_T2_salt: np.ndarray
-    source_T2: list
+    sources_T2: list
     fluxes_T2: list
     sim_input: SimulationInput
+    dt: int | None = None
+    dx: int | None = None
 
     keys_to_ignore_results = [  # TODO do it the other way: keys_to_include_results
         "c_T2_solutions",
         "y_T2_solutions",
+        "J_T2_solutions",
         "x_ct",
         "x_y",
         "inventories_T2_salt",
@@ -200,19 +204,28 @@ class Simulation:
             gen_T2_prof.interpolate(
                 lambda x: x[0] * 0 + self.profile_source_T(x[0] * ureg.m)
             )
-            gen_T2 = gen_T2_mag * gen_T2_prof
+            integral_gen_T2 = dolfinx.fem.assemble_scalar(
+                dolfinx.fem.form(gen_T2_prof * ufl.dx)
+            )
         else:  # homogeneous generation
-            gen_T2 = gen_T2_mag
+            gen_T2_prof = dolfinx.fem.Constant(
+                mesh, PETSc.ScalarType(1.0 / tank_height)
+            )
+            integral_gen_T2 = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1.0))
 
-        P = None
+        gen_T2_prof_normalized = gen_T2_prof / integral_gen_T2
+
+        gen_T2 = gen_T2_mag * gen_T2_prof_normalized
+
+        P_prof = dolfinx.fem.Function(V_profile)
         if self.profile_pressure_hydrostatic:
-            P_prof = dolfinx.fem.Function(V_profile)
             P_prof.interpolate(
                 lambda x: self.hydrostatic_pressure(x[0] * ureg.m).magnitude
             )
-            P = P_prof
         else:
-            P = dolfinx.fem.Constant(mesh, PETSc.ScalarType(P_0))
+            P_prof.interpolate(lambda x: x[0] * 0 + P_0)
+
+        P = P_prof
 
         # VARIATIONAL FORMULATION
 
@@ -296,6 +309,7 @@ class Simulation:
         times = []
         c_T2_solutions = []
         y_T2_solutions = []
+        J_T2_solutions = []
         sources_T2 = []
         fluxes_T2 = []
         inventories_T2_salt = []
@@ -303,9 +317,9 @@ class Simulation:
         # SOLVE
         t = 0
         while t < t_final:
+            # update time-dependent terms
             gen_T2_mag.value = source_T2 * self.signal_irr(t * ureg.s)
             h_l_const.value = h_l * self.signal_sparging(t * ureg.s)
-            """ utiliser ufl.conditional TODO"""
 
             problem.solve()
 
@@ -317,12 +331,16 @@ class Simulation:
 
             c_T2_vals = u.x.array[ct_dofs][ct_sort_coords]
             y_T2_vals = u.x.array[y_dofs][y_sort_coords]
+            J_T2_vals = (
+                a * h_l_const.value * (c_T2_vals - K_s * (P.x.array * y_T2_vals + EPS))
+            )  # TODO there is a clever way of getting J_T2 for sure
 
             # store time and solution
             # TODO give units to the results
             times.append(t)
             c_T2_solutions.append(c_T2_vals.copy())
             y_T2_solutions.append(y_T2_vals.copy())
+            J_T2_solutions.append(J_T2_vals.copy())
             sources_T2.append(
                 source_T2 * self.signal_irr(t * ureg.s) * tank_volume
             )  # total T generation rate in the tank [mol/s] TODO useless: signal_irr is already given
@@ -372,11 +390,14 @@ class Simulation:
             times=times,
             c_T2_solutions=c_T2_solutions,
             y_T2_solutions=y_T2_solutions,
+            J_T2_solutions=J_T2_solutions,
             x_ct=x_ct,
             x_y=x_y,
             inventories_T2_salt=inventories_T2_salt,
-            source_T2=sources_T2,
+            sources_T2=sources_T2,
             fluxes_T2=fluxes_T2,
             sim_input=self.sim_input,
+            dt=dt,
+            dx=dx,
         )
         return results
