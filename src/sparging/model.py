@@ -167,7 +167,7 @@ class Simulation:
         E_l = self.sim_input.E_l.to("m**2/s").magnitude
         D_l = self.sim_input.D_l.to("m**2/s").magnitude  # not needed (included in h_l)
         u_g0 = self.sim_input.u_g0.to("m/s").magnitude
-        source_T2 = self.sim_input.source_T.to("molT2/s/m**3").magnitude
+        source_T2_norm = self.sim_input.source_T_norm.to("molT2/s/m**3").magnitude
 
         dt = dt.to("seconds").magnitude if dt is not None else t_final / 1000
         dx = dx.to("m").magnitude if dx is not None else tank_height / 1000
@@ -196,29 +196,22 @@ class Simulation:
 
         h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
 
-        gen_T2_mag = dolfinx.fem.Constant(
-            mesh, source_T2 * self.signal_irr(0 * ureg.s)
+        gen_T2_norm = dolfinx.fem.Constant(
+            mesh, source_T2_norm * self.signal_irr(0 * ureg.s)
         )  # magnitude of the generation term
-        gen_T2 = None
+
         if self.profile_source_T is not None:  # spatially varying profile is provided
             gen_T2_prof = dolfinx.fem.Function(V_profile)
             gen_T2_prof.interpolate(
                 lambda x: x[0] * 0 + self.profile_source_T(x[0] * ureg.m)
             )
-            integral_gen_T2 = dolfinx.fem.assemble_scalar(
-                dolfinx.fem.form(gen_T2_prof * ufl.dx)
-            )
         else:  # homogeneous generation
-            gen_T2_prof = dolfinx.fem.Constant(
-                mesh, PETSc.ScalarType(1.0 / tank_height)
-            )
-            integral_gen_T2 = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1.0))
-
-        gen_T2_prof_normalized = gen_T2_prof / integral_gen_T2
+            gen_T2_prof = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1.0))
 
         gen_T2 = (
-            gen_T2_mag * gen_T2_prof_normalized
-        )  # so that integral over volume of gen_T2 = source_T2
+            gen_T2_norm * gen_T2_prof
+        )  # gen_T2_norm is already mormalized by tank volume
+        # user can choose to specify a normalized profile_source_T so that mean(gen_T2) = gen_T2_norm = 0.5 * source_T_norm
 
         P_prof = dolfinx.fem.Function(V_profile)
         if self.profile_pressure_hydrostatic:
@@ -319,7 +312,7 @@ class Simulation:
         t = 0
         while t < t_final:
             # update time-dependent terms
-            gen_T2_mag.value = source_T2 * self.signal_irr(t * ureg.s)
+            gen_T2_norm.value = source_T2_norm * self.signal_irr(t * ureg.s)
             h_l_const.value = h_l * self.signal_sparging(t * ureg.s)
 
             problem.solve()
@@ -343,7 +336,7 @@ class Simulation:
             y_T2_solutions.append(y_T2_vals.copy())
             J_T2_solutions.append(J_T2_vals.copy())
             sources_T2.append(
-                source_T2 * self.signal_irr(t * ureg.s) * tank_volume
+                source_T2_norm * self.signal_irr(t * ureg.s) * tank_volume
             )  # total T generation rate in the tank [mol/s] TODO useless: signal_irr is already given
 
             n = ufl.FacetNormal(mesh)
@@ -380,9 +373,7 @@ class Simulation:
             fluxes_T2.append(flux_T2)
 
             inventory_T2_salt = dolfinx.fem.assemble_scalar(
-                dolfinx.fem.form(
-                    c_T2_post * tank_height * ufl.dx
-                )  # NOTE looks like dx € [0,1], inventory should be constant no matter the height when specifying tbr and n_gen_rate
+                dolfinx.fem.form(c_T2_post * ufl.dx)
             )
             inventory_T2_salt *= tank_area  # get total amount of T2 in [mol]
             inventories_T2_salt.append(inventory_T2_salt)

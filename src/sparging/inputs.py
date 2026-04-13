@@ -46,7 +46,7 @@ class OperatingParameters:
     P_bottom: pint.Quantity | Correlation | None = None
     tbr: pint.Quantity | None = None
     n_gen_rate: pint.Quantity | None = None
-    source_T: pint.Quantity | Correlation | None = None
+    source_T_norm: pint.Quantity | Correlation | None = None
 
 
 @dataclass
@@ -76,11 +76,15 @@ class SimulationInput:
     E_g: pint.Quantity
     E_l: pint.Quantity
     D_l: pint.Quantity
-    source_T: pint.Quantity
+    source_T_norm: pint.Quantity
 
     @property
     def volume(self):
         return self.area * self.height
+
+    @property
+    def source_T_int(self):
+        return self.source_T_norm * self.volume
 
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error

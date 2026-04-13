@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.WARNING)
 
 geom = ColumnGeometry(
     area=0.2 * ureg.m**2,
-    height=1 * ureg.m,
+    height=0.1 * ureg.m,
     nozzle_diameter=0.001 * ureg.m,
     nb_nozzle=10 * ureg.dimensionless,
 )
@@ -42,26 +42,28 @@ sparging_params = SpargingParameters(
     h_l=all_correlations("h_l_briggs"),
 )
 
-
 # class method from_parameters that takes in objects like ColumnGeometry, BreederMaterial, OperatingParameters and returns a SimulationInput object with the appropriate correlations for the given parameters. This method should be able to handle cases where some of the parameters are already provided as correlations and should not overwrite them.
 my_input = SimulationInput.from_parameters(
     geom, flibe, operating_params, sparging_params
 )
 logger.info(my_input)
 
+print(my_input.source_T_norm)
+print(my_input.source_T_int.to("molT/s"))
+
 
 def profile_source_T(z: pint.Quantity):
     import numpy as np
 
-    # return np.sin(np.pi / (1 * ureg.m) * z)
-    return 0.5 * (1 + np.cos(0.5 * np.pi / (1 * ureg.m) * z))
+    return np.sin(np.pi / (1 * ureg.m) * z)
+    # return 0.5 * (1 + np.cos(0.5 * np.pi / (1 * ureg.m) * z))
 
 
 my_simulation = Simulation(
     my_input,
-    t_final=5 * ureg.days,
-    signal_irr=lambda t: 1 if t < 3 * ureg.days else 0,
-    signal_sparging=lambda t: 1,
+    t_final=200 * ureg.s,
+    signal_irr=lambda t: 1 if t < 100 * ureg.s else 0,
+    signal_sparging=lambda t: 0,
     profile_pressure_hydrostatic=False,
     # profile_source_T=profile_source_T,
 )
@@ -76,4 +78,8 @@ if __name__ == "__main__":
     # from sparging import plotting
     # plotting.plot_animation(output)
 
-    animation.create_animation(output, show_activity=True)
+    # import matplotlib.pyplot as plt
+
+    # plt.plot(output.times, output.inventories_T2_salt)
+    # plt.show()
+    # animation.create_animation(output, show_activity=False)
