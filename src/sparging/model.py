@@ -203,11 +203,12 @@ class Simulation:
         if self.profile_source_T is not None:  # spatially varying profile is provided
             gen_T2_prof = dolfinx.fem.Function(V_profile)
             gen_T2_prof.interpolate(
-                lambda x: x[0] * 0 + self.profile_source_T(x[0] * ureg.m)
+                lambda x: x[0] * 0 + self.profile_source_T(x[0] / tank_height)
             )
         else:  # homogeneous generation
             gen_T2_prof = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1.0))
 
+        # if self.sim_input.normalize_source_T:
         gen_T2 = (
             gen_T2_norm * gen_T2_prof
         )  # gen_T2_norm is already mormalized by tank volume
@@ -236,9 +237,17 @@ class Simulation:
         F += eps_l * ((c_T2 - c_T2_n) / dt) * v_c * ufl.dx
         F += eps_g * 1 / (const.R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
-        # dispersive terms NOTE removed dispersive terms for now for mass balance
-        # F += eps_l * E_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
-        # F += eps_g * E_g * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y)) * ufl.dx
+        # dispersive terms
+        F += eps_l * E_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
+        F += (
+            eps_g
+            * E_g
+            * 1
+            / (const.R * T)
+            * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y))
+            * ufl.dx
+        )
+        #  there was missing 1/RT
 
         # mass exchange (coupling term)
         F += J_T2 * v_c * ufl.dx - J_T2 * v_y * ufl.dx
@@ -266,11 +275,11 @@ class Simulation:
             dolfinx.fem.locate_dofs_topological(V.sub(1), fdim, gas_inlet_facets),
             V.sub(1),
         )  # y_T2 = 0 at gas inlet
-        bc2 = dolfinx.fem.dirichletbc(
-            dolfinx.fem.Constant(mesh, 0.0),
-            dolfinx.fem.locate_dofs_topological(V.sub(0), fdim, gas_outlet_facets),
-            V.sub(0),
-        )  # c_T2 = 0 at gas outlet TODO should apply Neumann BC rather
+        # bc2 = dolfinx.fem.dirichletbc(
+        #     dolfinx.fem.Constant(mesh, 0.0),
+        #     dolfinx.fem.locate_dofs_topological(V.sub(0), fdim, gas_outlet_facets),
+        #     V.sub(0),
+        # )  # c_T2 = 0 at gas outlet
 
         # Custom measure
         all_facets = np.concatenate((gas_inlet_facets, gas_outlet_facets))
@@ -284,7 +293,8 @@ class Simulation:
         problem = NonlinearProblem(
             F,
             u,
-            bcs=[bc1, bc2],
+            # bcs=[bc1, bc2],
+            bcs=[bc1],  # Neumann BCs on c_T2 at inlet and outlet are naturally enforced
             petsc_options_prefix="librasparge",
             # petsc_options={"snes_monitor": None},
         )
@@ -350,7 +360,7 @@ class Simulation:
                 dolfinx.fem.form(
                     vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
                 )
-            )
+            )  # TODO replace with integral of J over volume
             # flux_T_inlet = dolfinx.fem.assemble_scalar(
             #     dolfinx.fem.form(
             #         tank_area
@@ -363,14 +373,16 @@ class Simulation:
             #     )
             # )  # total T dispersive flux at the inlet [mol/s]
 
-            # flux_T2_inlet = dolfinx.fem.assemble_scalar(
-            #     dolfinx.fem.form(-E_g * ufl.inner(ufl.grad(P * y_T2_post), n) * ds(1))
-            # )  # total T dispersive flux at the inlet [Pa T2 /s/m2]
-            # flux_T2_inlet *= 1 / (const.R * T) * T2_to_T  # convert to mol T/s/m2
-            # flux_T2_inlet *= tank_area  # convert to mol T/s
+            flux_T2_inlet = dolfinx.fem.assemble_scalar(
+                dolfinx.fem.form(
+                    -eps_g * E_g * ufl.inner(ufl.grad(P * y_T2_post), n) * ds(1)
+                )
+            )  # total T dispersive flux at the inlet [Pa T2 /s/m2]
+            flux_T2_inlet *= 1 / (const.R * T)  # mol T2/s/m2
+            flux_T2_inlet *= tank_area  # convert to molT2/s
 
-            # fluxes_T2.append(flux_T2 + flux_T2_inlet)
-            fluxes_T2.append(flux_T2)
+            fluxes_T2.append(flux_T2 + flux_T2_inlet)
+            # fluxes_T2.append(flux_T2)
 
             inventory_T2_salt = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(c_T2_post * ufl.dx)
