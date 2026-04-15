@@ -5,6 +5,7 @@ from typing import List
 import inspect
 import numpy as np
 import logging
+from sparging.config import const_R
 
 logger = logging.getLogger(__name__)
 
@@ -77,14 +78,42 @@ class SimulationInput:
     E_l: pint.Quantity
     D_l: pint.Quantity
     source_T_norm: pint.Quantity
+    # normalize_source_T: bool = True
 
     @property
     def volume(self):
         return self.area * self.height
 
     @property
-    def source_T_int(self):
+    def eps_l(self):
+        return 1 - self.eps_g
+
+    @property  # TODO enlever, inutile
+    def source_T_int(self):  # rename Q_T2
         return self.source_T_norm * self.volume
+
+    def set_S_T2(self, val: pint.Quantity):  # TODO to use
+        self.Q_T2 = (val.to("molT2/m**3/s") * self.volume).to("molT2/s")
+
+    def get_tau(self) -> pint.Quantity:
+        """characteristic time of the sparger under the small partial pressure (SPP) approximation"""
+        return (self.eps_l / (self.h_l * self.a)).to("seconds")
+
+    def get_c_T2_SS(self) -> pint.Quantity:
+        return (self.source_T_int / self.volume * 1 / (self.h_l * self.a)).to(
+            "molT2/m^3"
+        )
+
+    def get_PP_number(self) -> pint.Quantity:
+        """Partial pressure number, ratio of the equivalent T concentration at liquid boundary to the bulk liquid concentration.
+        If PP << 1, then we are in the small partial pressure (SPP) regime, and if PP ~= 1, then we are in the partial pressure limited (PPL) regime.
+        """
+        return (
+            self.K_s
+            * (const_R * self.temperature)
+            * self.height
+            / (self.get_tau() * self.u_g0)
+        ).to("dimensionless")
 
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error

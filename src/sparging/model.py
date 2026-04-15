@@ -247,7 +247,6 @@ class Simulation:
             * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y))
             * ufl.dx
         )
-        #  there was missing 1/RT
 
         # mass exchange (coupling term)
         F += J_T2 * v_c * ufl.dx - J_T2 * v_y * ufl.dx

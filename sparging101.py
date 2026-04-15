@@ -11,6 +11,7 @@ from sparging.inputs import (
 )
 import logging
 from typing import TYPE_CHECKING
+import numpy as np
 
 if TYPE_CHECKING:
     import pint
@@ -21,7 +22,7 @@ logging.basicConfig(level=logging.WARNING)
 
 geom = ColumnGeometry(
     area=0.2 * ureg.m**2,
-    height=0.1 * ureg.m,
+    height=2 * ureg.m,
     nozzle_diameter=0.001 * ureg.m,
     nb_nozzle=10 * ureg.dimensionless,
 )
@@ -50,25 +51,42 @@ logger.info(my_input)
 
 print(my_input.source_T_norm)
 print(my_input.source_T_int.to("molT/s"))
+print(
+    f"Concentration at steady state (no dispersion, no PP limited): {
+        my_input.get_c_T2_SS().to('molT2/m^3')
+    }"
+)
+T_99 = (np.log(100) * my_input.get_tau()).to("seconds")
+print(f"T_99% = {T_99.to('hours')}")
+print(f"Partial pressure number PP = {my_input.get_PP_number()}")
 
 
-def profile_source_T(z: pint.Quantity):
+def profile_source_T(z: pint.Quantity | list[float], height: pint.Quantity = None):
     import numpy as np
 
-    return np.sin(np.pi / (1 * ureg.m) * z)
+    if isinstance(z, (float, np.ndarray, list)):  # non-dimensional height (0 to 1)
+        return np.pi / 2 * np.sin(np.pi * z)  # normalized
+    if isinstance(z, ureg.Quantity):
+        if height is None:
+            raise ValueError("Must provide height if z is a dimensional quantity")
+        return np.pi / 2 * np.sin(np.pi / height * z)  # normalized
+    else:
+        raise NotImplementedError("z must be either a float or a pint.Quantity")
     # return 0.5 * (1 + np.cos(0.5 * np.pi / (1 * ureg.m) * z))
 
 
 my_simulation = Simulation(
     my_input,
-    t_final=200 * ureg.s,
-    signal_irr=lambda t: 1 if t < 100 * ureg.s else 0,
-    signal_sparging=lambda t: 0,
+    t_final=2 * T_99,
+    signal_irr=lambda t: 1 if t < T_99 else 0,
+    signal_sparging=lambda t: 1,
     profile_pressure_hydrostatic=False,
     # profile_source_T=profile_source_T,
 )
 
 if __name__ == "__main__":
+    # my_simulation.sim_input.E_g *= 1e5
+    # my_simulation.sim_input.E_l *= 1e-5
     output = my_simulation.solve()
 
     # # save output to file
@@ -82,4 +100,4 @@ if __name__ == "__main__":
 
     # plt.plot(output.times, output.inventories_T2_salt)
     # plt.show()
-    # animation.create_animation(output, show_activity=False)
+    animation.create_animation(output, show_activity=False)
