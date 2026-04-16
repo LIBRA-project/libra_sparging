@@ -294,11 +294,6 @@ class Simulation:
             dolfinx.fem.locate_dofs_topological(V.sub(1), fdim, gas_inlet_facets),
             V.sub(1),
         )  # y_T2 = 0 at gas inlet
-        # bc2 = dolfinx.fem.dirichletbc(
-        #     dolfinx.fem.Constant(mesh, 0.0),
-        #     dolfinx.fem.locate_dofs_topological(V.sub(0), fdim, gas_outlet_facets),
-        #     V.sub(0),
-        # )  # c_T2 = 0 at gas outlet
 
         # Custom measure
         all_facets = np.concatenate((gas_inlet_facets, gas_outlet_facets))
@@ -312,7 +307,6 @@ class Simulation:
         problem = NonlinearProblem(
             F,
             u,
-            # bcs=[bc1, bc2],
             bcs=[bc1],  # Neumann BCs on c_T2 at inlet and outlet are naturally enforced
             petsc_options_prefix="librasparge",
             # petsc_options={"snes_monitor": None},
@@ -329,28 +323,7 @@ class Simulation:
         y_sort_coords = np.argsort(coords)
         x_y = coords[y_sort_coords]
 
-        # TODO Initialize results storage with zeros -> there's an inconsistency: times[0] = 0 but inventories[0] != 0 -> screws comparison with analytical solutions
-        times = []
-        c_T2_solutions = []
-        y_T2_solutions = []
-        J_T2_solutions = []
-        sources_T2 = []
-        fluxes_T2 = []
-        inventories_T2_salt = []
-
-        # SOLVE
-        t = 0
-        while t < t_final:
-            # update time-dependent terms
-            gen_T2_ave.value = Q_T2 / tank_volume * self.signal_irr(t * ureg.s)
-            h_l_const.value = h_l * self.signal_sparging(t * ureg.s)
-
-            problem.solve()
-
-            # update previous solution
-            u_n.x.array[:] = u.x.array[:]
-
-            # post process
+        def post_process(t):
             c_T2_post, y_T2_post = u.split()
 
             c_T2_vals = u.x.array[ct_dofs][ct_sort_coords]
@@ -358,9 +331,6 @@ class Simulation:
             J_T2_vals = (
                 a * h_l_const.value * (c_T2_vals - K_s * (P.x.array * y_T2_vals + EPS))
             )  # TODO there is a clever way of getting J_T2 for sure
-
-            # store time and solution
-            # TODO give units to the results
             times.append(t)
             c_T2_solutions.append(c_T2_vals.copy())
             y_T2_solutions.append(y_T2_vals.copy())
@@ -409,6 +379,30 @@ class Simulation:
             )
             inventory_T2_salt *= tank_area  # get total amount of T2 in [mol]
             inventories_T2_salt.append(inventory_T2_salt)
+
+        # TODO Initialize results storage with zeros -> there's an inconsistency: times[0] = 0 but inventories[0] != 0 -> screws comparison with analytical solutions
+        t = 0
+        times = []
+        c_T2_solutions = []
+        y_T2_solutions = []
+        J_T2_solutions = []
+        sources_T2 = []
+        fluxes_T2 = []
+        inventories_T2_salt = []
+        post_process(t)
+
+        # SOLVE
+        while t < t_final:
+            # update time-dependent terms
+            gen_T2_ave.value = Q_T2 / tank_volume * self.signal_irr(t * ureg.s)
+            h_l_const.value = h_l * self.signal_sparging(t * ureg.s)
+
+            problem.solve()
+
+            # update previous solution
+            u_n.x.array[:] = u.x.array[:]
+
+            post_process(t)
 
             # advance time
             t += dt
