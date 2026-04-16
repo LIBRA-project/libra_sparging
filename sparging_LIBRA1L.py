@@ -46,8 +46,8 @@ my_input = SimulationInput.from_parameters(
     geom, flibe, operating_params, sparging_params
 )
 logger.info(my_input)
-print(my_input.source_T_norm)
-print(my_input.source_T_int.to("molT/s"))
+print(my_input.get_S_T())
+print(my_input.Q_T.to("molT/s"))
 
 n_fluence = 2.5e13 * ureg("neutron")
 n_gen_rate = operating_params.n_gen_rate

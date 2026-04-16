@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.WARNING)
 
 geom = ColumnGeometry(
     area=0.2 * ureg.m**2,
-    height=2 * ureg.m,
+    height=1 * ureg.m,
     nozzle_diameter=0.001 * ureg.m,
     nb_nozzle=10 * ureg.dimensionless,
 )
@@ -49,8 +49,9 @@ my_input = SimulationInput.from_parameters(
 )
 logger.info(my_input)
 
-print(my_input.source_T_norm)
-print(my_input.source_T_int.to("molT/s"))
+print(my_input.get_S_T())
+print(f"{my_input.Q_T.to('molT/s')} = {my_input.Q_T.to('molT2/hour')}")
+print(my_input.volume.to("m^3"))
 print(
     f"Concentration at steady state (no dispersion, no PP limited): {
         my_input.get_c_T2_SS().to('molT2/m^3')
@@ -65,8 +66,10 @@ def profile_source_T(z: pint.Quantity | list[float], height: pint.Quantity = Non
     import numpy as np
 
     if isinstance(z, (float, np.ndarray, list)):  # non-dimensional height (0 to 1)
-        return np.pi / 2 * np.sin(np.pi * z)  # normalized
+        # return np.pi / 2 * np.sin(np.pi * z)  # normalized
+        return 1 + 1 * np.sin(np.pi * z)  # not normalized
     if isinstance(z, ureg.Quantity):
+        assert False
         if height is None:
             raise ValueError("Must provide height if z is a dimensional quantity")
         return np.pi / 2 * np.sin(np.pi / height * z)  # normalized
@@ -75,19 +78,21 @@ def profile_source_T(z: pint.Quantity | list[float], height: pint.Quantity = Non
     # return 0.5 * (1 + np.cos(0.5 * np.pi / (1 * ureg.m) * z))
 
 
+T_99 = 1 * ureg.hour
 my_simulation = Simulation(
     my_input,
     t_final=2 * T_99,
     signal_irr=lambda t: 1 if t < T_99 else 0,
-    signal_sparging=lambda t: 1,
+    signal_sparging=lambda t: 0,
     profile_pressure_hydrostatic=False,
-    # profile_source_T=profile_source_T,
+    profile_source_T=profile_source_T,
+    dispersion_on=False,
 )
 
 if __name__ == "__main__":
     # my_simulation.sim_input.E_g *= 1e5
     # my_simulation.sim_input.E_l *= 1e-5
-    output = my_simulation.solve()
+    output = my_simulation.solve(fast_solve=True)
 
     # # save output to file
     # output.profiles_to_csv(f"output_{tank_height}m.csv")

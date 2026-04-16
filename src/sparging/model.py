@@ -143,7 +143,9 @@ class Simulation:
     signal_irr: callable[pint.Quantity]
     signal_sparging: callable[pint.Quantity]
     profile_source_T: callable[pint.Quantity] | None = None
+    """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
     profile_pressure_hydrostatic: bool = False
+    dispersion_on: bool = True
 
     def hydrostatic_pressure(self, x: pint.Quantity) -> pint.Quantity:
         """returns the hydrostatic pressure at a given height x in the tank given P_bottom"""
@@ -151,7 +153,12 @@ class Simulation:
         g = const_g
         return (self.sim_input.P_bottom + rho * g * x).to("Pa")
 
-    def solve(self, dt: pint.Quantity | None = None, dx: pint.Quantity | None = None):
+    def solve(
+        self,
+        dt: pint.Quantity | None = None,
+        dx: pint.Quantity | None = None,
+        fast_solve: bool = False,
+    ) -> SimulationResults:
         # unpack pint.Quantities
         t_final = self.t_final.to("seconds").magnitude
         tank_height = self.sim_input.height.to("m").magnitude
@@ -167,10 +174,18 @@ class Simulation:
         E_l = self.sim_input.E_l.to("m**2/s").magnitude
         D_l = self.sim_input.D_l.to("m**2/s").magnitude  # not needed (included in h_l)
         u_g0 = self.sim_input.u_g0.to("m/s").magnitude
-        source_T2_norm = self.sim_input.source_T_norm.to("molT2/s/m**3").magnitude
+        Q_T2 = self.sim_input.Q_T.to("molT2/s").magnitude
 
-        dt = dt.to("seconds").magnitude if dt is not None else t_final / 1000
-        dx = dx.to("m").magnitude if dx is not None else tank_height / 1000
+        dt = (
+            dt.to("seconds").magnitude
+            if dt is not None
+            else (t_final / 1000 if not fast_solve else t_final / 50)
+        )
+        dx = (
+            dx.to("m").magnitude
+            if dx is not None
+            else (tank_height / 1000 if not fast_solve else tank_height / 50)
+        )
         eps_l = 1 - eps_g
 
         # MESH AND FUNCTION SPACES
@@ -196,23 +211,27 @@ class Simulation:
 
         h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
 
-        gen_T2_norm = dolfinx.fem.Constant(
-            mesh, source_T2_norm * self.signal_irr(0 * ureg.s)
+        gen_T2_ave = dolfinx.fem.Constant(
+            mesh, Q_T2 / tank_volume * self.signal_irr(0 * ureg.s)
         )  # magnitude of the generation term
 
         if self.profile_source_T is not None:  # spatially varying profile is provided
-            gen_T2_prof = dolfinx.fem.Function(V_profile)
-            gen_T2_prof.interpolate(
+            arbitrary_profile = dolfinx.fem.Function(V_profile)
+            arbitrary_profile.interpolate(
                 lambda x: x[0] * 0 + self.profile_source_T(x[0] / tank_height)
             )
+            profile_integral = dolfinx.fem.assemble_scalar(
+                dolfinx.fem.form(
+                    arbitrary_profile * 1 / tank_height * ufl.dx  # TODO
+                )  # dimensionless integral
+            )
+            normalized_profile = (
+                arbitrary_profile / profile_integral
+            )  # normalize profile so that its integral over the dimensionless height is 1
         else:  # homogeneous generation
-            gen_T2_prof = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1.0))
+            normalized_profile = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1.0))
 
-        # if self.sim_input.normalize_source_T:
-        gen_T2 = (
-            gen_T2_norm * gen_T2_prof
-        )  # gen_T2_norm is already mormalized by tank volume
-        # user can choose to specify a normalized profile_source_T so that mean(gen_T2) = gen_T2_norm = 0.5 * source_T_norm
+        gen_T2 = gen_T2_ave * normalized_profile
 
         P_prof = dolfinx.fem.Function(V_profile)
         if self.profile_pressure_hydrostatic:
@@ -238,15 +257,16 @@ class Simulation:
         F += eps_g * 1 / (const.R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
         # dispersive terms
-        F += eps_l * E_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
-        F += (
-            eps_g
-            * E_g
-            * 1
-            / (const.R * T)
-            * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y))
-            * ufl.dx
-        )
+        if self.dispersion_on is True:
+            F += eps_l * E_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
+            F += (
+                eps_g
+                * E_g
+                * 1
+                / (const.R * T)
+                * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y))
+                * ufl.dx
+            )
 
         # mass exchange (coupling term)
         F += J_T2 * v_c * ufl.dx - J_T2 * v_y * ufl.dx
@@ -309,6 +329,7 @@ class Simulation:
         y_sort_coords = np.argsort(coords)
         x_y = coords[y_sort_coords]
 
+        # TODO Initialize results storage with zeros -> there's an inconsistency: times[0] = 0 but inventories[0] != 0 -> screws comparison with analytical solutions
         times = []
         c_T2_solutions = []
         y_T2_solutions = []
@@ -321,7 +342,7 @@ class Simulation:
         t = 0
         while t < t_final:
             # update time-dependent terms
-            gen_T2_norm.value = source_T2_norm * self.signal_irr(t * ureg.s)
+            gen_T2_ave.value = Q_T2 / tank_volume * self.signal_irr(t * ureg.s)
             h_l_const.value = h_l * self.signal_sparging(t * ureg.s)
 
             problem.solve()
@@ -345,7 +366,7 @@ class Simulation:
             y_T2_solutions.append(y_T2_vals.copy())
             J_T2_solutions.append(J_T2_vals.copy())
             sources_T2.append(
-                source_T2_norm * self.signal_irr(t * ureg.s) * tank_volume
+                Q_T2 * self.signal_irr(t * ureg.s)
             )  # total T generation rate in the tank [mol/s] TODO useless: signal_irr is already given
 
             n = ufl.FacetNormal(mesh)

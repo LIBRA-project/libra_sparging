@@ -393,16 +393,16 @@ specific_interfacial_area = Correlation(
 )
 all_correlations.append(specific_interfacial_area)
 
-source_T_normalized = Correlation(  # TODO remettre source_T
-    identifier="source_T_norm",
-    function=lambda tbr, n_gen_rate, tank_volume: (
-        tbr * n_gen_rate / tank_volume
+source_T_integral = Correlation(
+    identifier="Q_T",
+    function=lambda tbr, n_gen_rate: (
+        tbr * n_gen_rate
     ),  # source term for tritium generation calculated from TBR and neutron generation rate
     corr_type=CorrelationType.TRITIUM_SOURCE,
-    input_units=["triton/neutron", "neutron/s", "m**3"],
-    output_units="molT/m**3/s",
+    input_units=["triton/neutron", "neutron/s"],
+    output_units="molT/s",
 )
-all_correlations.append(source_T_normalized)
+all_correlations.append(source_T_integral)
 
 
 def get_d_b(

@@ -4,6 +4,7 @@ from sparging.config import ureg
 import pytest
 import dataclasses
 from pint import DimensionalityError
+import numpy as np
 
 
 standard_input = SimulationInput(
@@ -20,7 +21,7 @@ standard_input = SimulationInput(
     E_g=1e-2 * ureg("m^2/s"),
     E_l=1e-1 * ureg("m^2/s"),
     D_l=3e-9 * ureg("m^2/s"),
-    source_T=8e-16 * ureg("molT/m^3/s"),
+    Q_T=1e8 * ureg("T/s"),
 )
 
 
@@ -85,3 +86,53 @@ def test_model_solve_wrong_argument(standard_simulation):
     """
     with pytest.raises(AttributeError, match="object has no attribute 'to'"):
         standard_simulation.solve(dt=0.01)
+
+
+@pytest.mark.parametrize("case", ("nominal", "volume_change", "unormalized_profile"))
+def test_source_T_normalization(case):
+    """Tests that the source term is correctly normalized so that the total inventory after a fixed time is always the same
+    no matter the volume or the given profile function."""
+    Q_T = standard_input.Q_T
+    t_final = 50 * ureg.seconds
+    # BUILD
+    match case:
+        case "nominal":
+            my_simulation = Simulation(
+                standard_input,
+                t_final=t_final,
+                signal_irr=lambda t: 1,
+                signal_sparging=lambda t: 0,
+            )
+        case "volume_change":
+            modified_input = dataclasses.replace(
+                standard_input,
+                height=23.2 * standard_input.height,
+                area=0.123 * standard_input.area,
+            )
+            my_simulation = Simulation(
+                modified_input,
+                t_final=t_final,
+                signal_irr=lambda t: 1,
+                signal_sparging=lambda t: 0,
+            )
+        case "unormalized_profile":
+            my_simulation = Simulation(
+                standard_input,
+                t_final=t_final,
+                signal_irr=lambda t: 1,
+                signal_sparging=lambda t: 0,
+                profile_source_T=lambda xi: 3 + xi,  # not normalized
+            )
+    # RUN
+    output = my_simulation.solve(fast_solve=True)
+
+    # TEST
+    n_result = ureg.Quantity(output.inventories_T2_salt[-1], "molT2").magnitude
+    # n_theory = (Q_T * ureg.Quantity(output.times[-1], "s")).to("molT2").magnitude # TODO change to this
+    n_theory = (Q_T * t_final).to("molT2").magnitude
+    # print(len(output.times), len(output.inventories_T2_salt))
+    # print(output.times[0], output.inventories_T2_salt[0])
+    # print(output.times[-1], output.inventories_T2_salt[-1])
+    assert np.isclose(n_result, n_theory, atol=0, rtol=1e-2), print(
+        f"n_result = {n_result}, n_theory = {n_theory}"
+    )  # TODO reduce tolerance when vectors initialization with zero is fixed

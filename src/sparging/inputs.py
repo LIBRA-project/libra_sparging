@@ -47,7 +47,7 @@ class OperatingParameters:
     P_bottom: pint.Quantity | Correlation | None = None
     tbr: pint.Quantity | None = None
     n_gen_rate: pint.Quantity | None = None
-    source_T_norm: pint.Quantity | Correlation | None = None
+    Q_T: pint.Quantity | None = None
 
 
 @dataclass
@@ -77,7 +77,7 @@ class SimulationInput:
     E_g: pint.Quantity
     E_l: pint.Quantity
     D_l: pint.Quantity
-    source_T_norm: pint.Quantity
+    Q_T: pint.Quantity
     # normalize_source_T: bool = True
 
     @property
@@ -88,21 +88,18 @@ class SimulationInput:
     def eps_l(self):
         return 1 - self.eps_g
 
-    @property  # TODO enlever, inutile
-    def source_T_int(self):  # rename Q_T2
-        return self.source_T_norm * self.volume
+    def set_S_T(self, val: pint.Quantity):
+        self.Q_T = (val.to("molT/m**3/s") * self.volume).to("molT/s")
 
-    def set_S_T2(self, val: pint.Quantity):  # TODO to use
-        self.Q_T2 = (val.to("molT2/m**3/s") * self.volume).to("molT2/s")
+    def get_S_T(self) -> pint.Quantity:
+        return (self.Q_T / self.volume).to("molT/m**3/s")
 
     def get_tau(self) -> pint.Quantity:
         """characteristic time of the sparger under the small partial pressure (SPP) approximation"""
         return (self.eps_l / (self.h_l * self.a)).to("seconds")
 
     def get_c_T2_SS(self) -> pint.Quantity:
-        return (self.source_T_int / self.volume * 1 / (self.h_l * self.a)).to(
-            "molT2/m^3"
-        )
+        return (self.get_S_T() * 1 / (self.h_l * self.a)).to("molT2/m^3")
 
     def get_PP_number(self) -> pint.Quantity:
         """Partial pressure number, ratio of the equivalent T concentration at liquid boundary to the bulk liquid concentration.
