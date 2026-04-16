@@ -79,6 +79,7 @@ class SimulationInput:
     D_l: pint.Quantity
     Q_T: pint.Quantity
     # normalize_source_T: bool = True
+    # TODO refactoring, put signals in this class
 
     @property
     def volume(self):

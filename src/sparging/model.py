@@ -1,3 +1,4 @@
+from __future__ import annotations
 from mpi4py import MPI
 import dolfinx
 import basix
@@ -24,6 +25,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import pint
+from collections.abc import Callable
 
 hours_to_seconds = 3600
 days_to_seconds = 24 * hours_to_seconds
@@ -140,9 +142,9 @@ class SimulationResults:  # TODO implement pint in this class # TODO change list
 class Simulation:
     sim_input: SimulationInput
     t_final: pint.Quantity
-    signal_irr: callable[pint.Quantity]
-    signal_sparging: callable[pint.Quantity]
-    profile_source_T: callable[pint.Quantity] | None = None
+    signal_irr: Callable[[pint.Quantity], float]
+    signal_sparging: Callable[[pint.Quantity], float]
+    profile_source_T: Callable[[float], float] | None = None
     """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
     profile_pressure_hydrostatic: bool = False
     dispersion_on: bool = True
@@ -313,6 +315,11 @@ class Simulation:
         )
 
         # initialise post processing
+
+        # we define a function and an expression for J_T2 for use in post processing
+        J_T2_func = dolfinx.fem.Function(V_profile)
+        J_T2_expr = dolfinx.fem.Expression(J_T2, V_profile.element.interpolation_points)
+
         V0_ct, ct_dofs = u.function_space.sub(0).collapse()
         coords = V0_ct.tabulate_dof_coordinates()[:, 0]
         ct_sort_coords = np.argsort(coords)
@@ -323,14 +330,28 @@ class Simulation:
         y_sort_coords = np.argsort(coords)
         x_y = coords[y_sort_coords]
 
+        coords_profile = V_profile.tabulate_dof_coordinates()[:, 0]
+        num_profile_dofs = (
+            V_profile.dofmap.index_map.size_local
+        ) * V_profile.dofmap.index_map_bs
+
+        profile_dofs = np.arange(num_profile_dofs)
+        profile_sort_coords = np.argsort(coords_profile)
+        # NOTE currently we don't use x_profile and use another x in the plotting script
+        x_profile = coords_profile[profile_sort_coords]
+
+        # NOTE maybe we could take this function out and it would take a SimulationResults object as input + u + other things...
         def post_process(t):
+            """
+            Post-process the solution at time t.
+            Extract solution profiles, compute fluxes and inventories, and store them in lists for later analysis.
+            """
             c_T2_post, y_T2_post = u.split()
 
             c_T2_vals = u.x.array[ct_dofs][ct_sort_coords]
             y_T2_vals = u.x.array[y_dofs][y_sort_coords]
-            J_T2_vals = (
-                a * h_l_const.value * (c_T2_vals - K_s * (P.x.array * y_T2_vals + EPS))
-            )  # TODO there is a clever way of getting J_T2 for sure
+            J_T2_func.interpolate(J_T2_expr)
+            J_T2_vals = J_T2_func.x.array[profile_dofs][ct_sort_coords]
             times.append(t)
             c_T2_solutions.append(c_T2_vals.copy())
             y_T2_solutions.append(y_T2_vals.copy())

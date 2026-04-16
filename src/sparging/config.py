@@ -9,7 +9,7 @@ ureg.define("triton = [tritium] = T")
 ureg.define(f"molT = {const.N_A} * triton")
 ureg.define(f"molT2 = 2 * {const.N_A} * triton")
 ureg.define("neutron = [neutron] = n")
-ureg.define("sccm = 7.44e-7 mol/s")
+ureg.define("sccm = 7.44e-7 mol/s")  # holds for an ideal gas
 
 
 const_R = const.R * ureg("J/K/mol")  # ideal gas constant
