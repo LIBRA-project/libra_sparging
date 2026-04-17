@@ -36,17 +36,21 @@ class ConcentrationAnimator:
         hspace : float, optional
             Vertical spacing between subplots
         """
-        self.times_hr = np.array(results.times) * sec_to_hour
-        self.c_T2_solutions = np.array(results.c_T2_solutions)
-        self.y_T2_solutions = np.array(results.y_T2_solutions)
-        self.x_ct = results.x_ct
-        self.x_y = results.x_y
-        self.inventories_T2_salt = results.inventories_T2_salt
+        self.times_hr = results.times.to("hour").magnitude
+        self.c_T2_solutions = results.c_T2_solutions.to("molT2/m^3").magnitude
+        self.y_T2_solutions = results.y_T2_solutions.to("dimensionless").magnitude
+        self.x_ct = results.x_ct.to("m").magnitude
+        self.x_y = results.x_y.to("m").magnitude
+        self.inventories_T2_salt = results.inventories_T2_salt.to("molT2").magnitude
         self.source_T2 = (
-            None if results.sources_T2 is None else np.array(results.sources_T2)
+            None
+            if results.sources_T2 is None
+            else results.sources_T2.to("molT2/s").magnitude
         )
         self.fluxes_T2 = (
-            None if results.fluxes_T2 is None else np.array(results.fluxes_T2)
+            None
+            if results.fluxes_T2 is None
+            else results.fluxes_T2.to("molT2/s").magnitude
         )
         self.show_activity = show_activity
         self.figsize = figsize

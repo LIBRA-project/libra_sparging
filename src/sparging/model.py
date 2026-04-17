@@ -39,19 +39,19 @@ SEPARATOR_KEYWORD = "from"
 
 
 @dataclass
-class SimulationResults:  # TODO implement pint in this class # TODO change list to np.array
-    times: list
-    c_T2_solutions: list
-    y_T2_solutions: list
-    J_T2_solutions: list
-    x_ct: np.ndarray
-    x_y: np.ndarray
-    inventories_T2_salt: np.ndarray
-    sources_T2: list
-    fluxes_T2: list
+class SimulationResults:
+    times: np.ndarray[pint.Quantity]
+    c_T2_solutions: np.ndarray[pint.Quantity]
+    y_T2_solutions: np.ndarray[pint.Quantity]
+    J_T2_solutions: np.ndarray[pint.Quantity]
+    x_ct: np.ndarray[pint.Quantity]
+    x_y: np.ndarray[pint.Quantity]
+    inventories_T2_salt: np.ndarray[pint.Quantity]
+    sources_T2: np.ndarray[pint.Quantity]
+    fluxes_T2: np.ndarray[pint.Quantity]
     sim_input: SimulationInput
-    dt: int | None = None
-    dx: int | None = None
+    dt: pint.Quantity
+    dx: pint.Quantity
 
     keys_to_ignore_results = [  # TODO do it the other way: keys_to_include_results
         "c_T2_solutions",
@@ -428,22 +428,20 @@ class Simulation:
             # advance time
             t += dt
 
-        inventories_T2_salt = np.array(inventories_T2_salt)
-
         # TODO reattach units using wrapping
         # https://pint.readthedocs.io/en/stable/advanced/performance.html#a-safer-method-wrapping
         results = SimulationResults(
-            times=times,
-            c_T2_solutions=c_T2_solutions,
-            y_T2_solutions=y_T2_solutions,
-            J_T2_solutions=J_T2_solutions,
-            x_ct=x_ct,
-            x_y=x_y,
-            inventories_T2_salt=inventories_T2_salt,
-            sources_T2=sources_T2,
-            fluxes_T2=fluxes_T2,
+            times=np.array(times) * ureg("s"),
+            c_T2_solutions=np.array(c_T2_solutions) * ureg("molT2/m^3"),
+            y_T2_solutions=np.array(y_T2_solutions) * ureg("dimensionless"),
+            J_T2_solutions=np.array(J_T2_solutions) * ureg("molT2/m^3/s"),
+            x_ct=x_ct * ureg("m"),
+            x_y=x_y * ureg("m"),
+            inventories_T2_salt=np.array(inventories_T2_salt) * ureg("molT2"),
+            sources_T2=np.array(sources_T2) * ureg("molT2/s"),
+            fluxes_T2=np.array(fluxes_T2) * ureg("molT2/s"),
             sim_input=self.sim_input,
-            dt=dt,
-            dx=dx,
+            dt=dt * ureg("s"),
+            dx=dx * ureg("m"),
         )
         return results

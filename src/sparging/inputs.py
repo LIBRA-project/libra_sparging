@@ -385,7 +385,7 @@ _librapi_input_dict = {  # NOTE could use a frozen dataclass, avoids external us
     "height": 1 * ureg.m,
     "nozzle_diameter": 1.4 * ureg.mm,
     "nb_nozzle": 5 * ureg.dimensionless,
-    "temperature": 500 * ureg.celsius,
+    "temperature": 600 * ureg.celsius,
     "P_top": 1 * ureg.atm,
     "flow_g_mol": 100 * ureg.sccm,
     "tbr": 0.1 * ureg("triton / neutron"),
