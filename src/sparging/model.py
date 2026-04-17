@@ -22,6 +22,9 @@ from sparging.config import ureg, const_g
 from sparging.inputs import SimulationInput
 import pint
 from collections.abc import Callable
+import logging
+
+logger = logging.getLogger(__name__)
 
 hours_to_seconds = 3600
 days_to_seconds = 24 * hours_to_seconds
@@ -103,7 +106,7 @@ class SimulationResults:
             output["simulation parameters"][key] = str(value)
         output["results"] = self.__dict__.copy()
 
-        # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
+        # remove objects incompatible with serialization
         for key in self.keys_to_ignore_results:
             output["results"].pop(key, None)
 
@@ -111,17 +114,17 @@ class SimulationResults:
             if isinstance(value, np.ndarray):
                 # convert numpy arrays to lists for JSON serialization
                 output[key] = value.tolist()
-                print(
+                logger.verbose(
                     "found list in results, converting to list for JSON serialization"
                 )
             if isinstance(value, pint.Quantity):
                 # convert pint.Quantity to string for JSON serialization
                 output[key] = value.to_base_units().magnitude
-                print(
+                logger.verbose(
                     "found pint.Quantity in results, converting to magnitude for JSON serialization"
                 )
             else:
-                print(
+                logger.verbose(
                     f"{key} is of type {type(value)}, no conversion needed for JSON serialization"
                 )
 
@@ -131,7 +134,7 @@ class SimulationResults:
                 output["results"][k] = {"value": v.magnitude, "units": units}
 
                 if isinstance(v.magnitude, np.ndarray):
-                    print(
+                    logger.verbose(
                         f"found pint.Quantity with numpy array magnitude in results[{k}], converting to list for JSON serialization"
                     )
                     output["results"][k]["value"] = v.magnitude.tolist()
