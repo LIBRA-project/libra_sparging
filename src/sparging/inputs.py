@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from sparging.correlations import Correlation, all_correlations
 import pint
 from typing import List
@@ -29,6 +29,9 @@ class ColumnGeometry:
     def tank_volume(self):
         return self.area * self.height
 
+    def copy(self):
+        return replace(self)
+
 
 @dataclass
 class BreederMaterial:
@@ -38,6 +41,9 @@ class BreederMaterial:
     density: pint.Quantity | Correlation | None = None
     viscosity: pint.Quantity | Correlation | None = None
     surface_tension: pint.Quantity | Correlation | None = None
+
+    def copy(self):
+        return replace(self)
 
 
 @dataclass
@@ -53,6 +59,9 @@ class OperatingParameters:
     n_gen_rate: pint.Quantity | None = None
     Q_T: pint.Quantity | None = None
 
+    def copy(self):
+        return replace(self)
+
 
 @dataclass
 class SpargingParameters:
@@ -64,6 +73,9 @@ class SpargingParameters:
     E_g: pint.Quantity | Correlation | None = None
     E_l: pint.Quantity | Correlation | None = None
     a: pint.Quantity | Correlation | None = None
+
+    def copy(self):
+        return replace(self)
 
 
 @dataclass  # should it not be a normal class ? (init method)s
@@ -183,6 +195,9 @@ class SimulationInput:
                 for value in [getattr(self, name)]
             ]
         )
+
+    def copy(self):
+        return replace(self)
 
 
 def find_in_graph(
@@ -395,34 +410,45 @@ _librapi_input_dict = {  # NOTE could use a frozen dataclass, avoids external us
 librapi_input_dict = MappingProxyType(_librapi_input_dict)  # make it immutable
 
 
-def get_sim_input(input_dict: dict) -> SimulationInput:
-    """Returns the SimulationInput for the given input dictionary"""
-    geom = ColumnGeometry(
-        area=input_dict["area"],
-        height=input_dict["height"],
-        nozzle_diameter=input_dict["nozzle_diameter"],
-        nb_nozzle=input_dict["nb_nozzle"],
-    )
+# NOTE potentially we could make sure it's immutable with something like this
+# class PresetInputs:
+#     def __init__(self, name: str):
+#         self.name = name
 
-    material = BreederMaterial(
-        name=input_dict["material"],
-    )
 
-    operating_params = OperatingParameters(
-        temperature=input_dict["temperature"],
-        P_top=input_dict["P_top"],
-        flow_g_mol=input_dict["flow_g_mol"],
-        tbr=input_dict["tbr"],
-        n_gen_rate=input_dict["n_gen_rate"],
-    )
+# class LIBRA_Pi_Input(PresetInputs):
+#     @property
+#     def geometry(self):
+#         return ColumnGeometry(
+#             area=0.2 * ureg.m**2,  # 1/4 * pi * (0.5m)^2
+#             height=1 * ureg.m,
+#             nozzle_diameter=1.4 * ureg.mm,
+#             nb_nozzle=5 * ureg.dimensionless,
+#         )
 
-    sparging_params = SpargingParameters(
-        h_l=all_correlations("h_l_briggs"),
-    )
 
-    my_input = SimulationInput.from_parameters(
-        geom, material, operating_params, sparging_params
-    )
-    logger.info(my_input)
+# new_geometry = LIBRA_Pi_Input.geometry
 
-    return my_input
+
+LIBRA_PI_GEOM = ColumnGeometry(
+    area=_librapi_input_dict["area"],
+    height=_librapi_input_dict["height"],
+    nozzle_diameter=_librapi_input_dict["nozzle_diameter"],
+    nb_nozzle=_librapi_input_dict["nb_nozzle"],
+)
+
+LIBRA_PI_MAT = BreederMaterial(
+    name=_librapi_input_dict["material"],
+)
+
+LIBRA_PI_OPERATING_PARAMS = OperatingParameters(
+    temperature=_librapi_input_dict["temperature"],
+    P_top=_librapi_input_dict["P_top"],
+    flow_g_mol=_librapi_input_dict["flow_g_mol"],
+    tbr=_librapi_input_dict["tbr"],
+    n_gen_rate=_librapi_input_dict["n_gen_rate"],
+)
+
+LIBRA_PI_SPARGING_PARAMS = SpargingParameters(
+    h_l=all_correlations("h_l_briggs"),
+)
