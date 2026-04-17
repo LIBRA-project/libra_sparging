@@ -1,3 +1,4 @@
+from __future__ import annotations
 from mpi4py import MPI
 import dolfinx
 import basix
@@ -16,7 +17,7 @@ import sparging.helpers as helpers
 import json
 from pathlib import Path
 
-from sparging.config import ureg
+from sparging.config import ureg, const_g
 
 from sparging.inputs import SimulationInput
 
@@ -24,6 +25,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import pint
+from collections.abc import Callable
 
 hours_to_seconds = 3600
 days_to_seconds = 24 * hours_to_seconds
@@ -37,20 +39,24 @@ SEPARATOR_KEYWORD = "from"
 
 
 @dataclass
-class SimulationResults:
+class SimulationResults:  # TODO implement pint in this class # TODO change list to np.array
     times: list
     c_T2_solutions: list
     y_T2_solutions: list
+    J_T2_solutions: list
     x_ct: np.ndarray
     x_y: np.ndarray
     inventories_T2_salt: np.ndarray
-    source_T2: list
+    sources_T2: list
     fluxes_T2: list
     sim_input: SimulationInput
+    dt: int | None = None
+    dx: int | None = None
 
     keys_to_ignore_results = [  # TODO do it the other way: keys_to_include_results
         "c_T2_solutions",
         "y_T2_solutions",
+        "J_T2_solutions",
         "x_ct",
         "x_y",
         "inventories_T2_salt",
@@ -136,11 +142,25 @@ class SimulationResults:
 class Simulation:
     sim_input: SimulationInput
     t_final: pint.Quantity
-    signal_irr: callable[pint.Quantity]
-    signal_sparging: callable[pint.Quantity]
-    profile_source_T: callable[pint.Quantity] | None = None
+    signal_irr: Callable[[pint.Quantity], float]
+    signal_sparging: Callable[[pint.Quantity], float]
+    profile_source_T: Callable[[float], float] | None = None
+    """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
+    profile_pressure_hydrostatic: bool = False
+    dispersion_on: bool = True
 
-    def solve(self, dt: pint.Quantity | None = None, dx: pint.Quantity | None = None):
+    def hydrostatic_pressure(self, x: pint.Quantity) -> pint.Quantity:
+        """returns the hydrostatic pressure at a given height x in the tank given P_bottom"""
+        rho = self.sim_input.rho_l
+        g = const_g
+        return (self.sim_input.P_bottom + rho * g * x).to("Pa")
+
+    def solve(
+        self,
+        dt: pint.Quantity | None = None,
+        dx: pint.Quantity | None = None,
+        fast_solve: bool = False,
+    ) -> SimulationResults:
         # unpack pint.Quantities
         t_final = self.t_final.to("seconds").magnitude
         tank_height = self.sim_input.height.to("m").magnitude
@@ -153,12 +173,21 @@ class Simulation:
         T = self.sim_input.temperature.to("K").magnitude
         eps_g = self.sim_input.eps_g.to("dimensionless").magnitude
         E_g = self.sim_input.E_g.to("m**2/s").magnitude
-        D_l = self.sim_input.D_l.to("m**2/s").magnitude
+        E_l = self.sim_input.E_l.to("m**2/s").magnitude
+        D_l = self.sim_input.D_l.to("m**2/s").magnitude  # not needed (included in h_l)
         u_g0 = self.sim_input.u_g0.to("m/s").magnitude
-        source_T2 = self.sim_input.source_T.to("molT2/s/m**3").magnitude
+        Q_T2 = self.sim_input.Q_T.to("molT2/s").magnitude
 
-        dt = dt.to("seconds").magnitude if dt is not None else t_final / 1000
-        dx = dx.to("m").magnitude if dx is not None else tank_height / 1000
+        dt = (
+            dt.to("seconds").magnitude
+            if dt is not None
+            else (t_final / 1000 if not fast_solve else t_final / 50)
+        )
+        dx = (
+            dx.to("m").magnitude
+            if dx is not None
+            else (tank_height / 1000 if not fast_solve else tank_height / 50)
+        )
         eps_l = 1 - eps_g
 
         # MESH AND FUNCTION SPACES
@@ -184,37 +213,62 @@ class Simulation:
 
         h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
 
-        gen_T2_mag = dolfinx.fem.Constant(
-            mesh, source_T2 * self.signal_irr(0 * ureg.s)
+        gen_T2_ave = dolfinx.fem.Constant(
+            mesh, Q_T2 / tank_volume * self.signal_irr(0 * ureg.s)
         )  # magnitude of the generation term
-        gen_T2 = None
+
         if self.profile_source_T is not None:  # spatially varying profile is provided
-            gen_T2_prof = dolfinx.fem.Function(V_profile)
-            gen_T2_prof.interpolate(
-                lambda x: x[0] * 0 + self.profile_source_T(x[0] * ureg.m)
+            arbitrary_profile = dolfinx.fem.Function(V_profile)
+            arbitrary_profile.interpolate(
+                lambda x: x[0] * 0 + self.profile_source_T(x[0] / tank_height)
             )
-            gen_T2 = gen_T2_mag * gen_T2_prof
+            profile_integral = dolfinx.fem.assemble_scalar(
+                dolfinx.fem.form(
+                    arbitrary_profile * 1 / tank_height * ufl.dx  # TODO
+                )  # dimensionless integral
+            )
+            normalized_profile = (
+                arbitrary_profile / profile_integral
+            )  # normalize profile so that its integral over the dimensionless height is 1
         else:  # homogeneous generation
-            gen_T2 = gen_T2_mag
+            normalized_profile = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1.0))
+
+        gen_T2 = gen_T2_ave * normalized_profile
+
+        P_prof = dolfinx.fem.Function(V_profile)
+        if self.profile_pressure_hydrostatic:
+            P_prof.interpolate(
+                lambda x: self.hydrostatic_pressure(x[0] * ureg.m).magnitude
+            )
+        else:
+            P_prof.interpolate(lambda x: x[0] * 0 + P_0)
+
+        P = P_prof
 
         # VARIATIONAL FORMULATION
 
         # mass transfer rate
         J_T2 = (
-            a * h_l_const * (c_T2 - K_s * (P_0 * y_T2 + EPS))
+            a * h_l_const * (c_T2 - K_s * (P * y_T2 + EPS))
         )  # TODO pressure shouldn't be a constant (use hydrostatic pressure profile), how to deal with this ? -> use fem.Expression ?
 
         F = 0  # variational formulation
 
         # transient terms
         F += eps_l * ((c_T2 - c_T2_n) / dt) * v_c * ufl.dx
-        F += eps_g * 1 / (const.R * T) * (P_0 * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
+        F += eps_g * 1 / (const.R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
-        # diffusion/dispersion terms #TODO shouldn't use D_l, transport of T in liquid is dominated by dispersive effects due to gas sparging, find dispersion coeff for steady liquid in gas bubbles
-        F += eps_l * D_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
-
-        # NOTE remove diffusive term for gas for now for mass balance
-        # F += eps_g * E_g * ufl.dot(ufl.grad(P_0 * y_T2), ufl.grad(v_y)) * ufl.dx
+        # dispersive terms
+        if self.dispersion_on is True:
+            F += eps_l * E_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
+            F += (
+                eps_g
+                * E_g
+                * 1
+                / (const.R * T)
+                * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y))
+                * ufl.dx
+            )
 
         # mass exchange (coupling term)
         F += J_T2 * v_c * ufl.dx - J_T2 * v_y * ufl.dx
@@ -226,7 +280,7 @@ class Simulation:
         F += (
             1
             / (const.R * T)
-            * ufl.inner(ufl.dot(ufl.grad(P_0 * y_T2), vel), v_y)
+            * ufl.inner(ufl.dot(ufl.grad(P * y_T2), vel), v_y)
             * ufl.dx
         )
 
@@ -241,12 +295,7 @@ class Simulation:
             dolfinx.fem.Constant(mesh, 0.0),
             dolfinx.fem.locate_dofs_topological(V.sub(1), fdim, gas_inlet_facets),
             V.sub(1),
-        )
-        bc2 = dolfinx.fem.dirichletbc(
-            dolfinx.fem.Constant(mesh, 0.0),
-            dolfinx.fem.locate_dofs_topological(V.sub(0), fdim, gas_outlet_facets),
-            V.sub(0),
-        )
+        )  # y_T2 = 0 at gas inlet
 
         # Custom measure
         all_facets = np.concatenate((gas_inlet_facets, gas_outlet_facets))
@@ -260,12 +309,17 @@ class Simulation:
         problem = NonlinearProblem(
             F,
             u,
-            bcs=[bc1, bc2],
+            bcs=[bc1],  # Neumann BCs on c_T2 at inlet and outlet are naturally enforced
             petsc_options_prefix="librasparge",
             # petsc_options={"snes_monitor": None},
         )
 
         # initialise post processing
+
+        # we define a function and an expression for J_T2 for use in post processing
+        J_T2_func = dolfinx.fem.Function(V_profile)
+        J_T2_expr = dolfinx.fem.Expression(J_T2, V_profile.element.interpolation_points)
+
         V0_ct, ct_dofs = u.function_space.sub(0).collapse()
         coords = V0_ct.tabulate_dof_coordinates()[:, 0]
         ct_sort_coords = np.argsort(coords)
@@ -276,46 +330,48 @@ class Simulation:
         y_sort_coords = np.argsort(coords)
         x_y = coords[y_sort_coords]
 
-        times = []
-        c_T2_solutions = []
-        y_T2_solutions = []
-        sources_T2 = []
-        fluxes_T2 = []
-        inventories_T2_salt = []
+        coords_profile = V_profile.tabulate_dof_coordinates()[:, 0]
+        num_profile_dofs = (
+            V_profile.dofmap.index_map.size_local
+        ) * V_profile.dofmap.index_map_bs
 
-        # SOLVE
-        t = 0
-        while t < t_final:
-            gen_T2_mag.value = source_T2 * self.signal_irr(t * ureg.s)
-            h_l_const.value = h_l * self.signal_sparging(t * ureg.s)
-            """ utiliser ufl.conditional TODO"""
+        profile_dofs = np.arange(num_profile_dofs)
+        profile_sort_coords = np.argsort(coords_profile)
+        # NOTE currently we don't use x_profile and use another x in the plotting script
+        x_profile = coords_profile[profile_sort_coords]
 
-            problem.solve()
-
-            # update previous solution
-            u_n.x.array[:] = u.x.array[:]
-
-            # post process
+        # NOTE maybe we could take this function out and it would take a SimulationResults object as input + u + other things...
+        def post_process(t):
+            """
+            Post-process the solution at time t.
+            Extract solution profiles, compute fluxes and inventories, and store them in lists for later analysis.
+            """
             c_T2_post, y_T2_post = u.split()
 
             c_T2_vals = u.x.array[ct_dofs][ct_sort_coords]
             y_T2_vals = u.x.array[y_dofs][y_sort_coords]
-
-            # store time and solution
-            # TODO give units to the results
+            J_T2_func.interpolate(J_T2_expr)
+            J_T2_vals = J_T2_func.x.array[profile_dofs][ct_sort_coords]
             times.append(t)
             c_T2_solutions.append(c_T2_vals.copy())
             y_T2_solutions.append(y_T2_vals.copy())
+            J_T2_solutions.append(J_T2_vals.copy())
             sources_T2.append(
-                source_T2 * self.signal_irr(t * ureg.s) * tank_volume
+                Q_T2 * self.signal_irr(t * ureg.s)
             )  # total T generation rate in the tank [mol/s] TODO useless: signal_irr is already given
 
+            n = ufl.FacetNormal(mesh)
+
+            # flux_T2 = dolfinx.fem.assemble_scalar(
+            #     dolfinx.fem.form(
+            #         eps_g * vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
+            #     )
+            # )  # total T flux at the outlet [mol/s]
             flux_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
-                    tank_area * vel_x * P_0 / (const.R * T) * y_T2_post * ds(2)
+                    vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
                 )
-            )  # total T flux at the outlet [mol/s]
-
+            )  # TODO replace with integral of J over volume
             # flux_T_inlet = dolfinx.fem.assemble_scalar(
             #     dolfinx.fem.form(
             #         tank_area
@@ -328,21 +384,46 @@ class Simulation:
             #     )
             # )  # total T dispersive flux at the inlet [mol/s]
 
-            n = ufl.FacetNormal(mesh)
             flux_T2_inlet = dolfinx.fem.assemble_scalar(
-                dolfinx.fem.form(-E_g * ufl.inner(ufl.grad(P_0 * y_T2_post), n) * ds(1))
+                dolfinx.fem.form(
+                    -eps_g * E_g * ufl.inner(ufl.grad(P * y_T2_post), n) * ds(1)
+                )
             )  # total T dispersive flux at the inlet [Pa T2 /s/m2]
-            flux_T2_inlet *= 1 / (const.R * T) * T2_to_T  # convert to mol T/s/m2
-            flux_T2_inlet *= tank_area  # convert to mol T/s
+            flux_T2_inlet *= 1 / (const.R * T)  # mol T2/s/m2
+            flux_T2_inlet *= tank_area  # convert to molT2/s
 
-            # fluxes_T2.append(flux_T2 + flux_T2_inlet)
-            fluxes_T2.append(flux_T2)
+            fluxes_T2.append(flux_T2 + flux_T2_inlet)
+            # fluxes_T2.append(flux_T2)
 
             inventory_T2_salt = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(c_T2_post * ufl.dx)
             )
             inventory_T2_salt *= tank_area  # get total amount of T2 in [mol]
             inventories_T2_salt.append(inventory_T2_salt)
+
+        # TODO Initialize results storage with zeros -> there's an inconsistency: times[0] = 0 but inventories[0] != 0 -> screws comparison with analytical solutions
+        t = 0
+        times = []
+        c_T2_solutions = []
+        y_T2_solutions = []
+        J_T2_solutions = []
+        sources_T2 = []
+        fluxes_T2 = []
+        inventories_T2_salt = []
+        post_process(t)
+
+        # SOLVE
+        while t < t_final:
+            # update time-dependent terms
+            gen_T2_ave.value = Q_T2 / tank_volume * self.signal_irr(t * ureg.s)
+            h_l_const.value = h_l * self.signal_sparging(t * ureg.s)
+
+            problem.solve()
+
+            # update previous solution
+            u_n.x.array[:] = u.x.array[:]
+
+            post_process(t)
 
             # advance time
             t += dt
@@ -355,11 +436,14 @@ class Simulation:
             times=times,
             c_T2_solutions=c_T2_solutions,
             y_T2_solutions=y_T2_solutions,
+            J_T2_solutions=J_T2_solutions,
             x_ct=x_ct,
             x_y=x_y,
             inventories_T2_salt=inventories_T2_salt,
-            source_T2=sources_T2,
+            sources_T2=sources_T2,
             fluxes_T2=fluxes_T2,
             sim_input=self.sim_input,
+            dt=dt,
+            dx=dx,
         )
         return results

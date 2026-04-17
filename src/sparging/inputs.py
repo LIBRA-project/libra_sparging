@@ -5,6 +5,7 @@ from typing import List
 import inspect
 import numpy as np
 import logging
+from sparging.config import const_R
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ class OperatingParameters:
     P_bottom: pint.Quantity | Correlation | None = None
     tbr: pint.Quantity | None = None
     n_gen_rate: pint.Quantity | None = None
-    source_T: pint.Quantity | Correlation | None = None
+    Q_T: pint.Quantity | None = None
 
 
 @dataclass
@@ -57,6 +58,7 @@ class SpargingParameters:
     d_b: pint.Quantity | Correlation | None = None
     rho_g: pint.Quantity | Correlation | None = None
     E_g: pint.Quantity | Correlation | None = None
+    E_l: pint.Quantity | Correlation | None = None
     a: pint.Quantity | Correlation | None = None
 
 
@@ -70,14 +72,46 @@ class SimulationInput:
     h_l: pint.Quantity
     K_s: pint.Quantity
     P_bottom: pint.Quantity
+    rho_l: pint.Quantity
     eps_g: pint.Quantity
     E_g: pint.Quantity
+    E_l: pint.Quantity
     D_l: pint.Quantity
-    source_T: pint.Quantity
+    Q_T: pint.Quantity
+    # normalize_source_T: bool = True
+    # TODO refactoring, put signals in this class
 
     @property
     def volume(self):
         return self.area * self.height
+
+    @property
+    def eps_l(self):
+        return 1 - self.eps_g
+
+    def set_S_T(self, val: pint.Quantity):
+        self.Q_T = (val.to("molT/m**3/s") * self.volume).to("molT/s")
+
+    def get_S_T(self) -> pint.Quantity:
+        return (self.Q_T / self.volume).to("molT/m**3/s")
+
+    def get_tau(self) -> pint.Quantity:
+        """characteristic time of the sparger under the small partial pressure (SPP) approximation"""
+        return (self.eps_l / (self.h_l * self.a)).to("seconds")
+
+    def get_c_T2_SS(self) -> pint.Quantity:
+        return (self.get_S_T() * 1 / (self.h_l * self.a)).to("molT2/m^3")
+
+    def get_PP_number(self) -> pint.Quantity:
+        """Partial pressure number, ratio of the equivalent T concentration at liquid boundary to the bulk liquid concentration.
+        If PP << 1, then we are in the small partial pressure (SPP) regime, and if PP ~= 1, then we are in the partial pressure limited (PPL) regime.
+        """
+        return (
+            self.K_s
+            * (const_R * self.temperature)
+            * self.height
+            / (self.get_tau() * self.u_g0)
+        ).to("dimensionless")
 
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error
