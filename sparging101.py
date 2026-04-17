@@ -4,6 +4,8 @@ from sparging import all_correlations
 from sparging import animation
 from sparging.model import Simulation
 from sparging.inputs import (
+    get_sim_input,
+    librapi_input_dict,
     get_sim_input_standard,
 )
 import logging
@@ -18,6 +20,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 my_input = get_sim_input_standard()
+# my_input = get_sim_input(librapi_input_dict)
 
 print(my_input.get_S_T())
 print(f"{my_input.Q_T.to('molT/s')} = {my_input.Q_T.to('molT2/hour')}")

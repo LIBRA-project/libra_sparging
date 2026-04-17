@@ -8,6 +8,7 @@ import numpy as np
 import logging
 from sparging.config import ureg, const_R
 from collections.abc import Callable
+from types import MappingProxyType
 
 
 logger = logging.getLogger(__name__)
@@ -373,4 +374,55 @@ def get_sim_input_standard() -> SimulationInput:
         geom, flibe, operating_params, sparging_params
     )
     logger.info(my_input)
+    return my_input
+
+
+# NOTE rather have only get_sim_input function and put experiment specific parameters in dictionaries
+
+_librapi_input_dict = {
+    "name": "LIBRA Pi",
+    "area": 0.2 * ureg.m**2,  # 1/4 * pi * (0.5m)^2
+    "height": 1 * ureg.m,
+    "nozzle_diameter": 1.4 * ureg.mm,
+    "nb_nozzle": 5 * ureg.dimensionless,
+    "temperature": 500 * ureg.celsius,
+    "P_top": 1 * ureg.atm,
+    "flow_g_mol": 100 * ureg.sccm,
+    "tbr": 0.1 * ureg("triton / neutron"),
+    "n_gen_rate": 1e9 * ureg("neutron / s"),
+    "material": "FLiBe",
+}
+librapi_input_dict = MappingProxyType(_librapi_input_dict)  # make it immutable
+
+
+def get_sim_input(input_dict: dict) -> SimulationInput:
+    """Returns the SimulationInput for the given input dictionary"""
+    geom = ColumnGeometry(
+        area=input_dict["area"],
+        height=input_dict["height"],
+        nozzle_diameter=input_dict["nozzle_diameter"],
+        nb_nozzle=input_dict["nb_nozzle"],
+    )
+
+    material = BreederMaterial(
+        name=input_dict["material"],
+    )
+
+    operating_params = OperatingParameters(
+        temperature=input_dict["temperature"],
+        P_top=input_dict["P_top"],
+        flow_g_mol=input_dict["flow_g_mol"],
+        tbr=input_dict["tbr"],
+        n_gen_rate=input_dict["n_gen_rate"],
+    )
+
+    sparging_params = SpargingParameters(
+        h_l=all_correlations("h_l_briggs"),
+    )
+
+    my_input = SimulationInput.from_parameters(
+        geom, material, operating_params, sparging_params
+    )
+    logger.info(my_input)
+
     return my_input
