@@ -2,11 +2,10 @@
 libra_sparging: A finite element model for sparging processes using FEniCSx/DOLFINX.
 """
 
-from .config import ureg, const_R, const_g, VERBOSE
+from .config import ureg, const_R, const_g
 from .model import SimulationResults
 from .animation import ConcentrationAnimator
-from .helpers import *
-from .correlations import *
+from .correlations import all_correlations, CorrelationGroup, Correlation
 
 __all__ = [
     "SimulationInput",
@@ -15,5 +14,4 @@ __all__ = [
     "ureg",
     "const_R",
     "const_g",
-    "VERBOSE",
 ]

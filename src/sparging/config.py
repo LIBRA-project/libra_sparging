@@ -1,8 +1,6 @@
 from pint import UnitRegistry
 import scipy.constants as const
 
-VERBOSE = False
-
 ureg = UnitRegistry(
     autoconvert_offset_to_baseunit=True
 )  # to deal with offset units (eg: degree celsius)
