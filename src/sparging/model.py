@@ -20,11 +20,7 @@ from pathlib import Path
 from sparging.config import ureg, const_g
 
 from sparging.inputs import SimulationInput
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import pint
+import pint
 from collections.abc import Callable
 
 hours_to_seconds = 3600
@@ -49,21 +45,23 @@ class SimulationResults:
     inventories_T2_salt: np.ndarray[pint.Quantity]
     sources_T2: np.ndarray[pint.Quantity]
     fluxes_T2: np.ndarray[pint.Quantity]
-    sim_input: SimulationInput
-    dt: pint.Quantity
-    dx: pint.Quantity
+    dt: pint.Quantity = None
+    dx: pint.Quantity = None
+    sim_input: SimulationInput = None
 
     keys_to_ignore_results = [  # TODO do it the other way: keys_to_include_results
-        "c_T2_solutions",
-        "y_T2_solutions",
-        "J_T2_solutions",
-        "x_ct",
-        "x_y",
-        "inventories_T2_salt",
-        "times",
-        "source_T2",
-        "fluxes_T2",
+        # "c_T2_solutions",
+        # "y_T2_solutions",
+        # "J_T2_solutions",
+        # "x_ct",
+        # "x_y",
+        # "inventories_T2_salt",
+        # "times",
+        # "sources_T2",
+        # "fluxes_T2",
         "sim_input",
+        "dt",
+        "dx",
     ]
 
     def to_yaml(self, output_path: Path):
@@ -90,7 +88,7 @@ class SimulationResults:
         with open(output_path, "w") as f:
             yaml.dump(output, f, sort_keys=False)
 
-    def to_json(self, output_path: Path):
+    def serialize_output(self):
         sim_dict = self.sim_input.__dict__.copy()
 
         # structure the output
@@ -116,9 +114,43 @@ class SimulationResults:
                 print(
                     "found list in results, converting to list for JSON serialization"
                 )
+            if isinstance(value, pint.Quantity):
+                # convert pint.Quantity to string for JSON serialization
+                output[key] = value.to_base_units().magnitude
+                print(
+                    "found pint.Quantity in results, converting to magnitude for JSON serialization"
+                )
+            else:
+                print(
+                    f"{key} is of type {type(value)}, no conversion needed for JSON serialization"
+                )
+
+        for k, v in output["results"].items():
+            if isinstance(v, pint.Quantity):
+                units = str(v.units)
+                output["results"][k] = {"value": v.magnitude, "units": units}
+
+                if isinstance(v.magnitude, np.ndarray):
+                    print(
+                        f"found pint.Quantity with numpy array magnitude in results[{k}], converting to list for JSON serialization"
+                    )
+                    output["results"][k]["value"] = v.magnitude.tolist()
+
+        return output
+
+    def to_json(self, output_path: Path):
+        output = self.serialize_output()
 
         with open(output_path, "w") as f:
             json.dump(output, f, indent=3)
+
+    def to_pickle(self, output_path: Path):
+        import pickle
+
+        output = self.serialize_output()
+
+        with open(output_path, "wb") as f:
+            pickle.dump(output, f)
 
     def profiles_to_csv(self, output_path: Path):
         """save c_T2 and y_T2 profiles at all time steps to csv files, one for c_T2 and one for y_T2, with columns for each time step"""
@@ -136,6 +168,33 @@ class SimulationResults:
 
         df_c_T2.to_csv(output_path.joinpath("_c_T2.csv"), index=False)
         df_y_T2.to_csv(output_path.joinpath("_y_T2.csv"), index=False)
+
+    @classmethod
+    def deserialize_output(cls, data: dict) -> SimulationResults:
+        # only read the "results" key
+        # for each key in results, if the dict have "value" and "units" keys, convert it back to pint.Quantity
+        results = data.get("results", {})
+        for k, v in results.items():
+            if isinstance(v, dict) and "value" in v and "units" in v:
+                results[k] = ureg.Quantity(v["value"], v["units"])
+
+        return cls(**results)
+
+    @classmethod
+    def from_json(cls, input_path: Path) -> SimulationResults:
+        with open(input_path, "r") as f:
+            data = json.load(f)
+
+        return cls.deserialize_output(data)
+
+    @classmethod
+    def from_pickle(cls, input_path: Path) -> SimulationResults:
+        import pickle
+
+        with open(input_path, "rb") as f:
+            data = pickle.load(f)
+
+        return cls.deserialize_output(data)
 
 
 @dataclass

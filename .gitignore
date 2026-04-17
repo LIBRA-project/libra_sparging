@@ -214,3 +214,4 @@ mwe.py
 !standard_input.json
 *.ipynb
 *.code-workspace
+*.pkl
