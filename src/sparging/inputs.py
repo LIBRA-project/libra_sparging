@@ -82,7 +82,9 @@ class SimulationInput:
     D_l: pint.Quantity
     Q_T: pint.Quantity
     signal_irr: Callable[[pint.Quantity], float] = lambda t: 1
+    """callable = f:R+ (time) -> [0,1] """
     signal_sparging: Callable[[pint.Quantity], float] = lambda t: 1
+    """callable = f:R+ (time) -> [0,1] """
     profile_source_T: Callable[[float], float] | None = None
     """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
     required_keys = (
@@ -267,11 +269,13 @@ def resolve_correlation(
     return corr(**{arg: resolved_quantities[arg] for arg in corr_args})
 
 
-def get_LIBRA_Pi():
+def get_sim_input_LIBRA_Pi() -> SimulationInput:
+    """Returns the SimulationInput for the LIBRA Pi experiment
+    Geometry and operating parameters are plausible values that should be representative of the final LIBRA Pi experiment"""
     geom = ColumnGeometry(
         area=0.2 * ureg.m**2,  # 1/4 * pi * (0.5m)^2
         height=1 * ureg.m,
-        nozzle_diameter=3 * ureg.mm,
+        nozzle_diameter=1.4 * ureg.mm,
         nb_nozzle=5 * ureg.dimensionless,
     )
 
@@ -282,7 +286,7 @@ def get_LIBRA_Pi():
     operating_params = OperatingParameters(
         temperature=500 * ureg.celsius,
         P_top=1 * ureg.atm,
-        flow_g_mol=40 * ureg.sccm,
+        flow_g_mol=100 * ureg.sccm,
         tbr=0.1 * ureg("triton / neutron"),
         n_gen_rate=1e9 * ureg("neutron / s"),
     )
@@ -294,17 +298,79 @@ def get_LIBRA_Pi():
     libra_pi = SimulationInput.from_parameters(
         geom, flibe, operating_params, sparging_params
     )
+    logger.info(libra_pi)
+
+    return libra_pi
+
+
+def get_sim_input_LIBRA1L() -> tuple[SimulationInput, pint.Quantity]:
+    """Returns the SimulationInput for the LIBRA 1L experiment, and the irradiation time (t_irr) to be used in the signal_irr function.
+    The irradiation time is calculated based on the neutron fluence and generation rate reported in the LIBRA 1L paper."""
+    geom = ColumnGeometry(
+        area=170 * ureg.cm**2,
+        height=7 * ureg.cm,
+        nozzle_diameter=1.4 * ureg.mm,
+        nb_nozzle=1 * ureg.dimensionless,
+    )
+
+    flibe = BreederMaterial(
+        name="FLiBe",
+    )
+
+    operating_params = OperatingParameters(
+        temperature=600 * ureg.celsius,
+        P_top=1 * ureg.atm,
+        flow_g_mol=40 * ureg.sccm,
+        tbr=2e-3 * ureg("triton / neutron"),  # according to LIBRA 1L paper
+        n_gen_rate=1e9 * ureg("neutron / s"),
+    )
+
+    sparging_params = SpargingParameters(
+        h_l=all_correlations("h_l_briggs"),
+    )
+
+    libra_1L = SimulationInput.from_parameters(
+        geom, flibe, operating_params, sparging_params
+    )
+    logger.info(libra_1L)
 
     n_fluence = 2.5e13 * ureg("neutron")
     n_gen_rate = operating_params.n_gen_rate
     t_irr = n_fluence / n_gen_rate
-    print(f"t_irr = {t_irr.to('seconds')}")
-    my_simulation = Simulation(
-        my_input,
-        t_final=50 * ureg.days,
-        signal_irr=lambda t: 1 if t < t_irr else 0,
-        signal_sparging=lambda t: 0 if t < t_irr else 1,
-        # signal_sparging=lambda t: 0,
-        profile_pressure_hydrostatic=False,
-        profile_source_T=lambda z: 1,
+
+    libra_1L.signal_irr = lambda t: 1 if t <= t_irr else 0
+
+    return (libra_1L, t_irr)
+
+
+def get_sim_input_standard() -> SimulationInput:
+    """Returns a standard SimulationInput that can be used for testing and tutorials.
+    The parameters are not based on any specific experiment, but are chosen to be representative of a typical sparging system."""
+    geom = ColumnGeometry(
+        area=0.2 * ureg.m**2,
+        height=1 * ureg.m,
+        nozzle_diameter=0.001 * ureg.m,
+        nb_nozzle=10 * ureg.dimensionless,
     )
+
+    flibe = BreederMaterial(
+        name="FLiBe",
+    )
+
+    operating_params = OperatingParameters(
+        temperature=600 * ureg.celsius,
+        P_top=1 * ureg.atm,
+        flow_g_mol=400 * ureg.sccm,
+        tbr=0.1 * ureg("triton / neutron"),
+        n_gen_rate=1e9 * ureg("neutron / s"),
+    )
+
+    sparging_params = SpargingParameters(
+        h_l=all_correlations("h_l_briggs"),
+    )
+
+    my_input = SimulationInput.from_parameters(
+        geom, flibe, operating_params, sparging_params
+    )
+    logger.info(my_input)
+    return my_input
