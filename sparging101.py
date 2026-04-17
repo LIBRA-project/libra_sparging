@@ -79,20 +79,20 @@ def profile_source_T(z: pint.Quantity | list[float], height: pint.Quantity = Non
     # return 0.5 * (1 + np.cos(0.5 * np.pi / (1 * ureg.m) * z))
 
 
-T_99 = my_input.get_tau()
+T_99 = my_input.get_tau() * np.log(100)
+my_input.profile_source_T = profile_source_T
+my_input.signal_irr = lambda t: 1 if t < T_99 else 0
+
 my_simulation = Simulation(
     my_input,
     t_final=2 * T_99,
-    signal_irr=lambda t: 1 if t < T_99 else 0,
-    signal_sparging=lambda t: 1,
-    profile_pressure_hydrostatic=False,
-    profile_source_T=profile_source_T,
+    profile_pressure_hydrostatic=True,
 )
 
 if __name__ == "__main__":
     # my_simulation.sim_input.E_g *= 1e5
     # my_simulation.sim_input.E_l *= 1e-5
-    output = my_simulation.solve()
+    output = my_simulation.solve(fast_solve=True)
 
     # # save output to file
     # output.profiles_to_csv(f"output_{tank_height}m.csv")

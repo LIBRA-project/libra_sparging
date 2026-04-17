@@ -142,10 +142,6 @@ class SimulationResults:  # TODO implement pint in this class # TODO change list
 class Simulation:
     sim_input: SimulationInput
     t_final: pint.Quantity
-    signal_irr: Callable[[pint.Quantity], float]
-    signal_sparging: Callable[[pint.Quantity], float]
-    profile_source_T: Callable[[float], float] | None = None
-    """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
     profile_pressure_hydrostatic: bool = False
     dispersion_on: bool = True
 
@@ -214,13 +210,15 @@ class Simulation:
         h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
 
         gen_T2_ave = dolfinx.fem.Constant(
-            mesh, Q_T2 / tank_volume * self.signal_irr(0 * ureg.s)
+            mesh, Q_T2 / tank_volume * self.sim_input.signal_irr(0 * ureg.s)
         )  # magnitude of the generation term
 
-        if self.profile_source_T is not None:  # spatially varying profile is provided
+        if (
+            self.sim_input.profile_source_T is not None
+        ):  # spatially varying profile is provided
             arbitrary_profile = dolfinx.fem.Function(V_profile)
             arbitrary_profile.interpolate(
-                lambda x: x[0] * 0 + self.profile_source_T(x[0] / tank_height)
+                lambda x: x[0] * 0 + self.sim_input.profile_source_T(x[0] / tank_height)
             )
             profile_integral = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
@@ -357,7 +355,7 @@ class Simulation:
             y_T2_solutions.append(y_T2_vals.copy())
             J_T2_solutions.append(J_T2_vals.copy())
             sources_T2.append(
-                Q_T2 * self.signal_irr(t * ureg.s)
+                Q_T2 * self.sim_input.signal_irr(t * ureg.s)
             )  # total T generation rate in the tank [mol/s] TODO useless: signal_irr is already given
 
             n = ufl.FacetNormal(mesh)
@@ -415,8 +413,10 @@ class Simulation:
         # SOLVE
         while t < t_final:
             # update time-dependent terms
-            gen_T2_ave.value = Q_T2 / tank_volume * self.signal_irr(t * ureg.s)
-            h_l_const.value = h_l * self.signal_sparging(t * ureg.s)
+            gen_T2_ave.value = (
+                Q_T2 / tank_volume * self.sim_input.signal_irr(t * ureg.s)
+            )
+            h_l_const.value = h_l * self.sim_input.signal_sparging(t * ureg.s)
 
             problem.solve()
 

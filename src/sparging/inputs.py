@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass
 from sparging.correlations import Correlation, all_correlations
 import pint
@@ -5,7 +6,9 @@ from typing import List
 import inspect
 import numpy as np
 import logging
-from sparging.config import const_R
+from sparging.config import ureg, const_R
+from collections.abc import Callable
+
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +65,7 @@ class SpargingParameters:
     a: pint.Quantity | Correlation | None = None
 
 
-@dataclass
+@dataclass  # should it not be a normal class ? (init method)s
 class SimulationInput:
     height: pint.Quantity
     area: pint.Quantity
@@ -78,8 +81,26 @@ class SimulationInput:
     E_l: pint.Quantity
     D_l: pint.Quantity
     Q_T: pint.Quantity
-    # normalize_source_T: bool = True
-    # TODO refactoring, put signals in this class
+    signal_irr: Callable[[pint.Quantity], float] = lambda t: 1
+    signal_sparging: Callable[[pint.Quantity], float] = lambda t: 1
+    profile_source_T: Callable[[float], float] | None = None
+    """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
+    required_keys = (
+        "height",
+        "area",
+        "u_g0",
+        "temperature",
+        "a",
+        "h_l",
+        "K_s",
+        "P_bottom",
+        "rho_l",
+        "eps_g",
+        "E_g",
+        "E_l",
+        "D_l",
+        "Q_T",
+    )  # these parameters will be used to solve the model
 
     @property
     def volume(self):
@@ -115,7 +136,7 @@ class SimulationInput:
 
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error
-        for key in self.__dataclass_fields__.keys():
+        for key in self.required_keys:
             value = getattr(self, key)
             if not isinstance(value, pint.Quantity):
                 raise ValueError(
@@ -145,14 +166,11 @@ class SimulationInput:
             sparging_params,
         ]
         resolved_parameters = {}
-        required_keys = (
-            cls.__dataclass_fields__.keys()
-        )  # these parameters will be used to solve the model
 
-        for required_key in required_keys:
+        for required_key in cls.required_keys:
             find_in_graph(required_key, resolved_parameters, graph=input_objects)
 
-        return cls(**{arg: resolved_parameters[arg] for arg in required_keys})
+        return cls(**{arg: resolved_parameters[arg] for arg in cls.required_keys})
 
     def __str__(self):
         return "\n\t".join(
@@ -247,3 +265,46 @@ def resolve_correlation(
     )
 
     return corr(**{arg: resolved_quantities[arg] for arg in corr_args})
+
+
+def get_LIBRA_Pi():
+    geom = ColumnGeometry(
+        area=0.2 * ureg.m**2,  # 1/4 * pi * (0.5m)^2
+        height=1 * ureg.m,
+        nozzle_diameter=3 * ureg.mm,
+        nb_nozzle=5 * ureg.dimensionless,
+    )
+
+    flibe = BreederMaterial(
+        name="FLiBe",
+    )
+
+    operating_params = OperatingParameters(
+        temperature=500 * ureg.celsius,
+        P_top=1 * ureg.atm,
+        flow_g_mol=40 * ureg.sccm,
+        tbr=0.1 * ureg("triton / neutron"),
+        n_gen_rate=1e9 * ureg("neutron / s"),
+    )
+
+    sparging_params = SpargingParameters(
+        h_l=all_correlations("h_l_briggs"),
+    )
+
+    libra_pi = SimulationInput.from_parameters(
+        geom, flibe, operating_params, sparging_params
+    )
+
+    n_fluence = 2.5e13 * ureg("neutron")
+    n_gen_rate = operating_params.n_gen_rate
+    t_irr = n_fluence / n_gen_rate
+    print(f"t_irr = {t_irr.to('seconds')}")
+    my_simulation = Simulation(
+        my_input,
+        t_final=50 * ureg.days,
+        signal_irr=lambda t: 1 if t < t_irr else 0,
+        signal_sparging=lambda t: 0 if t < t_irr else 1,
+        # signal_sparging=lambda t: 0,
+        profile_pressure_hydrostatic=False,
+        profile_source_T=lambda z: 1,
+    )
