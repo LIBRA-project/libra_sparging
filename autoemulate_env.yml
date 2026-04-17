@@ -1,0 +1,15 @@
+name: autoemulate_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - fenics-dolfinx
+  - matplotlib
+  - pyvista
+  - pyyaml
+  - numpy
+  - scipy
+  - pandas
+  - pint
+  - pip:
+    - autoemulate
