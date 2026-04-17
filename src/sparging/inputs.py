@@ -200,7 +200,7 @@ def find_in_graph(
     """
     # first check if the required node is already discovered
     if required_node in discovered_nodes:
-        logger.info(f"Found required node '{required_node}' in discovered nodes...")
+        logger.verbose(f"Found required node '{required_node}' in discovered nodes...")
         return
 
     # then check if the required node is given as input (either as a pint.Quantity or as a Correlation)
@@ -208,8 +208,8 @@ def find_in_graph(
         # if it's not, look for default correlation
         if required_node in all_correlations:
             result = all_correlations(required_node)
-            logger.info(
-                f"Found default correlation for required node '{required_node}': {result.identifier}"
+            logger.verbose(
+                f"\t Found default correlation for required node '{required_node}': {result.identifier}"
             )
         else:
             raise ValueError(
@@ -236,12 +236,12 @@ def check_input(
         if (result := getattr(object, required_node, None)) is not None:
             if isinstance(result, pint.Quantity):
                 # required node was found
-                logger.info(
+                logger.verbose(
                     f"Found Quantity for required node '{required_node}' in graph: {result}"
                 )
                 break
             elif isinstance(result, Correlation):
-                logger.info(
+                logger.verbose(
                     f"Found correlation for required node '{required_node}' in graph: {result.identifier}"
                 )
                 break
@@ -257,7 +257,7 @@ def resolve_correlation(
 ) -> pint.Quantity:
     corr_args = inspect.signature(corr.function).parameters.keys()
     for arg in corr_args:
-        logger.info(
+        logger.verbose(
             f"Resolving argument '{arg}' for correlation '{corr.identifier}'..."
         )
         find_in_graph(arg, resolved_quantities, graph)
@@ -379,7 +379,7 @@ def get_sim_input_standard() -> SimulationInput:
 
 # NOTE rather have only get_sim_input function and put experiment specific parameters in dictionaries
 
-_librapi_input_dict = {
+_librapi_input_dict = {  # NOTE could use a frozen dataclass, avoids external user mistyping parameters when modifying input to do parametric sweep
     "name": "LIBRA Pi",
     "area": 0.2 * ureg.m**2,  # 1/4 * pi * (0.5m)^2
     "height": 1 * ureg.m,
