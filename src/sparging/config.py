@@ -5,6 +5,7 @@ import logging
 ureg = UnitRegistry(
     autoconvert_offset_to_baseunit=True
 )  # to deal with offset units (eg: degree celsius)
+ureg.setup_matplotlib(True)
 ureg.formatter.default_format = ".3e~D"
 ureg.define("triton = [tritium] = T")
 ureg.define(f"molT = {const.N_A} * triton")

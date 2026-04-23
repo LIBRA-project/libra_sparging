@@ -4,10 +4,9 @@ from sparging import all_correlations
 from sparging import animation
 from sparging.model import Simulation
 from sparging.inputs import (
-    get_sim_input,
-    librapi_input_dict,
     get_sim_input_standard,
 )
+import sparging.postprocess as pp
 import logging
 from typing import TYPE_CHECKING
 import numpy as np
@@ -30,8 +29,8 @@ print(
         my_input.get_c_T2_SS().to('molT2/m^3')
     }"
 )
-T_99 = (np.log(100) * my_input.get_tau()).to("seconds")
-print(f"T_99% = {T_99.to('hours')}")
+tau = my_input.get_tau().to("seconds")
+print(f"tau = {tau.to('hours')}")
 print(f"Partial pressure number PP = {my_input.get_PP_number()}")
 
 
@@ -48,15 +47,16 @@ def profile_source_T(z: pint.Quantity | list[float], height: pint.Quantity = Non
         return np.pi / 2 * np.sin(np.pi / height * z)  # normalized
     else:
         raise NotImplementedError("z must be either a float or a pint.Quantity")
-    # return 0.5 * (1 + np.cos(0.5 * np.pi / (1 * ureg.m) * z))
 
 
-my_input.profile_source_T = profile_source_T
-my_input.signal_irr = lambda t: 1 if t < T_99 else 0
+t_final = 50 * ureg.hour
+t_irr = 20 * ureg.hour
+my_input.signal_irr = lambda t: 1 if t <= t_irr else 0
+my_input.signal_sparging = lambda t: 1
 
 my_simulation = Simulation(
     my_input,
-    t_final=2 * T_99,
+    t_final=t_final,
     profile_pressure_hydrostatic=True,
 )
 
@@ -64,16 +64,13 @@ if __name__ == "__main__":
     # my_simulation.sim_input.E_g *= 1e5
     # my_simulation.sim_input.E_l *= 1e-5
     output = my_simulation.solve(fast_solve=True)
-
-    # # save output to file
-    # output.profiles_to_csv(f"output_{tank_height}m.csv")
-
-    # # plot results
-    # from sparging import plotting
-    # plotting.plot_animation(output)
-
-    # import matplotlib.pyplot as plt
-
-    # plt.plot(output.times, output.inventories_T2_salt)
-    # plt.show()
+    output.to_json("temp.json")
+    popt, pcov = pp.fit_exp(
+        output.inventories_T2_salt, output.times, 0 * ureg.s, t_irr, phase="rampup"
+    )
+    print(f"Fitted parameters: n0 = {popt[1]}, tau = {popt[0].to('h')}")
+    popt, pcov = pp.fit_exp(
+        output.inventories_T2_salt, output.times, t_irr, t_final, phase="decay"
+    )
+    print(f"Fitted parameters: n0 = {popt[1]}, tau = {popt[0].to('h')}")
     animation.create_animation(output, show_activity=False)

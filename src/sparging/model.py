@@ -226,7 +226,7 @@ class Simulation:
         tank_volume = self.sim_input.volume.to("m**3").magnitude
         a = self.sim_input.a.to("1/m").magnitude
         h_l = self.sim_input.h_l.to("m/s").magnitude
-        K_s = self.sim_input.K_s.to("mol/m**3/Pa").magnitude
+        K_s = self.sim_input.K_s.to("mol/m**3/Pa").magnitude  # convert to molT2 ?
         P_0 = self.sim_input.P_bottom.to("Pa").magnitude
         T = self.sim_input.temperature.to("K").magnitude
         eps_g = self.sim_input.eps_g.to("dimensionless").magnitude
@@ -474,6 +474,8 @@ class Simulation:
 
         # SOLVE
         while t < t_final:
+            # advance time
+            t += dt
             # update time-dependent terms
             gen_T2_ave.value = (
                 Q_T2 / tank_volume * self.sim_input.signal_irr(t * ureg.s)
@@ -486,9 +488,6 @@ class Simulation:
             u_n.x.array[:] = u.x.array[:]
 
             post_process(t)
-
-            # advance time
-            t += dt
 
         # TODO reattach units using wrapping
         # https://pint.readthedocs.io/en/stable/advanced/performance.html#a-safer-method-wrapping
