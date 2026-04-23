@@ -207,11 +207,13 @@ __marimo__/
 
 .vscode/
 misc_scripts/
+training/
 *.yaml
 *.csv
 mwe.py
 *.json
 !standard_input.json
 *.ipynb
+!sensitivity.ipynb
 *.code-workspace
 *.pkl
