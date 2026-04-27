@@ -91,6 +91,9 @@ class CorrelationGroup(list[Correlation]):
                 f"Type not valid for correlation group membership check, expected str or Correlation, got {type(key)}"
             )
 
+    def get_list(self, corr_type: CorrelationType) -> list[Correlation]:
+        return [corr for corr in self if corr.corr_type == corr_type]
+
 
 all_correlations = CorrelationGroup([])
 
@@ -270,8 +273,8 @@ all_correlations.append(eps_g)
 
 h_l_higbie = Correlation(
     identifier="h_l_higbie",
-    function=lambda D_l, u_g, d_b: get_h_higbie(
-        D_l=D_l, u_g=u_g, d_b=d_b
+    function=lambda D_l, u_g0, d_b: get_h_higbie(
+        D_l=D_l, u_g=u_g0, d_b=d_b
     ),  # mass transfer coefficient with Higbie correlation
     corr_type=CorrelationType.MASS_TRANSFER_COEFF,
     source="Higbie 1935",
