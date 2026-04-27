@@ -21,6 +21,7 @@ import torch
 import pandas as pd
 import json
 
+COMPUTE_SOBOL = False
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.WARNING)
@@ -60,9 +61,9 @@ class SpargingProblem(Simulator):
         h_l = sim_input.h_l
         a = sim_input.a
         eps_g = sim_input.eps_g
-        sim_input.to_json(
-            FOLDER_SAMPLES / f"sample_{self.counter}.json"
-        )  # for debugging and postprocessing
+        # sim_input.to_json(
+        #     FOLDER_SAMPLES / f"sample_{self.counter}.json"
+        # )  # for debugging and postprocessing
         self.counter += 1
 
         # for post processing
@@ -74,7 +75,7 @@ class SpargingProblem(Simulator):
                 h_l.to("m/s").magnitude,
                 a.to("1/m").magnitude,
                 eps_g.to("dimensionless").magnitude,
-                int(x[0, 4].item()),
+                LIBRA_PI_SPARGING_PARAMS.h_l.identifier,
             ]
         )
         y = torch.tensor(
@@ -113,26 +114,7 @@ pd.DataFrame(PP_numbers, columns=["Pi", "tau", "h_l", "a", "eps_g", "h_l_corr"])
     FOLDER / "PP_data.csv", index=False
 )
 
-# Run AutoEmulate with default settings
-ae = AutoEmulate(X, Y, log_level="WARNING")
-ae.summarise()
-
-# pick best model
-emulator = ae.best_result()
-print(f"Selected model: {emulator.model_name} with id: {emulator.id}")
-
-# The use_timestamp paramater ensures a new result is saved each time the save method is called
-best_result_filepath = ae.save(emulator, FOLDER, use_timestamp=False)
-print("Model and metadata saved to: ", best_result_filepath)
-
-ae.plot_preds(
-    emulator,
-    output_names=simulator.output_names,
-    fname=FOLDER_PP / "predictions.png",
-)
-
-
-# === Sensitivity analysis ===
+# sensitivity analysis problem
 problem = {
     "num_vars": simulator.in_dim,
     "names": simulator.param_names,
@@ -143,6 +125,26 @@ problem = {
 with open(FOLDER / "problem.json", "w") as f:
     json.dump(problem, f, indent=4)
 
-sa = SensitivityAnalysis(emulator.model, problem=problem)
-sobol_df = sa.run("sobol")
-sa.plot_sobol(sobol_df, index="ST", fname=FOLDER_PP / "sobol.png")
+if COMPUTE_SOBOL:
+    # Run AutoEmulate with default settings
+    ae = AutoEmulate(X, Y, log_level="WARNING", models=["GaussianProcessRBF"])
+    ae.summarise()
+
+    # pick best model
+    emulator = ae.best_result()
+    print(f"Selected model: {emulator.model_name} with id: {emulator.id}")
+
+    # The use_timestamp paramater ensures a new result is saved each time the save method is called
+    best_result_filepath = ae.save(emulator, FOLDER, use_timestamp=False)
+    print("Model and metadata saved to: ", best_result_filepath)
+
+    ae.plot_preds(
+        emulator,
+        output_names=simulator.output_names,
+        fname=FOLDER_PP / "predictions.png",
+    )
+
+    # === Sensitivity analysis ===
+    sa = SensitivityAnalysis(emulator.model, problem=problem)
+    sobol_df = sa.run("sobol")
+    sa.plot_sobol(sobol_df, index="ST", fname=FOLDER_PP / "sobol.png")
