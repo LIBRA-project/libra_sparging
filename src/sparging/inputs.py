@@ -9,6 +9,7 @@ import logging
 from sparging.config import ureg, const_R
 from collections.abc import Callable
 from types import MappingProxyType
+import networkx as nx
 
 
 logger = logging.getLogger(__name__)
@@ -175,19 +176,25 @@ class SimulationInput:
         breeder_material: BreederMaterial,
         operating_params: OperatingParameters,
         sparging_params: SpargingParameters,
+        graph: nx.Graph | None = None,
     ):
+        """
+        - graph: optional, if want to visualize how the input was constructed
+        """
         input_objects = [
             column_geometry,
             breeder_material,
             operating_params,
             sparging_params,
         ]
-        resolved_parameters = {}
+        discovered_graph = nx.Graph() if graph is None else graph
 
         for required_key in cls.required_keys:
-            find_in_graph(required_key, resolved_parameters, graph=input_objects)
+            find_in_graph(required_key, discovered_graph, input_objs=input_objects)
 
-        return cls(**{arg: resolved_parameters[arg] for arg in cls.required_keys})
+        return cls(
+            **{arg: discovered_graph.nodes[arg]["value"] for arg in cls.required_keys}
+        )
 
     def __str__(self):
         return "\n\t".join(
@@ -204,24 +211,24 @@ class SimulationInput:
 
 def find_in_graph(
     required_node: str,
-    discovered_nodes: dict,
-    graph: List[
+    discovered_graph: nx.Graph,  # change to Graph object
+    input_objs: List[
         SpargingParameters | OperatingParameters | BreederMaterial | ColumnGeometry
     ],
 ) -> None:
     """Abstracts SimulationInput construction as a graph search problem. "Correlation" object are seen as a path to the corresponding node
     - required_node: parameter we want to obtain (e.g. h_l)
     - discovered_nodes: already discovered parameters as pint.Quantity
-    - graph: list of objects in which to search
+    - input_objs: list of objects in which to search
     - returns the updated discovered_nodes with the required_node added
     """
     # first check if the required node is already discovered
-    if required_node in discovered_nodes:
+    if required_node in discovered_graph.nodes:
         logger.verbose(f"Found required node '{required_node}' in discovered nodes...")
         return
 
     # then check if the required node is given as input (either as a pint.Quantity or as a Correlation)
-    if (result := check_input(required_node, graph)) is None:
+    if (result := check_input(required_node, input_objs)) is None:
         # if it's not, look for default correlation
         if required_node in all_correlations:
             result = all_correlations(required_node)
@@ -232,19 +239,30 @@ def find_in_graph(
             raise ValueError(
                 f"Could not find path to required node '{required_node}' in the graph or in the default correlations"
             )
-    if isinstance(result, Correlation):
+    if isinstance(result, pint.Quantity):
+        # value was given as input
+        discovered_graph.add_node(required_node, value=result, origin="input")
+    elif isinstance(result, Correlation):
+        # no value specified, get value from correlation
+        discovered_graph.add_node(required_node, origin=result.identifier)
         result = resolve_correlation(
-            corr=result, resolved_quantities=discovered_nodes, graph=graph
-        )  # also update discovered_nodes with the nodes possibly discovered during recursive search
+            node_id=required_node,
+            corr=result,
+            discovered_graph=discovered_graph,
+            input_objs=input_objs,
+        )  # also update discovered_graph with the nodes possibly discovered during recursive search
+        discovered_graph.nodes[required_node]["value"] = result
 
     assert isinstance(result, pint.Quantity), (
         f"Result for required node '{required_node}' is not a pint.Quantity after resolution, got {result} of type {type(result)}"
     )
-    discovered_nodes.update({required_node: result})
 
 
 def check_input(
-    required_node: str, input_objs: list[object]
+    required_node: str,
+    input_objs: List[
+        SpargingParameters | OperatingParameters | BreederMaterial | ColumnGeometry
+    ],
 ) -> pint.Quantity | Correlation | None:
     """look for pint.Quantity or Correlation given in input objects"""
     result = None
@@ -254,12 +272,12 @@ def check_input(
             if isinstance(result, pint.Quantity):
                 # required node was found
                 logger.verbose(
-                    f"Found Quantity for required node '{required_node}' in graph: {result}"
+                    f"Found Quantity for required node '{required_node}' in input: {result}"
                 )
                 break
             elif isinstance(result, Correlation):
                 logger.verbose(
-                    f"Found correlation for required node '{required_node}' in graph: {result.identifier}"
+                    f"Found correlation for required node '{required_node}' in input: {result.identifier}"
                 )
                 break
             else:
@@ -270,21 +288,32 @@ def check_input(
 
 
 def resolve_correlation(
-    corr: Correlation, resolved_quantities: dict, graph: list[object]
+    node_id: str,
+    corr: Correlation,
+    discovered_graph: nx.Graph,
+    input_objs: List[
+        SpargingParameters | OperatingParameters | BreederMaterial | ColumnGeometry
+    ],
 ) -> pint.Quantity:
+    """Recursively resolve a correlation by first resolving its arguments, then applying the correlation function to the resolved arguments.
+    - corr: Correlation object to resolve
+    - discovered_graph: graph containing already resolved quantities, to avoid redundant calculations and infinite recursion
+    - input_objs: list of objects in which to search for the arguments of the correlation
+    - returns the resolved value of the correlation as a pint.Quantity"""
     corr_args = inspect.signature(corr.function).parameters.keys()
     for arg in corr_args:
         logger.verbose(
             f"Resolving argument '{arg}' for correlation '{corr.identifier}'..."
         )
-        find_in_graph(arg, resolved_quantities, graph)
+        find_in_graph(arg, discovered_graph, input_objs)
+        discovered_graph.add_edge(node_id, arg)
 
-    assert all(arg in resolved_quantities for arg in corr_args), (
+    assert all(arg in discovered_graph.nodes for arg in corr_args), (
         f"Could not resolve all arguments for correlation '{corr.identifier}'. "
-        f"Missing arguments: {[arg for arg in corr_args if arg not in resolved_quantities]}"
+        f"Missing arguments: {[arg for arg in corr_args if arg not in discovered_graph.nodes]}"
     )
 
-    return corr(**{arg: resolved_quantities[arg] for arg in corr_args})
+    return corr(**{arg: discovered_graph.nodes[arg]["value"] for arg in corr_args})
 
 
 def get_sim_input_LIBRA_Pi() -> SimulationInput:

@@ -140,7 +140,7 @@ def test_find_in_graph_result(in_discovered: bool):
     find_in_graph(
         "d_b",
         discovered_nodes=discovered_nodes,
-        graph=[geom, operating_params],
+        input_objs=[geom, operating_params],
     )
 
     # TEST
@@ -187,7 +187,7 @@ def test_find_in_graph_unresolvable(missing_param: str):
         find_in_graph(
             to_find,
             discovered_nodes={},  # no discovered nodes provided
-            graph=[
+            input_objs=[
                 broken_geom,
                 broken_op_params,
             ],  # missing necessary parameters for d_b correlation
