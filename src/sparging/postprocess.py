@@ -4,6 +4,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 import warnings
 from scipy.optimize import curve_fit
+import logging
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import pint
@@ -67,7 +70,7 @@ def fit_exp(
     t_0: pint.Quantity,
     t_end: pint.Quantity,
     phase: str,
-):  # TODO add warning if error or std is too large
+) -> tuple[tuple[pint.Quantity, pint.Quantity], tuple[pint.Quantity, pint.Quantity]]:
     """
     - phase = 'decay' or 'rampup'
     """
@@ -85,7 +88,7 @@ def fit_exp(
     idx_end = idx_from_t(times, t_end)
     t_0 = times[idx_0]
     t_end = times[idx_end]
-    print(
+    logger.info(
         f"Fitting from t={t_0.to('hour')} to t={t_end.to('hour')} (indices {idx_0} to {idx_end})"
     )
     tau_guess = 10000 * ureg.s
@@ -99,6 +102,35 @@ def fit_exp(
         vec[idx_0 : idx_end + 1].magnitude,
         p0=[tau_guess.to("s").magnitude, n0_guess.magnitude],
     )
-    print(f"std:{np.sqrt(np.diag(pcov))}")
 
-    return (popt[0] * ureg.s, popt[1] * vec.units), pcov
+    # check goodness of fit
+    tau_std = np.sqrt(pcov[0, 0])
+    tau_rel_error = tau_std / popt[0]
+    if tau_rel_error > 0.005:
+        warnings.warn(
+            f"High relative error in fitted tau: {tau_rel_error:.4f}. Fit may be unreliable."
+        )
+    # reattach units
+    return (popt[0] * ureg.s, popt[1] * vec.units), (
+        pcov[0] * ureg.s,
+        pcov[1] * vec.units,
+    )
+
+
+def get_tau_real(
+    vec: np.ndarray[pint.Quantities],
+    times: np.ndarray[pint.Quantities],
+    t_0: pint.Quantity,
+) -> pint.Quantity:
+    """
+    To be distinguished from the time constant predicted from the model input parameters (tau analytical)
+    Get the time constant tau from an exponential decay curve by finding the time at which the value has decayed to 1/e of its initial value at t_0.
+    No exponential fit is performed here
+    """
+    idx_0 = idx_from_t(times, t_0)
+    # Fit only the decay part
+    vec_decay = vec[idx_0:]
+    n0 = vec_decay[0]
+    idx_tau = np.argmin(np.abs(vec_decay - n0 / np.e))
+    tau = times[idx_0 + idx_tau] - t_0
+    return tau

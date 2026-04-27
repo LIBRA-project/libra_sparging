@@ -92,7 +92,9 @@ class SimulationInput:
     eps_g: pint.Quantity
     E_g: pint.Quantity
     E_l: pint.Quantity
-    D_l: pint.Quantity
+    D_l: (
+        pint.Quantity
+    )  # TODO to remove, not used in the solver, only for correlations to calculate h_l
     Q_T: pint.Quantity
     signal_irr: Callable[[pint.Quantity], float] = lambda t: 1
     """callable = f:R+ (time) -> [0,1] """
@@ -138,7 +140,7 @@ class SimulationInput:
     def get_c_T2_SS(self) -> pint.Quantity:
         return (self.get_S_T() * 1 / (self.h_l * self.a)).to("molT2/m^3")
 
-    def get_PP_number(self) -> pint.Quantity:
+    def get_Pi_number(self) -> pint.Quantity:
         """Partial pressure number, ratio of the equivalent T concentration at liquid boundary to the bulk liquid concentration.
         If PP << 1, then we are in the small partial pressure (SPP) regime, and if PP ~= 1, then we are in the partial pressure limited (PPL) regime.
         """
