@@ -218,3 +218,4 @@ mwe.py
 !LL_sensitivity.ipynb
 *.code-workspace
 *.pkl
+*.html

@@ -13,3 +13,4 @@ dependencies:
   - pint
   - pip:
     - autoemulate
+    - pyvis
