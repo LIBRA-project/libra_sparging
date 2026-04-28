@@ -75,6 +75,7 @@ class SpargingProblem(Simulator):
                 h_l.to("m/s").magnitude,
                 a.to("1/m").magnitude,
                 eps_g.to("dimensionless").magnitude,
+                # sim_input.d_b.to("m").magnitude,
                 LIBRA_PI_SPARGING_PARAMS.h_l.identifier,
             ]
         )
@@ -147,4 +148,4 @@ if COMPUTE_SOBOL:
     # === Sensitivity analysis ===
     sa = SensitivityAnalysis(emulator.model, problem=problem)
     sobol_df = sa.run("sobol")
-    sa.plot_sobol(sobol_df, index="ST", fname=FOLDER_PP / "sobol.png")
+    sa.plot_sobol(sobol_df, index="ST", fname=FOLDER_PP / "sobolTot.png")
