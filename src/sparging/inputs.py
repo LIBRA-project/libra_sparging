@@ -179,7 +179,9 @@ class SimulationInput:
         graph: nx.Graph | None = None,
     ):
         """
-        - graph: optional, if want to visualize how the input was constructed
+        - graph: optional, if want to visualize how the input was constructed. Each node has an ID (the param name) and contains a dictionary with properties:
+            - value: value of the parameter as pint.Quantity
+            - origin: "input" | <correlation identifier>
         """
         input_objects = [
             column_geometry,
@@ -218,7 +220,11 @@ def find_in_graph(
 ) -> None:
     """Abstracts SimulationInput construction as a graph search problem. "Correlation" object are seen as a path to the corresponding node
     - required_node: parameter we want to obtain (e.g. h_l)
-    - discovered_nodes: already discovered parameters as pint.Quantity
+    - discovered_graph: already discovered parameters
+        - graph properties:
+            - id : name of the parameter
+            - value: value of the parameter as pint.Quantity
+            - origin: "input" | <correlation identifier>
     - input_objs: list of objects in which to search
     - returns the updated discovered_nodes with the required_node added
     """

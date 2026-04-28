@@ -20,6 +20,7 @@ from autoemulate.core.sensitivity_analysis import SensitivityAnalysis
 import torch
 import pandas as pd
 import json
+import networkx as nx
 
 COMPUTE_SOBOL = False
 
@@ -48,14 +49,16 @@ class SpargingProblem(Simulator):
         LIBRA_PI_OPERATING_PARAMS.P_top = x[0, 1].item() * ureg.bar
         LIBRA_PI_OPERATING_PARAMS.flow_g_mol = x[0, 2].item() * ureg.sccm
         LIBRA_PI_GEOM.nozzle_diameter = x[0, 3].item() * ureg.m
-        LIBRA_PI_SPARGING_PARAMS.h_l = h_l_corrs[int(x[0, 4].item())]
+        # LIBRA_PI_SPARGING_PARAMS.h_l = h_l_corrs[int(x[0, 4].item())]
         # breakpoint()
 
+        graph = nx.Graph()
         sim_input = SimulationInput.from_parameters(
             LIBRA_PI_GEOM,
             LIBRA_PI_MAT,
             LIBRA_PI_OPERATING_PARAMS,
             LIBRA_PI_SPARGING_PARAMS,
+            graph=graph,
         )
         tau = sim_input.get_tau()
         h_l = sim_input.h_l
@@ -75,8 +78,9 @@ class SpargingProblem(Simulator):
                 h_l.to("m/s").magnitude,
                 a.to("1/m").magnitude,
                 eps_g.to("dimensionless").magnitude,
-                # sim_input.d_b.to("m").magnitude,
-                LIBRA_PI_SPARGING_PARAMS.h_l.identifier,
+                graph.nodes["d_b"]["value"].to("m").magnitude,
+                graph.nodes["u_g0"]["value"].to("m/s").magnitude,
+                graph.nodes["h_l"]["origin"],
             ]
         )
         y = torch.tensor(
@@ -92,12 +96,11 @@ simulator = SpargingProblem(
         "P_top": (1, 5),  # bar
         "flow_g_mol": (40, 400),  # sccm
         "nozzle_diameter": (0.5e-3, 10e-3),  # m
-        "h_l_corr": (0, len(h_l_corrs)),
     },
     output_names=["tau"],
 )
 
-n_samples = 5000
+n_samples = 1000
 
 X = simulator.sample_inputs(n_samples)
 
@@ -111,9 +114,9 @@ pd.DataFrame(Y, columns=simulator.output_names).to_csv(
 pd.DataFrame(X, columns=simulator.param_names).to_csv(
     FOLDER / "simulator_inputs.csv", index=False
 )
-pd.DataFrame(PP_numbers, columns=["Pi", "tau", "h_l", "a", "eps_g", "h_l_corr"]).to_csv(
-    FOLDER / "PP_data.csv", index=False
-)
+pd.DataFrame(
+    PP_numbers, columns=["Pi", "tau", "h_l", "a", "eps_g", "d_b", "u_g0", "h_l_corr"]
+).to_csv(FOLDER / "PP_data.csv", index=False)
 
 # sensitivity analysis problem
 problem = {

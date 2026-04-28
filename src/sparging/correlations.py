@@ -12,8 +12,6 @@ import warnings
 from dataclasses import dataclass
 import enum
 
-U_G0_DEFAULT = 0.25  # m/s, typical bubble velocity according to Chavez 2021
-
 
 class CorrelationType(enum.Enum):  # TODO do we really use it ?
     MASS_TRANSFER_COEFF = "h_l"
