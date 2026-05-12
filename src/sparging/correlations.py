@@ -112,7 +112,7 @@ mu_l = Correlation(
     identifier="mu_l",
     function=lambda temperature: ureg.Quantity(
         0.116e-3 * np.exp(3755 / temperature.to("kelvin").magnitude), "Pa*s"
-    ),  # kinematic viscosity of Li2BeF4, Cantor 1968
+    ),  # dynamic viscosity of Li2BeF4, Cantor 1968
     corr_type=CorrelationType.VISCOSITY,
     source="Cantor 1968",
     description="dynamic viscosity of Li2BeF4 as a function of temperature",
@@ -146,8 +146,8 @@ sigma_l = Correlation(
 all_correlations.append(sigma_l)
 
 # TODO this could leverage HTM
-D_l = Correlation(
-    identifier="D_l",
+D_l_calderoni = Correlation(
+    identifier="D_l_calderoni",
     function=lambda temperature: (
         9.3e-7
         * ureg("m**2/s")
@@ -159,6 +159,25 @@ D_l = Correlation(
     input_units=["kelvin"],
     output_units="m**2/s",
 )
+all_correlations.append(D_l_calderoni)
+
+D_l_oishi = Correlation(
+    identifier="D_l_oishi",
+    function=lambda temperature: (
+        7.57e-7
+        * ureg("m**2/s")
+        * np.exp(-36.7e3 * ureg("J/mol") / (const_R * temperature.to("kelvin")))
+    ),
+    corr_type=CorrelationType.DIFFUSIVITY,
+    source="Oishi 1989",
+    description="diffusivity of tritium in liquid FLiBe as a function of temperature",
+    input_units=["kelvin"],
+    output_units="m**2/s",
+)
+all_correlations.append(D_l_oishi)
+
+D_l = D_l_calderoni  # default diffusivity correlation, can be overridden by user defined correlation
+D_l.identifier = "D_l"
 all_correlations.append(D_l)
 
 K_s = Correlation(
