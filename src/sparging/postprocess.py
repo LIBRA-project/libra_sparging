@@ -44,15 +44,6 @@ def plot_profile(
         )
 
 
-# TODO remove
-# def plot_signal(sim_output: SimulationResults, ax: plt.Axes, var_name: str, **kwargs):
-#     ax.plot(sim_output.times, getattr(sim_output, var_name), **kwargs)
-#     # ax.set_xlabel(r"t [s]")
-#     # ax.set_ylabel(var_name)  # TODO leverage pint for units
-#     # ax.set_title(var_name + " profile")
-#     # ax.grid()
-
-
 def get_residual_fraction(
     T2_inventories: np.ndarray[pint.Quantity],
     times: np.ndarray[pint.Quantity],

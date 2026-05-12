@@ -8,7 +8,6 @@ import numpy as np
 import logging
 from sparging.config import ureg, const_R
 from collections.abc import Callable
-from types import MappingProxyType
 import networkx as nx
 
 
@@ -328,170 +327,98 @@ def resolve_correlation(
     return corr(**{arg: discovered_graph.nodes[arg]["value"] for arg in corr_args})
 
 
-def get_sim_input_LIBRA_Pi() -> SimulationInput:
-    """Returns the SimulationInput for the LIBRA Pi experiment
-    Geometry and operating parameters are plausible values that should be representative of the final LIBRA Pi experiment"""
-    geom = ColumnGeometry(
-        area=0.2 * ureg.m**2,  # 1/4 * pi * (0.5m)^2
-        height=1 * ureg.m,
-        nozzle_diameter=1.4 * ureg.mm,
-        nb_nozzle=5 * ureg.dimensionless,
-    )
+# def get_sim_input_LIBRA1L() -> tuple[SimulationInput, pint.Quantity]:
+#     """Returns the SimulationInput for the LIBRA 1L experiment, and the irradiation time (t_irr) to be used in the signal_irr function.
+#     The irradiation time is calculated based on the neutron fluence and generation rate reported in the LIBRA 1L paper."""
+#     geom = ColumnGeometry(
+#         area=170 * ureg.cm**2,
+#         height=7 * ureg.cm,
+#         nozzle_diameter=1.4 * ureg.mm,
+#         nb_nozzle=1 * ureg.dimensionless,
+#     )
 
-    flibe = BreederMaterial(
-        name="FLiBe",
-    )
+#     flibe = BreederMaterial(
+#         name="FLiBe",
+#     )
 
-    operating_params = OperatingParameters(
-        temperature=500 * ureg.celsius,
-        P_top=1 * ureg.atm,
-        flow_g_mol=100 * ureg.sccm,
-        tbr=0.1 * ureg("triton / neutron"),
-        n_gen_rate=1e9 * ureg("neutron / s"),
-    )
+#     operating_params = OperatingParameters(
+#         temperature=600 * ureg.celsius,
+#         P_top=1 * ureg.atm,
+#         flow_g_mol=40 * ureg.sccm,
+#         tbr=2e-3 * ureg("triton / neutron"),  # according to LIBRA 1L paper
+#         n_gen_rate=1e9 * ureg("neutron / s"),
+#     )
 
-    sparging_params = SpargingParameters(
-        h_l=all_correlations("h_l_briggs"),
-    )
+#     sparging_params = SpargingParameters(
+#         h_l=all_correlations("h_l_briggs"),
+#     )
 
-    libra_pi = SimulationInput.from_parameters(
-        geom, flibe, operating_params, sparging_params
-    )
-    logger.info(libra_pi)
+#     libra_1L = SimulationInput.from_parameters(
+#         geom, flibe, operating_params, sparging_params
+#     )
+#     logger.info(libra_1L)
 
-    return libra_pi
+#     n_fluence = 2.5e13 * ureg("neutron")
+#     n_gen_rate = operating_params.n_gen_rate
+#     t_irr = n_fluence / n_gen_rate
 
+#     libra_1L.signal_irr = lambda t: 1 if t <= t_irr else 0
 
-def get_sim_input_LIBRA1L() -> tuple[SimulationInput, pint.Quantity]:
-    """Returns the SimulationInput for the LIBRA 1L experiment, and the irradiation time (t_irr) to be used in the signal_irr function.
-    The irradiation time is calculated based on the neutron fluence and generation rate reported in the LIBRA 1L paper."""
-    geom = ColumnGeometry(
-        area=170 * ureg.cm**2,
-        height=7 * ureg.cm,
-        nozzle_diameter=1.4 * ureg.mm,
-        nb_nozzle=1 * ureg.dimensionless,
-    )
-
-    flibe = BreederMaterial(
-        name="FLiBe",
-    )
-
-    operating_params = OperatingParameters(
-        temperature=600 * ureg.celsius,
-        P_top=1 * ureg.atm,
-        flow_g_mol=40 * ureg.sccm,
-        tbr=2e-3 * ureg("triton / neutron"),  # according to LIBRA 1L paper
-        n_gen_rate=1e9 * ureg("neutron / s"),
-    )
-
-    sparging_params = SpargingParameters(
-        h_l=all_correlations("h_l_briggs"),
-    )
-
-    libra_1L = SimulationInput.from_parameters(
-        geom, flibe, operating_params, sparging_params
-    )
-    logger.info(libra_1L)
-
-    n_fluence = 2.5e13 * ureg("neutron")
-    n_gen_rate = operating_params.n_gen_rate
-    t_irr = n_fluence / n_gen_rate
-
-    libra_1L.signal_irr = lambda t: 1 if t <= t_irr else 0
-
-    return (libra_1L, t_irr)
+#     return (libra_1L, t_irr)
 
 
-def get_sim_input_standard() -> SimulationInput:
-    """Returns a standard SimulationInput that can be used for testing and tutorials.
-    The parameters are not based on any specific experiment, but are chosen to be representative of a typical sparging system."""
-    geom = ColumnGeometry(
-        area=0.2 * ureg.m**2,
-        height=1 * ureg.m,
-        nozzle_diameter=0.001 * ureg.m,
-        nb_nozzle=10 * ureg.dimensionless,
-    )
+# def get_sim_input_standard() -> SimulationInput:
+#     """Returns a standard SimulationInput that can be used for testing and tutorials.
+#     The parameters are not based on any specific experiment, but are chosen to be representative of a typical sparging system."""
+#     geom = ColumnGeometry(
+#         area=0.2 * ureg.m**2,
+#         height=1 * ureg.m,
+#         nozzle_diameter=0.001 * ureg.m,
+#         nb_nozzle=10 * ureg.dimensionless,
+#     )
 
-    flibe = BreederMaterial(
-        name="FLiBe",
-    )
+#     flibe = BreederMaterial(
+#         name="FLiBe",
+#     )
 
-    operating_params = OperatingParameters(
-        temperature=600 * ureg.celsius,
-        P_top=1 * ureg.atm,
-        flow_g_mol=400 * ureg.sccm,
-        tbr=0.1 * ureg("triton / neutron"),
-        n_gen_rate=1e9 * ureg("neutron / s"),
-    )
+#     operating_params = OperatingParameters(
+#         temperature=600 * ureg.celsius,
+#         P_top=1 * ureg.atm,
+#         flow_g_mol=400 * ureg.sccm,
+#         tbr=0.1 * ureg("triton / neutron"),
+#         n_gen_rate=1e9 * ureg("neutron / s"),
+#     )
 
-    sparging_params = SpargingParameters(
-        h_l=all_correlations("h_l_briggs"),
-    )
+#     sparging_params = SpargingParameters(
+#         h_l=all_correlations("h_l_briggs"),
+#     )
 
-    my_input = SimulationInput.from_parameters(
-        geom, flibe, operating_params, sparging_params
-    )
-    logger.info(my_input)
-    return my_input
-
-
-# NOTE rather have only get_sim_input function and put experiment specific parameters in dictionaries
-
-_librapi_input_dict = {  # NOTE could use a frozen dataclass, avoids external user mistyping parameters when modifying input to do parametric sweep
-    "name": "LIBRA Pi",
-    "area": 0.2 * ureg.m**2,  # 1/4 * pi * (0.5m)^2
-    "height": 1 * ureg.m,
-    "nozzle_diameter": 1.5 * ureg.mm,
-    "nb_nozzle": 5 * ureg.dimensionless,
-    "temperature": 550 * ureg.celsius,
-    "P_top": 1.2 * ureg.atm,
-    "flow_g_mol": 400 * ureg.sccm,
-    "tbr": 0.1 * ureg("triton / neutron"),
-    "n_gen_rate": 1e9 * ureg("neutron / s"),
-    "material": "FLiBe",
-}
-librapi_input_dict = MappingProxyType(_librapi_input_dict)  # make it immutable
+#     my_input = SimulationInput.from_parameters(
+#         geom, flibe, operating_params, sparging_params
+#     )
+#     logger.info(my_input)
+#     return my_input
 
 
-# NOTE potentially we could make sure it's immutable with something like this
-# class PresetInputs:
-#     def __init__(self, name: str):
-#         self.name = name
+# LIBRA_PI_GEOM = ColumnGeometry(
+#     area=0.2 * ureg.m**2,
+#     height=1 * ureg.m,
+#     nozzle_diameter=1.5 * ureg.mm,
+#     nb_nozzle=5 * ureg.dimensionless,
+# )
 
+# LIBRA_PI_MAT = BreederMaterial(
+#     name="FLiBe",
+# )
 
-# class LIBRA_Pi_Input(PresetInputs):
-#     @property
-#     def geometry(self):
-#         return ColumnGeometry(
-#             area=0.2 * ureg.m**2,  # 1/4 * pi * (0.5m)^2
-#             height=1 * ureg.m,
-#             nozzle_diameter=1.4 * ureg.mm,
-#             nb_nozzle=5 * ureg.dimensionless,
-#         )
+# LIBRA_PI_OPERATING_PARAMS = OperatingParameters(
+#     temperature=550 * ureg.celsius,
+#     P_top=1.2 * ureg.atm,
+#     flow_g_mol=400 * ureg.sccm,
+#     tbr=0.1 * ureg("triton / neutron"),
+#     n_gen_rate=1e9 * ureg("neutron / s"),
+# )
 
-
-# new_geometry = LIBRA_Pi_Input.geometry
-
-
-LIBRA_PI_GEOM = ColumnGeometry(
-    area=_librapi_input_dict["area"],
-    height=_librapi_input_dict["height"],
-    nozzle_diameter=_librapi_input_dict["nozzle_diameter"],
-    nb_nozzle=_librapi_input_dict["nb_nozzle"],
-)
-
-LIBRA_PI_MAT = BreederMaterial(
-    name=_librapi_input_dict["material"],
-)
-
-LIBRA_PI_OPERATING_PARAMS = OperatingParameters(
-    temperature=_librapi_input_dict["temperature"],
-    P_top=_librapi_input_dict["P_top"],
-    flow_g_mol=_librapi_input_dict["flow_g_mol"],
-    tbr=_librapi_input_dict["tbr"],
-    n_gen_rate=_librapi_input_dict["n_gen_rate"],
-)
-
-LIBRA_PI_SPARGING_PARAMS = SpargingParameters(
-    h_l=all_correlations("h_l_briggs"),
-)
+# LIBRA_PI_SPARGING_PARAMS = SpargingParameters(
+#     h_l=all_correlations("h_l_briggs"),
+# )
