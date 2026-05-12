@@ -1,14 +1,14 @@
-from sparging.inputs import (
-    ColumnGeometry,
+"""Construct a standard input and visualize the dependency graph"""
+
+from sparging import (
+    LIBRA_PI_GEOM,
     BreederMaterial,
-    OperatingParameters,
+    LIBRA_PI_OPERATING_PARAMS,
     SpargingParameters,
-    find_in_graph,
-    check_input,
     SimulationInput,
+    all_correlations,
+    VERBOSE_LEVEL,
 )
-from sparging import all_correlations, ureg
-from sparging.config import VERBOSE_LEVEL
 import networkx as nx
 from pyvis.network import Network
 import logging
@@ -16,35 +16,21 @@ import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=VERBOSE_LEVEL)
 
-geom = ColumnGeometry(
-    area=0.2 * ureg.m**2,
-    height=1.0 * ureg.m,
-    nozzle_diameter=0.001 * ureg.m,
-    nb_nozzle=10 * ureg.dimensionless,
-)
+# construct helper objects
+geom = LIBRA_PI_GEOM
 
 flibe = BreederMaterial(
     name="FLiBe",
 )
 
-operating_params = OperatingParameters(
-    temperature=600 * ureg.celsius,
-    P_top=1 * ureg.atm,
-    flow_g_mol=400 * ureg.sccm,
-    tbr=0.1 * ureg("triton / neutron"),
-    n_gen_rate=1e9 * ureg("neutron / s"),
-)
+operating_params = LIBRA_PI_OPERATING_PARAMS
 
 sparging_params = SpargingParameters(
     h_l=all_correlations("h_l_briggs"),
 )
 
+# construct input from helper objects
 graph = nx.Graph()
-# find_in_graph("drho", graph, [geom, flibe, operating_params, sparging_params])
-
-# print("Nodes in graph:")
-# for node in graph.nodes(data=True):
-#     print(node)
 
 my_input = SimulationInput.from_parameters(
     column_geometry=geom,
@@ -54,6 +40,7 @@ my_input = SimulationInput.from_parameters(
     graph=graph,
 )
 
+# print and visualize graph
 for node in graph.nodes:
     graph.nodes[node]["value"] = str(graph.nodes[node]["value"])
     print(graph.nodes[node])

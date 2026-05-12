@@ -1,11 +1,12 @@
-from sparging.model import Simulation, SimulationResults
-from sparging.inputs import (
+from sparging import (
     LIBRA_PI_GEOM,
     LIBRA_PI_MAT,
     LIBRA_PI_OPERATING_PARAMS,
     LIBRA_PI_SPARGING_PARAMS,
     SimulationInput,
     ureg,
+    Simulation,
+    SimulationResults,
 )
 import numpy as np
 from pathlib import Path

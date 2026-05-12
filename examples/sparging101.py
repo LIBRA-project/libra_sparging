@@ -1,11 +1,5 @@
 from __future__ import annotations
-from sparging.config import ureg
-from sparging import all_correlations
-from sparging import animation
-from sparging.model import Simulation
-from sparging.inputs import (
-    get_sim_input_standard,
-)
+from sparging import get_sim_input_standard, Simulation, ureg, animation
 import sparging.postprocess as pp
 import logging
 from typing import TYPE_CHECKING
@@ -34,8 +28,6 @@ print(f"Partial pressure number PP = {my_input.get_Pi_number()}")
 
 
 def profile_source_T(z: pint.Quantity | list[float], height: pint.Quantity = None):
-    import numpy as np
-
     if isinstance(z, (float, np.ndarray, list)):  # non-dimensional height (0 to 1)
         # return np.pi / 2 * np.sin(np.pi * z)  # normalized
         return 1 + 1 * np.sin(np.pi * z)  # not normalized
@@ -63,7 +55,6 @@ if __name__ == "__main__":
     # my_simulation.sim_input.E_g *= 1e5
     # my_simulation.sim_input.E_l *= 1e-5
     output = my_simulation.solve(fast_solve=True)
-    output.to_json("temp.json")
     popt, pcov = pp.fit_exp(
         output.inventories_T2_salt, output.times, 0 * ureg.s, t_irr, phase="rampup"
     )

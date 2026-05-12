@@ -1,13 +1,12 @@
-from sparging.config import ureg
-from sparging import all_correlations
-from sparging import animation
-from sparging.model import Simulation
-from sparging.inputs import (
+from sparging import (
     LIBRA_PI_GEOM,
     LIBRA_PI_MAT,
     LIBRA_PI_OPERATING_PARAMS,
     LIBRA_PI_SPARGING_PARAMS,
     SimulationInput,
+    ureg,
+    Simulation,
+    animation,
 )
 import logging
 from typing import TYPE_CHECKING
@@ -38,7 +37,7 @@ my_simulation = Simulation(
 
 if __name__ == "__main__":
     output = my_simulation.solve()
-    output.to_json("libra_pi_output_700C.json")
+    # output.to_json("libra_pi_output_700C.json")
 
     # # save output to file
     # output.profiles_to_csv(f"output_{tank_height}m.csv")

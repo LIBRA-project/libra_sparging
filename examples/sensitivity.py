@@ -1,20 +1,18 @@
 from datetime import datetime
 from pathlib import Path
 
-from sparging.inputs import (
+from sparging import (
     LIBRA_PI_GEOM,
     LIBRA_PI_MAT,
     LIBRA_PI_OPERATING_PARAMS,
     LIBRA_PI_SPARGING_PARAMS,
     SimulationInput,
+    Simulation,
+    ureg,
 )
-from sparging.model import Simulation, SimulationResults
-from sparging.config import ureg
-import logging
-from dataclasses import replace
-
-import matplotlib.pyplot as plt
 import sparging.postprocess as pp
+import logging
+
 import numpy as np
 
 from autoemulate.simulations.base import Simulator

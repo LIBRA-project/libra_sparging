@@ -1,22 +1,19 @@
 from datetime import datetime
 from pathlib import Path
-
-from sparging.inputs import (
+from sparging import (
     LIBRA_PI_GEOM,
     LIBRA_PI_MAT,
     LIBRA_PI_OPERATING_PARAMS,
     LIBRA_PI_SPARGING_PARAMS,
     SimulationInput,
+    ureg,
+    all_correlations,
+    CorrelationType,
 )
-from sparging.config import ureg
-from sparging.correlations import all_correlations, CorrelationType
-
 import logging
-
 from autoemulate.simulations.base import Simulator
 from autoemulate import AutoEmulate
 from autoemulate.core.sensitivity_analysis import SensitivityAnalysis
-
 import torch
 import pandas as pd
 import json

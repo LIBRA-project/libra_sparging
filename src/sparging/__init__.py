@@ -2,7 +2,7 @@
 libra_sparging: A finite element model for sparging processes using FEniCSx/DOLFINX.
 """
 
-from .config import ureg, const_R, const_g
+from .config import ureg, const_R, const_g, VERBOSE_LEVEL
 from .model import SimulationResults
 from .inputs import (
     ColumnGeometry,
@@ -13,7 +13,12 @@ from .inputs import (
 )
 from .model import Simulation
 from .animation import ConcentrationAnimator
-from .correlations import all_correlations, CorrelationGroup, Correlation
+from .correlations import (
+    all_correlations,
+    CorrelationGroup,
+    Correlation,
+    CorrelationType,
+)
 from .input_examples import (
     get_sim_input_LIBRA1L,
     get_sim_input_standard,
