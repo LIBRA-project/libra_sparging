@@ -219,7 +219,7 @@ class SimulationInput:
 
 def find_in_graph(
     required_node: str,
-    discovered_graph: nx.Graph,  # change to Graph object
+    discovered_graph: nx.Graph,
     input_objs: List[
         SpargingParameters | OperatingParameters | BreederMaterial | ColumnGeometry
     ],
@@ -245,7 +245,7 @@ def find_in_graph(
         if required_node in all_correlations:
             result = all_correlations(required_node)
             logger.verbose(
-                f"\t Found default correlation for required node '{required_node}': {result.identifier}"
+                f"Found default correlation for required node '{required_node}': {result.identifier}"
             )
         else:
             raise ValueError(

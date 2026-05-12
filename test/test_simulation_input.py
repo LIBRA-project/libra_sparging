@@ -16,6 +16,7 @@ import dataclasses
 import difflib
 import logging
 from pathlib import Path
+import networkx as nx
 
 # define standard LIBRA input parameters to be used in multiple tests
 geom = ColumnGeometry(
@@ -85,19 +86,22 @@ def test_find_in_graph_logging(tmp_path):
     """
     Test that the `find_in_graph` function logs the expected output when searching for a parameter in the graph.
     """
+    from sparging.config import VERBOSE_LEVEL
+
     # BUILD
     reference_log_path = Path(__file__).with_name("test_find_in_graph.reference.log")
     generated_log_path = Path(tmp_path).joinpath("test_find_in_graph.generated.log")
 
     logging.basicConfig(
-        level=logging.INFO,
+        level=VERBOSE_LEVEL,
         format="%(levelname)s:%(name)s:%(message)s",
         handlers=[logging.FileHandler(generated_log_path, mode="w")],
         force=True,  # reset handlers so pytest/previous tests don't interfere
     )
 
     # RUN
-    find_in_graph("drho", {}, [geom, flibe, operating_params, sparging_params])
+    empty_graph = nx.Graph()
+    find_in_graph("drho", empty_graph, [geom, flibe, operating_params, sparging_params])
 
     # TEST
     logging.shutdown()
@@ -132,31 +136,31 @@ def test_find_in_graph_result(in_discovered: bool):
     function can handle both scenarios correctly.
     """
     # BUILD
-    discovered_nodes = {}
+    discovered_graph = nx.Graph()
     if in_discovered:
-        discovered_nodes["flow_g_vol"] = 0.01 * ureg.m**3 / ureg.s
+        discovered_graph.add_node("flow_g_vol", value=0.01 * ureg.m**3 / ureg.s)
 
     # RUN
     find_in_graph(
         "d_b",
-        discovered_nodes=discovered_nodes,
+        discovered_graph=discovered_graph,
         input_objs=[geom, operating_params],
     )
 
     # TEST
-    assert "d_b" in discovered_nodes, "Expected to find d_b in graph"
+    assert "d_b" in discovered_graph, "Expected to find d_b in graph"
 
     correlation = sparging.all_correlations("d_b")
 
-    flow_g_vol = discovered_nodes.get("flow_g_vol")
+    flow_g_vol = discovered_graph.nodes["flow_g_vol"]["value"]
     expected_value = correlation(
         flow_g_vol=flow_g_vol,
         nozzle_diameter=geom.nozzle_diameter,
         nb_nozzle=geom.nb_nozzle,
     )
 
-    assert discovered_nodes["d_b"] == expected_value, (
-        f"Expected d_b to be {expected_value}, got {discovered_nodes['d_b']}"
+    assert discovered_graph.nodes["d_b"]["value"] == expected_value, (
+        f"Expected d_b to be {expected_value}, got {discovered_graph.nodes['d_b']['value']}"
     )
 
 
@@ -168,6 +172,7 @@ def test_find_in_graph_unresolvable(missing_param: str):
     # BUILD
     broken_geom = dataclasses.replace(geom)
     broken_op_params = dataclasses.replace(operating_params)
+    empty_graph = nx.Graph()
     to_find = str()
     match missing_param:
         case "nb_nozzle":
@@ -177,7 +182,7 @@ def test_find_in_graph_unresolvable(missing_param: str):
             to_find = "d_b"
             setattr(broken_op_params, missing_param, None)
         case "n_gen_rate":
-            to_find = "source_T"
+            to_find = "Q_T"
             setattr(broken_op_params, missing_param, None)
     # RUN
     with pytest.raises(
@@ -186,7 +191,7 @@ def test_find_in_graph_unresolvable(missing_param: str):
     ):
         find_in_graph(
             to_find,
-            discovered_nodes={},  # no discovered nodes provided
+            discovered_graph=empty_graph,
             input_objs=[
                 broken_geom,
                 broken_op_params,
@@ -272,7 +277,8 @@ def test_correlation_group():
 def test_correlation():
     """
     Test Correlation raises an error when:
-    - providing wrong input (missing arguments/wrong dimensionality)"""
+    - providing wrong input (missing arguments/wrong dimensionality)
+    """
 
     # BUILD
     my_corr_obj = Correlation(
@@ -287,7 +293,7 @@ def test_correlation():
     # RUN
     assert isinstance(my_corr_obj(a=5 * ureg.m, b=None), ureg.Quantity), (
         "Expected a pint.Quantity as output"
-    )  # should work
+    )
 
     with pytest.raises(ValueError, match="expected a pint.Quantity"):
         my_corr_obj(a=5, b=None)  # wrong input type, should be a pint.Quantity
