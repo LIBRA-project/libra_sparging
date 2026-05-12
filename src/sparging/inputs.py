@@ -166,7 +166,13 @@ class SimulationInput:
 
         with open(path, "w") as f:
             json.dump(
-                {key: str(value) for key, value in self.__dict__.items()}, f, indent=2
+                {
+                    key: str(value)
+                    for key, value in self.__dict__.items()
+                    if value is not None and not callable(value)
+                },
+                f,
+                indent=2,
             )
 
     @classmethod

@@ -55,10 +55,10 @@ def test_from_parameters_success(tmp_path):
         "Expected from_parameters to return a SimulationInput instance"
     )
     # Check that all fields are populated and have the correct types
-    for field in dataclasses.fields(sim_input):
-        value = getattr(sim_input, field.name)
+    for field in SimulationInput.required_keys:
+        value = getattr(sim_input, field)
         assert isinstance(value, ureg.Quantity), (
-            f"Expected field '{field.name}' to be a pint.Quantity, got {type(value)}"
+            f"Expected field '{field}' to be a pint.Quantity, got {type(value)}"
         )
 
     reference_path = Path(__file__).with_name("standard_input.json")
