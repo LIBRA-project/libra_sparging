@@ -1,8 +1,8 @@
-name: libra_sparging
+name: autoemulate_env
 channels:
   - conda-forge
 dependencies:
-  - python>=3.12
+  - python=3.12
   - fenics-dolfinx
   - matplotlib
   - pyvista
@@ -12,3 +12,6 @@ dependencies:
   - pandas
   - pint
   - networkx
+  - pip:
+    - autoemulate
+    - pyvis
