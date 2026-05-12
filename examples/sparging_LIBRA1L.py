@@ -35,4 +35,4 @@ if __name__ == "__main__":
     # from sparging import plotting
     # plotting.plot_animation(output)
 
-    animation.create_animation(output, show_activity=False)
+    animation.create_animation(output, show_activity=True)
