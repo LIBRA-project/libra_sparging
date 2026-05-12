@@ -72,7 +72,14 @@ def fit_exp(
     phase: str,
 ) -> tuple[tuple[pint.Quantity, pint.Quantity], tuple[pint.Quantity, pint.Quantity]]:
     """
+    Input:
+    - vec: array of inventory values
+    - times: array of times
+    - t_0: initial fit time
+    - t_end: final fit time
     - phase = 'decay' or 'rampup'
+    ---
+    Returns: (tau, n0), (tau_std, n0_std)
     """
 
     def fitting_func(t, tau, n0):

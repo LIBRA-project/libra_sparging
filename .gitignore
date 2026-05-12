@@ -208,9 +208,9 @@ __marimo__/
 .vscode/
 misc_scripts/
 datasets/
+figures/
 *.yaml
 *.csv
-mwe.py
 *.json
 !standard_input.json
 *.ipynb
