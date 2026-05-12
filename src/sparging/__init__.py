@@ -4,8 +4,24 @@ libra_sparging: A finite element model for sparging processes using FEniCSx/DOLF
 
 from .config import ureg, const_R, const_g
 from .model import SimulationResults
+from .inputs import (
+    ColumnGeometry,
+    BreederMaterial,
+    OperatingParameters,
+    SpargingParameters,
+    SimulationInput,
+)
+from .model import Simulation
 from .animation import ConcentrationAnimator
 from .correlations import all_correlations, CorrelationGroup, Correlation
+from .input_examples import (
+    get_sim_input_LIBRA1L,
+    get_sim_input_standard,
+    LIBRA_PI_GEOM,
+    LIBRA_PI_MAT,
+    LIBRA_PI_OPERATING_PARAMS,
+    LIBRA_PI_SPARGING_PARAMS,
+)
 
 __all__ = [
     "SimulationInput",
@@ -14,4 +30,5 @@ __all__ = [
     "ureg",
     "const_R",
     "const_g",
+    "Simulation",
 ]
