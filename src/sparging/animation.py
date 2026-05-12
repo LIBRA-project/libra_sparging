@@ -163,7 +163,7 @@ class ConcentrationAnimator:
                         linestyle="None",
                     )
                     secondary_lines.append(self.flux_line)
-                    secondary_labels.append(r"$\Phi_{T_2}$")
+                    secondary_labels.append(r"$\dot n_{T_2}$")
 
                 self.ax3_secondary.set_ylabel("Source / Flux [molT2/s]")
                 self.ax3_secondary.grid(False)

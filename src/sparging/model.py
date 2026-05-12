@@ -41,6 +41,7 @@ SEPARATOR_KEYWORD = "from"
 class SimulationResults:
     times: np.ndarray[pint.Quantity]
     c_T2_solutions: np.ndarray[pint.Quantity]
+    """ line : time step, column : spatial coordinate """
     y_T2_solutions: np.ndarray[pint.Quantity]
     J_T2_solutions: np.ndarray[pint.Quantity]
     x_ct: np.ndarray[pint.Quantity]
@@ -219,6 +220,11 @@ class Simulation:
         dx: pint.Quantity | None = None,
         fast_solve: bool = False,
     ) -> SimulationResults:
+        """Input:
+        - dt: time step, 1000 equal time steps by default
+        - dx: spatial step, 1000 equal spatial steps by default
+        - fast_solve: if True, use only 50 equal time and spatial steps
+        """
         # unpack pint.Quantities
         t_final = self.t_final.to("seconds").magnitude
         tank_height = self.sim_input.height.to("m").magnitude
