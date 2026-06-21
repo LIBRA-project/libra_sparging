@@ -43,7 +43,7 @@ class SimulationResults:
     c_T2_solutions: np.ndarray[pint.Quantity]
     """ line : time step, column : spatial coordinate """
     y_T2_solutions: np.ndarray[pint.Quantity]
-    J_T2_solutions: np.ndarray[pint.Quantity]
+    aJ_T2_solutions: np.ndarray[pint.Quantity]
     x_ct: np.ndarray[pint.Quantity]
     x_y: np.ndarray[pint.Quantity]
     inventories_T2_salt: np.ndarray[pint.Quantity]
@@ -171,8 +171,16 @@ class SimulationResults:
             columns=["x_metres", *col_names],
         )
 
+        df_aJ_T2 = pd.DataFrame(
+            np.column_stack([self.x_y.magnitude, self.aJ_T2_solutions.magnitude.T]),
+            columns=["x_metres", *col_names],
+        )
+
         df_c_T2.to_csv(output_directory / "c_T2.csv", index=False, float_format="%.6e")
         df_y_T2.to_csv(output_directory / "y_T2.csv", index=False, float_format="%.6e")
+        df_aJ_T2.to_csv(
+            output_directory / "aJ_T2.csv", index=False, float_format="%.6e"
+        )
 
     def profiles_to_cdf(self, output_directory: Path):
         """Export profiles to a self-describing NetCDF file, preserving units."""
@@ -184,7 +192,7 @@ class SimulationResults:
                 q = q.to(target_unit)
             return np.asarray(
                 q.magnitude
-            ), f"{q.units:~}"  # "~" → short symbol, e.g. "mol/m³" -> "mol / m ** 3"
+            ), f"{q.units:~P}"  # "~" → short symbol, e.g. "mol/m³" -> "mol / m ** 3"
 
         # --- Coordinates ---
         t_mag, t_unit = split(self.times, "s")
@@ -192,6 +200,7 @@ class SimulationResults:
         x_y_mag, x_y_unit = split(self.x_y, "m")
 
         # --- Data variables (note: c_T2_solutions is a 2D pint Quantity, shape (n_t, n_x)) ---
+        aJ_T2_mag, aJ_T2_unit = split(self.aJ_T2_solutions, "molT2/m^3/s")
         c_mag, c_unit = split(self.c_T2_solutions, "molT2/m^3")
         y_mag, y_unit = split(self.y_T2_solutions)  # dimensionless → keep native
 
@@ -206,6 +215,11 @@ class SimulationResults:
                     ("time", "x_y"),
                     y_mag,
                     {"units": y_unit, "long_name": "T2 molar fraction"},
+                ),
+                "aJ_T2": (
+                    ("time", "x_y"),
+                    aJ_T2_mag,
+                    {"units": aJ_T2_unit, "long_name": "T2 reaction rate"},
                 ),
             },
             coords={
@@ -258,7 +272,7 @@ class SimulationResults:
 class Simulation:
     sim_input: SimulationInput
     t_final: pint.Quantity
-    profile_pressure_hydrostatic: bool = False
+    profile_pressure_hydrostatic: bool = True
     dispersion_on: bool = True
 
     def hydrostatic_pressure(self, x: pint.Quantity) -> pint.Quantity:
@@ -291,7 +305,6 @@ class Simulation:
         eps_g = self.sim_input.eps_g.to("dimensionless").magnitude
         E_g = self.sim_input.E_g.to("m**2/s").magnitude
         E_l = self.sim_input.E_l.to("m**2/s").magnitude
-        D_l = self.sim_input.D_l.to("m**2/s").magnitude  # not needed (included in h_l)
         u_g0 = self.sim_input.u_g0.to("m/s").magnitude
         Q_T2 = self.sim_input.Q_T.to("molT2/s").magnitude
 
@@ -367,9 +380,7 @@ class Simulation:
         # VARIATIONAL FORMULATION
 
         # mass transfer rate
-        J_T2 = (
-            a * h_l_const * (c_T2 - K_s * (P * y_T2 + EPS))
-        )  # TODO pressure shouldn't be a constant (use hydrostatic pressure profile), how to deal with this ? -> use fem.Expression ?
+        aJ_T2 = a * h_l_const * (c_T2 - K_s * (P * y_T2 + EPS))
 
         F = 0  # variational formulation
 
@@ -390,7 +401,7 @@ class Simulation:
             )
 
         # mass exchange (coupling term)
-        F += J_T2 * v_c * ufl.dx - J_T2 * v_y * ufl.dx
+        F += aJ_T2 * v_c * ufl.dx - aJ_T2 * v_y * ufl.dx
 
         # Generation term in the breeder
         F += -gen_T2 * v_c * ufl.dx
@@ -435,9 +446,11 @@ class Simulation:
 
         # initialise post processing
 
-        # we define a function and an expression for J_T2 for use in post processing
-        J_T2_func = dolfinx.fem.Function(V_profile)
-        J_T2_expr = dolfinx.fem.Expression(J_T2, V_profile.element.interpolation_points)
+        # we define a function and an expression for aJ_T2 for use in post processing
+        aJ_T2_func = dolfinx.fem.Function(V_profile)
+        aJ_T2_expr = dolfinx.fem.Expression(
+            aJ_T2, V_profile.element.interpolation_points
+        )
 
         V0_ct, ct_dofs = u.function_space.sub(0).collapse()
         coords = V0_ct.tabulate_dof_coordinates()[:, 0]
@@ -469,12 +482,12 @@ class Simulation:
 
             c_T2_vals = u.x.array[ct_dofs][ct_sort_coords]
             y_T2_vals = u.x.array[y_dofs][y_sort_coords]
-            J_T2_func.interpolate(J_T2_expr)
-            J_T2_vals = J_T2_func.x.array[profile_dofs][ct_sort_coords]
+            aJ_T2_func.interpolate(aJ_T2_expr)
+            aJ_T2_vals = aJ_T2_func.x.array[profile_dofs][ct_sort_coords]
             times.append(t)
             c_T2_solutions.append(c_T2_vals.copy())
             y_T2_solutions.append(y_T2_vals.copy())
-            J_T2_solutions.append(J_T2_vals.copy())
+            aJ_T2_solutions.append(aJ_T2_vals.copy())
             sources_T2.append(
                 Q_T2 * self.sim_input.signal_irr(t * ureg.s)
             )  # total T generation rate in the tank [mol/s] TODO useless: signal_irr is already given
@@ -525,7 +538,7 @@ class Simulation:
         times = []
         c_T2_solutions = []
         y_T2_solutions = []
-        J_T2_solutions = []
+        aJ_T2_solutions = []
         sources_T2 = []
         fluxes_T2 = []
         inventories_T2_salt = []
@@ -554,7 +567,7 @@ class Simulation:
             times=np.array(times) * ureg("s"),
             c_T2_solutions=np.array(c_T2_solutions) * ureg("molT2/m^3"),
             y_T2_solutions=np.array(y_T2_solutions) * ureg("dimensionless"),
-            J_T2_solutions=np.array(J_T2_solutions) * ureg("molT2/m^3/s"),
+            aJ_T2_solutions=np.array(aJ_T2_solutions) * ureg("molT2/m^3/s"),
             x_ct=x_ct * ureg("m"),
             x_y=x_y * ureg("m"),
             inventories_T2_salt=np.array(inventories_T2_salt) * ureg("molT2"),
