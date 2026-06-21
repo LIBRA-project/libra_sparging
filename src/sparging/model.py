@@ -156,7 +156,7 @@ class SimulationResults:
         with open(output_path, "wb") as f:
             pickle.dump(output, f)
 
-    def profiles_to_csv(self, output_path: Path):
+    def profiles_to_csv(self, output_directory: Path):
         """save c_T2 and y_T2 profiles at all time steps to csv files, one for c_T2 and one for y_T2, with columns for each time step"""
         import pandas as pd
 
@@ -167,11 +167,11 @@ class SimulationResults:
         for i, (c_T2_profile, y_T2_profile) in enumerate(
             zip(self.c_T2_solutions, self.y_T2_solutions)
         ):
-            df_c_T2[f"c_T2_t{i}"] = c_T2_profile
-            df_y_T2[f"y_T2_t{i}"] = y_T2_profile
+            df_c_T2[f"{self.times[i].to('seconds').magnitude:.0f}"] = c_T2_profile
+            df_y_T2[f"{self.times[i].to('seconds').magnitude:.0f}"] = y_T2_profile
 
-        df_c_T2.to_csv(output_path.joinpath("_c_T2.csv"), index=False)
-        df_y_T2.to_csv(output_path.joinpath("_y_T2.csv"), index=False)
+        df_c_T2.to_csv(output_directory.joinpath("c_T2.csv"), index=False)
+        df_y_T2.to_csv(output_directory.joinpath("y_T2.csv"), index=False)
 
     @classmethod
     def deserialize_output(cls, data: dict) -> SimulationResults:
