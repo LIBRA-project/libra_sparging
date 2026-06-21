@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.WARNING)
 
-FOLDER = Path("paper/standard")
+FOLDER = Path("paper/runs/standard")
 FOLDER.mkdir(exist_ok=True, parents=True)
 
 
@@ -31,11 +31,12 @@ my_simulation = Simulation(
 )
 
 if __name__ == "__main__":
-    output = my_simulation.solve()
+    output = my_simulation.solve(fast_solve=True)
     # save output to file
-    output.to_json(FOLDER / "standard.json")
+    output.to_json(FOLDER / "params.json")
 
     output.profiles_to_csv(FOLDER)
+    output.profiles_to_cdf(FOLDER)
 
     # # plot results
     # from sparging import plotting

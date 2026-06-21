@@ -219,3 +219,4 @@ figures/
 *.code-workspace
 *.pkl
 *.html
+*.nc

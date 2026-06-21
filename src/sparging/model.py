@@ -11,11 +11,11 @@ from dataclasses import dataclass
 
 from datetime import datetime
 
-# from dolfinx import log
 import yaml
 import sparging.helpers as helpers
 import json
 from pathlib import Path
+import pandas as pd
 
 from sparging.config import ureg, const_g
 
@@ -157,21 +157,74 @@ class SimulationResults:
             pickle.dump(output, f)
 
     def profiles_to_csv(self, output_directory: Path):
-        """save c_T2 and y_T2 profiles at all time steps to csv files, one for c_T2 and one for y_T2, with columns for each time step"""
-        import pandas as pd
+        """Save c_T2 and y_T2 profiles at all time steps as CSV files."""
+        times_s = np.array([t.to("seconds").magnitude for t in self.times])
 
-        df_c_T2 = pd.DataFrame({"x": self.x_ct})
-        df_y_T2 = pd.DataFrame({"x": self.x_y})
+        col_names = [f"t={t:.1f}s" for t in times_s]
 
-        # add one column for each profile
-        for i, (c_T2_profile, y_T2_profile) in enumerate(
-            zip(self.c_T2_solutions, self.y_T2_solutions)
-        ):
-            df_c_T2[f"{self.times[i].to('seconds').magnitude:.0f}"] = c_T2_profile
-            df_y_T2[f"{self.times[i].to('seconds').magnitude:.0f}"] = y_T2_profile
+        df_c_T2 = pd.DataFrame(
+            np.column_stack([self.x_ct.magnitude, self.c_T2_solutions.magnitude.T]),
+            columns=["x_metres", *col_names],
+        )
+        df_y_T2 = pd.DataFrame(
+            np.column_stack([self.x_y.magnitude, self.y_T2_solutions.magnitude.T]),
+            columns=["x_metres", *col_names],
+        )
 
-        df_c_T2.to_csv(output_directory.joinpath("c_T2.csv"), index=False)
-        df_y_T2.to_csv(output_directory.joinpath("y_T2.csv"), index=False)
+        df_c_T2.to_csv(output_directory / "c_T2.csv", index=False, float_format="%.6e")
+        df_y_T2.to_csv(output_directory / "y_T2.csv", index=False, float_format="%.6e")
+
+    def profiles_to_cdf(self, output_directory: Path):
+        """Export profiles to a self-describing NetCDF file, preserving units."""
+        import xarray as xr
+
+        # --- Helper: split a pint Quantity (scalar or array) into (magnitude, unit_str)
+        def split(q, target_unit=None):
+            if target_unit is not None:
+                q = q.to(target_unit)
+            return np.asarray(
+                q.magnitude
+            ), f"{q.units:~}"  # "~" → short symbol, e.g. "mol/m³" -> "mol / m ** 3"
+
+        # --- Coordinates ---
+        t_mag, t_unit = split(self.times, "s")
+        x_ct_mag, x_ct_unit = split(self.x_ct, "m")
+        x_y_mag, x_y_unit = split(self.x_y, "m")
+
+        # --- Data variables (note: c_T2_solutions is a 2D pint Quantity, shape (n_t, n_x)) ---
+        c_mag, c_unit = split(self.c_T2_solutions, "molT2/m^3")
+        y_mag, y_unit = split(self.y_T2_solutions)  # dimensionless → keep native
+
+        ds = xr.Dataset(
+            data_vars={
+                "c_T2": (
+                    ("time", "x_ct"),
+                    c_mag,
+                    {"units": c_unit, "long_name": "T2 concentration"},
+                ),
+                "y_T2": (
+                    ("time", "x_y"),
+                    y_mag,
+                    {"units": y_unit, "long_name": "T2 molar fraction"},
+                ),
+            },
+            coords={
+                "time": ("time", t_mag, {"units": t_unit, "long_name": "time"}),
+                "x_ct": (
+                    "x_ct",
+                    x_ct_mag,
+                    {"units": x_ct_unit, "long_name": "position"},
+                ),
+                "x_y": ("x_y", x_y_mag, {"units": x_y_unit, "long_name": "position"}),
+            },
+            attrs={
+                "description": "T2 concentration and molar fraction profiles",
+                "source": f"{type(self).__name__} simulation results",
+            },
+        )
+
+        output_directory.mkdir(parents=True, exist_ok=True)
+        ds.to_netcdf(output_directory / "profiles.nc")
 
     @classmethod
     def deserialize_output(cls, data: dict) -> SimulationResults:
