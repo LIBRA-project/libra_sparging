@@ -390,8 +390,8 @@ class Simulation:
 
         # dispersive terms
         if self.dispersion_on is True:
-            F += eps_l * E_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
-            F += (
+            F -= eps_l * E_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
+            F -= (
                 eps_g
                 * E_g
                 * 1
@@ -504,6 +504,9 @@ class Simulation:
                     vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
                 )
             )  # TODO replace with integral of J over volume
+            flux_T2_2 = dolfinx.fem.assemble_scalar(
+                dolfinx.fem.form(tank_area * aJ_T2_func * ufl.dx)
+            )
             # flux_T_inlet = dolfinx.fem.assemble_scalar(
             #     dolfinx.fem.form(
             #         tank_area
