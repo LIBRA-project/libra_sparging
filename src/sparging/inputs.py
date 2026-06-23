@@ -92,9 +92,6 @@ class SimulationInput:
     eps_g: pint.Quantity
     E_g: pint.Quantity
     E_l: pint.Quantity
-    D_l: (
-        pint.Quantity
-    )  # TODO to remove, not used in the solver, only for correlations to calculate h_l
     Q_T: pint.Quantity
     signal_irr: Callable[[pint.Quantity], float] = lambda t: 1
     """callable = f:R+ (time) -> [0,1] """
@@ -115,9 +112,16 @@ class SimulationInput:
         "eps_g",
         "E_g",
         "E_l",
-        "D_l",
         "Q_T",
     )  # these parameters will be used to solve the model
+    graph: nx.Graph | None = None
+    """ Stores the intermediate parameters and their relationships that built the SimulationInput. 
+    It has attributes "nodes" and "edges".
+    Each node is accessed by its ID (the param name) and contains a dictionary with properties:
+        - value: value of the parameter as pint.Quantity
+        - origin: "input" | correlation identifier
+    e.g use: mySimulationInput.graph.nodes["height"]["value"]
+    """
 
     @property
     def volume(self):
@@ -184,9 +188,9 @@ class SimulationInput:
         graph: nx.Graph | None = None,
     ):
         """
-        - graph: optional, if want to visualize how the input was constructed. Each node has an ID (the param name) and contains a dictionary with properties:
+        - graph: optional, if want to get the values of intermediate parameters and visualize how the input was constructed. Each node has an ID (the param name) and contains a dictionary with properties:
             - value: value of the parameter as pint.Quantity
-            - origin: "input" | <correlation identifier>
+            - origin: "input" | correlation identifier
         """
         input_objects = [
             column_geometry,
@@ -200,7 +204,8 @@ class SimulationInput:
             find_in_graph(required_key, discovered_graph, input_objs=input_objects)
 
         return cls(
-            **{arg: discovered_graph.nodes[arg]["value"] for arg in cls.required_keys}
+            graph=discovered_graph,
+            **{arg: discovered_graph.nodes[arg]["value"] for arg in cls.required_keys},
         )
 
     def __str__(self):
