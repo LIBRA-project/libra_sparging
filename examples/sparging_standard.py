@@ -21,13 +21,17 @@ FOLDER.mkdir(exist_ok=True, parents=True)
 
 standard_input = get_sim_input_standard()
 
-standard_input.signal_sparging = lambda t: 0 if t < 8 * ureg.hours else 1
-standard_input.signal_irr = lambda t: 1 if t <= 8 * ureg.hours else 0
+# standard_input.signal_sparging = lambda t: 0 if t < 24 * ureg.hours else 1
+standard_input.signal_sparging = lambda t: 1
+# standard_input.signal_irr = lambda t: 1 if t <= 24 * ureg.hours else 0
+standard_input.signal_irr = lambda t: 1
+
 
 my_simulation = Simulation(
     standard_input,
-    t_final=4 * ureg.days,
+    t_final=6 * ureg.days,
     profile_pressure_hydrostatic=True,
+    dispersion_on=False,
 )
 
 if __name__ == "__main__":

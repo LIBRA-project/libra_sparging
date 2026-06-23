@@ -390,8 +390,8 @@ class Simulation:
 
         # dispersive terms
         if self.dispersion_on is True:
-            F -= eps_l * E_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
-            F -= (
+            F += eps_l * E_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
+            F += (
                 eps_g
                 * E_g
                 * 1
@@ -410,7 +410,7 @@ class Simulation:
         F += (
             1
             / (const.R * T)
-            * ufl.inner(ufl.dot(ufl.grad(P * y_T2), vel), v_y)
+            * ufl.inner(ufl.dot(ufl.grad(eps_g * P * y_T2), vel), v_y)
             * ufl.dx
         )
 
@@ -501,7 +501,7 @@ class Simulation:
             # )  # total T flux at the outlet [mol/s]
             flux_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
-                    vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
+                    eps_g * vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
                 )
             )  # TODO replace with integral of J over volume
             flux_T2_2 = dolfinx.fem.assemble_scalar(
@@ -527,8 +527,8 @@ class Simulation:
             flux_T2_inlet *= 1 / (const.R * T)  # mol T2/s/m2
             flux_T2_inlet *= tank_area  # convert to molT2/s
 
-            fluxes_T2.append(flux_T2 + flux_T2_inlet)
-            # fluxes_T2.append(flux_T2)
+            # fluxes_T2.append(flux_T2 + flux_T2_inlet)
+            fluxes_T2.append(flux_T2)
 
             inventory_T2_salt = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(c_T2_post * ufl.dx)
