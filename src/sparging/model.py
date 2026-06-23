@@ -507,17 +507,6 @@ class Simulation:
             flux_T2_2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(tank_area * aJ_T2_func * ufl.dx)
             )
-            # flux_T_inlet = dolfinx.fem.assemble_scalar(
-            #     dolfinx.fem.form(
-            #         tank_area
-            #         * E_g
-            #         * P_0
-            #         / (const.R * T)
-            #         * y_T2_post.dx(0)
-            #         * T2_to_T
-            #         * ds(1)
-            #     )
-            # )  # total T dispersive flux at the inlet [mol/s]
 
             flux_T2_inlet = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
@@ -527,8 +516,11 @@ class Simulation:
             flux_T2_inlet *= 1 / (const.R * T)  # mol T2/s/m2
             flux_T2_inlet *= tank_area  # convert to molT2/s
 
+            flux_T2_3 = flux_T2_inlet + flux_T2
+
             # fluxes_T2.append(flux_T2 + flux_T2_inlet)
-            fluxes_T2.append(flux_T2)
+            # fluxes_T2.append(flux_T2)
+            fluxes_T2.append(flux_T2_2)
 
             inventory_T2_salt = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(c_T2_post * ufl.dx)

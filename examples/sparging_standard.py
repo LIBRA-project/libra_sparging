@@ -31,7 +31,7 @@ my_simulation = Simulation(
     standard_input,
     t_final=6 * ureg.days,
     profile_pressure_hydrostatic=True,
-    dispersion_on=False,
+    dispersion_on=True,
 )
 
 if __name__ == "__main__":
