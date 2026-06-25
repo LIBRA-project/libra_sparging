@@ -281,6 +281,23 @@ class Simulation:
         g = const_g
         return (self.sim_input.P_bottom + rho * g * x).to("Pa")
 
+    def normalize_profile(
+        self, profile: Callable[[float], float] | None, length: float, mesh, func_space
+    ):
+        "helper: make sure a profile is normalized (integral over the dimensionless length is 1)"
+        if profile is not None:  # spatially varying profile is provided
+            arbitrary_profile = dolfinx.fem.Function(func_space)
+            arbitrary_profile.interpolate(lambda x: x[0] * 0 + profile(x[0] / length))
+            profile_mean = dolfinx.fem.assemble_scalar(
+                dolfinx.fem.form(
+                    arbitrary_profile * 1 / length * ufl.dx  # TODO
+                )  # dimensionless integral
+            )
+            normalized_profile = arbitrary_profile / profile_mean
+        else:  # of no profile provided, assume homogeneous
+            normalized_profile = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1.0))
+        return normalized_profile
+
     def solve(
         self,
         dt: pint.Quantity | None = None,
@@ -335,6 +352,18 @@ class Simulation:
         u_n = dolfinx.fem.Function(V)
         v_c, v_y = ufl.TestFunctions(V)
 
+        # set initial concentration
+        c_T2_0_ufl_expr = dolfinx.fem.Constant(
+            mesh, self.sim_input.c_T2_0.to("molT2/m**3").magnitude
+        ) * self.normalize_profile(
+            self.sim_input.profile_c_T2_0, tank_height, mesh, V_profile
+        )
+        u_n.sub(0).interpolate(
+            dolfinx.fem.Expression(
+                c_T2_0_ufl_expr, V.sub(0).element.interpolation_points
+            )
+        )
+
         c_T2, y_T2 = ufl.split(u)
         c_T2_n, y_T2_n = ufl.split(u_n)
 
@@ -347,25 +376,9 @@ class Simulation:
             mesh, Q_T2 / tank_volume * self.sim_input.signal_irr(0 * ureg.s)
         )  # magnitude of the generation term
 
-        if (
-            self.sim_input.profile_source_T is not None
-        ):  # spatially varying profile is provided
-            arbitrary_profile = dolfinx.fem.Function(V_profile)
-            arbitrary_profile.interpolate(
-                lambda x: x[0] * 0 + self.sim_input.profile_source_T(x[0] / tank_height)
-            )
-            profile_integral = dolfinx.fem.assemble_scalar(
-                dolfinx.fem.form(
-                    arbitrary_profile * 1 / tank_height * ufl.dx  # TODO
-                )  # dimensionless integral
-            )
-            normalized_profile = (
-                arbitrary_profile / profile_integral
-            )  # normalize profile so that its integral over the dimensionless height is 1
-        else:  # homogeneous generation
-            normalized_profile = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1.0))
-
-        gen_T2 = gen_T2_ave * normalized_profile
+        gen_T2 = gen_T2_ave * self.normalize_profile(
+            self.sim_input.profile_source_T, tank_height, mesh, V_profile
+        )
 
         P_prof = dolfinx.fem.Function(V_profile)
         if self.profile_pressure_hydrostatic:
@@ -384,7 +397,7 @@ class Simulation:
 
         F = 0  # variational formulation
 
-        # transient terms
+        # transient terms: implicit (backward) euler scheme: [u_n+1 - u_n)] / dt = f(u_n+1) -> new state appears in both derivative and function it is equal to
         F += eps_l * ((c_T2 - c_T2_n) / dt) * v_c * ufl.dx
         F += eps_g * 1 / (const.R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
@@ -478,10 +491,10 @@ class Simulation:
             Post-process the solution at time t.
             Extract solution profiles, compute fluxes and inventories, and store them in lists for later analysis.
             """
-            c_T2_post, y_T2_post = u.split()
+            c_T2_post, y_T2_post = u_n.split()
 
-            c_T2_vals = u.x.array[ct_dofs][ct_sort_coords]
-            y_T2_vals = u.x.array[y_dofs][y_sort_coords]
+            c_T2_vals = u_n.x.array[ct_dofs][ct_sort_coords]
+            y_T2_vals = u_n.x.array[y_dofs][y_sort_coords]
             aJ_T2_func.interpolate(aJ_T2_expr)
             aJ_T2_vals = aJ_T2_func.x.array[profile_dofs][ct_sort_coords]
             times.append(t)
@@ -494,19 +507,14 @@ class Simulation:
 
             n = ufl.FacetNormal(mesh)
 
-            # flux_T2 = dolfinx.fem.assemble_scalar(
-            #     dolfinx.fem.form(
-            #         eps_g * vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
-            #     )
-            # )  # total T flux at the outlet [mol/s]
             flux_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
                     eps_g * vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
                 )
-            )  # TODO replace with integral of J over volume
+            )
             flux_T2_2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(tank_area * aJ_T2_func * ufl.dx)
-            )
+            )  # other expression: integral of J over volume
 
             flux_T2_inlet = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
@@ -520,7 +528,7 @@ class Simulation:
 
             # fluxes_T2.append(flux_T2 + flux_T2_inlet)
             # fluxes_T2.append(flux_T2)
-            fluxes_T2.append(flux_T2_2)
+            fluxes_T2.append(flux_T2)
 
             inventory_T2_salt = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(c_T2_post * ufl.dx)
@@ -549,15 +557,13 @@ class Simulation:
             )
             h_l_const.value = h_l * self.sim_input.signal_sparging(t * ureg.s)
 
-            problem.solve()
+            problem.solve()  # solves for u (equivalent to u_n+1)
 
             # update previous solution
             u_n.x.array[:] = u.x.array[:]
 
             post_process(t)
 
-        # TODO reattach units using wrapping
-        # https://pint.readthedocs.io/en/stable/advanced/performance.html#a-safer-method-wrapping
         results = SimulationResults(
             times=np.array(times) * ureg("s"),
             c_T2_solutions=np.array(c_T2_solutions) * ureg("molT2/m^3"),

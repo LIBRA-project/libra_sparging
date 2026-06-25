@@ -99,6 +99,9 @@ class SimulationInput:
     """callable = f:R+ (time) -> [0,1] """
     profile_source_T: Callable[[float], float] | None = None
     """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
+    c_T2_0: pint.Quantity = 0 * ureg("molT2/m**3")
+    profile_c_T2_0: Callable[[float], pint.Quantity] | None = None
+    """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
     required_keys = (
         "height",
         "area",
