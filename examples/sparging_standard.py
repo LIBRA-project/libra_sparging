@@ -21,12 +21,14 @@ FOLDER.mkdir(exist_ok=True, parents=True)
 
 standard_input = get_sim_input_standard()
 
+print(standard_input.get_Pi_number())
+
 # standard_input.signal_sparging = lambda t: 0 if t < 24 * ureg.hours else 1
 standard_input.signal_sparging = lambda t: 1
 # standard_input.signal_irr = lambda t: 1 if t <= 24 * ureg.hours else 0
 standard_input.signal_irr = lambda t: 1
 standard_input.profile_source_T = lambda z: 10 * z
-standard_input.c_T2_0 = 2e-11 * ureg.molT2 / ureg.m**3
+standard_input.c_T2_0 = 4e-11 * ureg.molT2 / ureg.m**3
 
 my_simulation = Simulation(
     standard_input,

@@ -148,15 +148,29 @@ class SimulationInput:
         return (self.get_S_T() * 1 / (self.h_l * self.a)).to("molT2/m^3")
 
     def get_Pi_number(self) -> pint.Quantity:
-        """Partial pressure number, ratio of the equivalent T concentration at liquid boundary to the bulk liquid concentration.
-        If PP << 1, then we are in the small partial pressure (SPP) regime, and if PP ~= 1, then we are in the partial pressure limited (PPL) regime.
+        """Partial pressure number,
+        If Pi < ~0.1, then gas partial pressure can be neglected in front of liquid concentration, we are in the small partial pressure (SPP) regime,
+        If Pi > ~0.1, then partial pressure starts limiting the interfacial mass transfer (PPL regime)
         """
         return (
             self.K_s
             * (const_R * self.temperature)
             * self.height
-            / (self.get_tau() * self.u_g0)
+            * self.h_l
+            * self.a
+            / (self.eps_g * self.u_g0)
         ).to("dimensionless")
+
+    def get_dP_dx(self) -> pint.Quantity:
+        """
+        returns 1/c_T * dP_T/dx in the SPP approximation (linearized around P_T = 0))
+        """
+        return (
+            6
+            * (const_R * self.temperature)
+            * self.h_l
+            / (self.graph.nodes["d_b"]["value"] * self.u_g0)
+        ).to("Pa/(mol/m^3)/m")
 
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error
