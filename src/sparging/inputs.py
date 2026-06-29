@@ -172,6 +172,18 @@ class SimulationInput:
             / (self.graph.nodes["d_b"]["value"] * self.u_g0)
         ).to("Pa/(mol/m^3)/m")
 
+    def get_Bo(self) -> pint.Quantity:
+        """
+        returns Bodenstein number = ratio of convective to dispersive transport for the gas phase
+        corresponds to Peclet number at the scale of the tank
+        """
+        # return (self.eps_g * self.u_g0 * self.height / self.E_g).to("dimensionless")
+        return (
+            (self.graph.nodes["flow_g_vol"]["value"] / self.area)
+            * self.height
+            / self.E_g
+        ).to("dimensionless")
+
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error
         for key in self.required_keys:
