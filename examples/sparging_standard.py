@@ -41,9 +41,14 @@ my_simulation = Simulation(
 )
 
 if __name__ == "__main__":
+    # my_simulation.exports = ["pressure", "J_T2"]
     output = my_simulation.solve(fast_solve=True)
     # save output to file
     output.to_json(FOLDER / "params.json")
+
+    # P = output.exported_fields["pressure"]
+    # plt.plot(output.x_ct, P)
+    # output.exports_to_csv(FOLDER)
 
     output.profiles_to_csv(FOLDER)
     output.profiles_to_cdf(FOLDER)

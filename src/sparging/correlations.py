@@ -424,6 +424,17 @@ source_T_integral = Correlation(
 )
 all_correlations.append(source_T_integral)
 
+# P_hydrostatic = Profile(
+#     identifier="P_l",
+#     function=lambda P_bottom, rho_l: (
+#         lambda z: P_bottom - rho_l * const_g * z
+#     ),  # source term for tritium generation calculated from TBR and neutron generation rate
+#     corr_type=CorrelationType.TRITIUM_SOURCE,
+#     input_units=["triton/neutron", "neutron/s"],
+#     output_units="molT/s",
+# )
+# all_correlations.append(source_T_integral)
+
 
 def get_d_b(
     flow_g_vol: pint.Quantity, nozzle_diameter: pint.Quantity, nb_nozzle: pint.Quantity

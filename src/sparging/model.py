@@ -26,13 +26,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-hours_to_seconds = 3600
-days_to_seconds = 24 * hours_to_seconds
-T2_to_T = 2
-T_to_T2 = 1 / T2_to_T
-
 EPS = 1e-26
-SEPARATOR_KEYWORD = "from"
 
 # log.set_log_level(log.LogLevel.INFO)
 
@@ -275,7 +269,9 @@ class Simulation:
     profile_pressure_hydrostatic: bool = True
     dispersion_on: bool = True
 
-    def hydrostatic_pressure(self, z: pint.Quantity) -> pint.Quantity:
+    def hydrostatic_pressure(
+        self, z: pint.Quantity
+    ) -> pint.Quantity:  # TODO should be in correlations
         """returns the hydrostatic pressure at a given height z in the tank given P_bottom"""
         rho = self.sim_input.rho_l
         g = const_g
@@ -547,7 +543,6 @@ class Simulation:
             inventory_T2_salt *= tank_area  # get total amount of T2 in [mol]
             inventories_T2_salt.append(inventory_T2_salt)
 
-        # TODO Initialize results storage with zeros -> there's an inconsistency: times[0] = 0 but inventories[0] != 0 -> screws comparison with analytical solutions
         t = 0
         times = []
         c_T2_solutions = []
@@ -556,6 +551,7 @@ class Simulation:
         sources_T2 = []
         fluxes_T2 = []
         inventories_T2_salt = []
+        # initialize (t=0)
         post_process(t)
 
         # SOLVE
