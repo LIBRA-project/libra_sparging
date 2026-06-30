@@ -48,7 +48,6 @@ my_input.signal_sparging = lambda t: 1
 my_simulation = Simulation(
     my_input,
     t_final=t_final,
-    profile_pressure_hydrostatic=True,
 )
 
 if __name__ == "__main__":
