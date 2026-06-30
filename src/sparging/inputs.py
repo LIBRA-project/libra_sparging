@@ -51,8 +51,6 @@ class OperatingParameters:
     temperature: pint.Quantity
     flow_g_mol: pint.Quantity
     P_top: pint.Quantity
-    # irradiation_signal: pint.Quantity # TODO implement
-    # t_sparging: pint.Quantity # TODO implement
     flow_g_vol: pint.Quantity | None = None
     P_bottom: pint.Quantity | Correlation | None = None
     tbr: pint.Quantity | None = None
@@ -183,6 +181,13 @@ class SimulationInput:
             * self.height
             / self.E_g
         ).to("dimensionless")
+
+    def test_eps_g(
+        self,
+    ):  # to see if the two definitions of superficial velocity are consistent -> TODO remove
+        print(
+            f"{self.eps_g * self.u_g0} vs {self.graph.nodes['flow_g_vol']['value'] / self.area}"
+        )
 
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error

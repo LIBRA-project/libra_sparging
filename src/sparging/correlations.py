@@ -382,7 +382,7 @@ P_bottom = Correlation(
         P_top + rho_l * const_g * height
     ),  # convert pressure to Pascals
     corr_type=CorrelationType.PRESSURE,
-    description="pressure at the bottom of the system, converted to Pascals",
+    description="pressure at the bottom of the system",
     input_units=["Pa", "kg/m**3", "m"],
     output_units="Pa",
 )
