@@ -32,7 +32,6 @@ my_input.signal_irr = lambda t: 1 if t <= 8 * ureg.hours else 0
 my_simulation = Simulation(
     my_input,
     t_final=4 * ureg.days,
-    profile_pressure_hydrostatic=True,
 )
 
 if __name__ == "__main__":
