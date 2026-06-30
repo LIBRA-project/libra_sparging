@@ -269,14 +269,6 @@ class Simulation:
     profile_pressure_hydrostatic: bool = True
     dispersion_on: bool = True
 
-    def hydrostatic_pressure(
-        self, z: pint.Quantity
-    ) -> pint.Quantity:  # TODO should be in correlations
-        """returns the hydrostatic pressure at a given height z in the tank given P_bottom"""
-        rho = self.sim_input.rho_l
-        g = const_g
-        return (self.sim_input.P_bottom - rho * g * z).to("Pa")
-
     def normalize_profile(
         self, profile: Callable[[float], float] | None, length: float, mesh, func_space
     ):
@@ -379,7 +371,7 @@ class Simulation:
         P_prof = dolfinx.fem.Function(V_profile)
         if self.profile_pressure_hydrostatic:
             P_prof.interpolate(
-                lambda x: self.hydrostatic_pressure(x[0] * ureg.m).magnitude
+                lambda x: self.sim_input.P_l(x[0] * ureg.m).to("Pa").magnitude
             )
         else:
             P_prof.interpolate(lambda x: x[0] * 0 + P_0)
@@ -430,11 +422,11 @@ class Simulation:
         gas_outlet_facets = dolfinx.mesh.locate_entities_boundary(
             mesh, fdim, lambda x: np.isclose(x[0], tank_height)
         )
-        bc1 = dolfinx.fem.dirichletbc(
-            dolfinx.fem.Constant(mesh, 0.0),
-            dolfinx.fem.locate_dofs_topological(V.sub(1), fdim, gas_inlet_facets),
-            V.sub(1),
-        )  # Dirichlet BC y_T2 = 0 at gas inlet
+        # bc1 = dolfinx.fem.dirichletbc(
+        #     dolfinx.fem.Constant(mesh, 0.0),
+        #     dolfinx.fem.locate_dofs_topological(V.sub(1), fdim, gas_inlet_facets),
+        #     V.sub(1),
+        # )  # Dirichlet BC y_T2 = 0 at gas inlet
 
         # Custom measure
         all_facets = np.concatenate((gas_inlet_facets, gas_outlet_facets))
@@ -512,8 +504,6 @@ class Simulation:
                 Q_T2 * self.sim_input.signal_irr(t * ureg.s)
             )  # total T generation rate in the tank [mol/s] TODO useless: signal_irr is already given
 
-            n = ufl.FacetNormal(mesh)
-
             flux_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
                     eps_g * vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
@@ -523,18 +513,6 @@ class Simulation:
                 dolfinx.fem.form(tank_area * aJ_T2_func * ufl.dx)
             )  # other expression: integral of J over volume
 
-            flux_T2_inlet = dolfinx.fem.assemble_scalar(
-                dolfinx.fem.form(
-                    -eps_g * E_g * ufl.inner(ufl.grad(P * y_T2_post), n) * ds(1)
-                )
-            )  # total T dispersive flux at the inlet [Pa T2 /s/m2]
-            flux_T2_inlet *= 1 / (const.R * T)  # mol T2/s/m2
-            flux_T2_inlet *= tank_area  # convert to molT2/s
-
-            flux_T2_3 = flux_T2_inlet + flux_T2
-
-            # fluxes_T2.append(flux_T2 + flux_T2_inlet)
-            # fluxes_T2.append(flux_T2)
             fluxes_T2.append(flux_T2)
 
             inventory_T2_salt = dolfinx.fem.assemble_scalar(

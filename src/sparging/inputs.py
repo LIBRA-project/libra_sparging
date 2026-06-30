@@ -100,6 +100,7 @@ class SimulationInput:
     c_T2_0: pint.Quantity = 0 * ureg("molT2/m**3")
     profile_c_T2_0: Callable[[float], pint.Quantity] | None = None
     """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
+    P_l: Callable[[pint.Quantity], pint.Quantity] | None = None
     required_keys = (
         "height",
         "area",
@@ -114,7 +115,8 @@ class SimulationInput:
         "E_g",
         "E_l",
         "Q_T",
-    )  # these parameters will be used to solve the model
+    )
+    required_profiles = ("P_l",)  # these parameters will be used to solve the model
     graph: nx.Graph | None = None
     """ Stores the intermediate parameters and their relationships that built the SimulationInput. 
     It has attributes "nodes" and "edges".
@@ -234,12 +236,15 @@ class SimulationInput:
         ]
         discovered_graph = nx.Graph() if graph is None else graph
 
-        for required_key in cls.required_keys:
+        for required_key in (*cls.required_keys, *cls.required_profiles):
             find_in_graph(required_key, discovered_graph, input_objs=input_objects)
 
         return cls(
             graph=discovered_graph,
-            **{arg: discovered_graph.nodes[arg]["value"] for arg in cls.required_keys},
+            **{
+                arg: discovered_graph.nodes[arg]["value"]
+                for arg in (*cls.required_keys, *cls.required_profiles)
+            },
         )
 
     def __str__(self):
@@ -303,8 +308,8 @@ def find_in_graph(
         )  # also update discovered_graph with the nodes possibly discovered during recursive search
         discovered_graph.nodes[required_node]["value"] = result
 
-    assert isinstance(result, pint.Quantity), (
-        f"Result for required node '{required_node}' is not a pint.Quantity after resolution, got {result} of type {type(result)}"
+    assert isinstance(result, pint.Quantity) or callable(result), (
+        f"Result for required node '{required_node}' is not a pint.Quantity or callable after resolution, got {result} of type {type(result)}"
     )
 
 
@@ -344,7 +349,7 @@ def resolve_correlation(
     input_objs: List[
         SpargingParameters | OperatingParameters | BreederMaterial | ColumnGeometry
     ],
-) -> pint.Quantity:
+) -> pint.Quantity | callable:
     """Recursively resolve a correlation by first resolving its arguments, then applying the correlation function to the resolved arguments.
     - corr: Correlation object to resolve
     - discovered_graph: graph containing already resolved quantities, to avoid redundant calculations and infinite recursion

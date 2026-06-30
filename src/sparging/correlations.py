@@ -33,6 +33,7 @@ class CorrelationType(enum.Enum):  # TODO do we really use it ?
     FLOW_RATE = "flow_g_mol"
     INTERFACIAL_AREA = "a"
     TRITIUM_SOURCE = "source_T"
+    LIQUID_PRESSURE_PROFILE = "P_l"
 
 
 @dataclass
@@ -45,18 +46,23 @@ class Correlation:
     description: str | None = None
     output_units: str | None = None
 
-    def __call__(self, **kwargs: pint.Quantity) -> pint.Quantity:
-        # check the dimensions are correct
+    def _validate_inputs(self, kwargs: dict[str, pint.Quantity]) -> None:
+        """
+        check the dimensions are correct
+        """
         for arg_name, expected_dimension in zip(kwargs, self.input_units):
             arg = kwargs[arg_name]
             if not isinstance(arg, ureg.Quantity):
                 raise ValueError(
                     f"Invalid input: expected a pint.Quantity with units of {expected_dimension}, got {arg} of type {type(arg)}"
                 )
-            if not arg.dimensionality == ureg(expected_dimension).dimensionality:
+            if arg.dimensionality != ureg(expected_dimension).dimensionality:
                 raise ValueError(
                     f"Invalid input when resolving for {self.identifier}: expected dimensions of {expected_dimension}, got {arg.dimensionality}"
                 )
+
+    def __call__(self, **kwargs: pint.Quantity) -> pint.Quantity:
+        self._validate_inputs(kwargs)
         result = self.function(**kwargs)
         if self.output_units is not None:
             return result.to(self.output_units)
@@ -65,6 +71,29 @@ class Correlation:
 
     # TODO add a method that checks the validity of the input parameters based on the range of validity of the correlation, if provided in the description or source. This method could be called before running the simulation to warn the user if they are using a correlation outside of its validated range.
     # TODO add __post_init__ to check that user defined correlation has same number of input_units as the number of arguments in the function, and that the output of the function is a pint.Quantity with the correct units if output_units is provided
+
+
+@dataclass
+class Profile(Correlation):
+    """A closure relation that resolves to a *spatial profile*: a callable
+    f(z) -> pint.Quantity, instead of a scalar pint.Quantity.
+
+    `function(**inputs)` must return a callable mapping a position (length
+    Quantity) to a Quantity expressed in `output_units`.
+    """
+
+    def __call__(self, **kwargs: pint.Quantity):
+        self._validate_inputs(kwargs)
+        profile_func = self.function(**kwargs)
+        if not callable(profile_func):
+            raise ValueError(
+                f"Profile '{self.identifier}' must return a callable, "
+                f"got {type(profile_func)}"
+            )
+        if self.output_units is None:
+            return profile_func
+        # wrap so the profile always yields output_units
+        return lambda z, _f=profile_func: _f(z).to(self.output_units)
 
 
 class CorrelationGroup(list[Correlation]):
@@ -347,7 +376,7 @@ E_g = Correlation(
     ),  # gas phase axial dispersion coefficient
     corr_type=CorrelationType.GAS_PHASE_DISPERSION,
     source="Malara 1995",
-    description="gas phase axial dispersion coefficient [m2/s], Malara 1995 correlation models dispersion of the gas velocity distribution around the mean bubble velocity",
+    description="gas phase axial dispersion coefficient [m2/s], Malara 1995",
     input_units=["m", "m/s"],
     output_units="m**2/s",
 )
@@ -423,17 +452,6 @@ source_T_integral = Correlation(
     output_units="molT/s",
 )
 all_correlations.append(source_T_integral)
-
-# P_hydrostatic = Profile(
-#     identifier="P_l",
-#     function=lambda P_bottom, rho_l: (
-#         lambda z: P_bottom - rho_l * const_g * z
-#     ),  # source term for tritium generation calculated from TBR and neutron generation rate
-#     corr_type=CorrelationType.TRITIUM_SOURCE,
-#     input_units=["triton/neutron", "neutron/s"],
-#     output_units="molT/s",
-# )
-# all_correlations.append(source_T_integral)
 
 
 def get_d_b(
@@ -519,3 +537,14 @@ def get_h_briggs(Re: float, Sc: float, D_l: float, d_b: float) -> float:
     Sh = 0.089 * Re**0.69 * Sc**0.33  # Sherwood number
     h_l = Sh * D_l / d_b
     return h_l
+
+
+P_l_hydrostatic = Profile(
+    identifier="P_l",
+    function=lambda P_bottom, rho_l: lambda z: P_bottom - rho_l * const_g * z,
+    corr_type=CorrelationType.LIQUID_PRESSURE_PROFILE,
+    input_units=["Pa", "kg/m^3"],
+    output_units="Pa",
+    description="hydrostatic pressure profile along tank height",
+)
+all_correlations.append(P_l_hydrostatic)
