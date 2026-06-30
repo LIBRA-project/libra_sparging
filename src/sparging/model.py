@@ -266,8 +266,8 @@ class SimulationResults:
 class Simulation:
     sim_input: SimulationInput
     t_final: pint.Quantity
-    profile_pressure_hydrostatic: bool = True
     dispersion_on: bool = True
+    constant_profiles: bool = False
 
     def normalize_profile(
         self, profile: Callable[[float], float] | None, length: float, mesh, func_space
@@ -302,12 +302,12 @@ class Simulation:
         tank_height = self.sim_input.height.to("m").magnitude
         tank_area = self.sim_input.area.to("m**2").magnitude
         tank_volume = self.sim_input.volume.to("m**3").magnitude
-        a = self.sim_input.a.to("1/m").magnitude
+        # a = self.sim_input.a.to("1/m").magnitude
         h_l = self.sim_input.h_l.to("m/s").magnitude
         K_s = self.sim_input.K_s.to("mol/m**3/Pa").magnitude  # convert to molT2 ?
-        P_0 = self.sim_input.P_bottom.to("Pa").magnitude
+        # P_0 = self.sim_input.P_bottom.to("Pa").magnitude
         T = self.sim_input.temperature.to("K").magnitude
-        eps_g = self.sim_input.eps_g.to("dimensionless").magnitude
+        # eps_g = self.sim_input.eps_g.to("dimensionless").magnitude
         E_g = self.sim_input.E_g.to("m**2/s").magnitude
         E_l = self.sim_input.E_l.to("m**2/s").magnitude
         u_g0 = self.sim_input.u_g0.to("m/s").magnitude
@@ -323,7 +323,7 @@ class Simulation:
             if dx is not None
             else (tank_height / 1000 if not fast_solve else tank_height / 50)
         )
-        eps_l = 1 - eps_g
+        # eps_l = 1 - eps_g
 
         # MESH AND FUNCTION SPACES
         mesh = dolfinx.mesh.create_interval(
@@ -368,26 +368,51 @@ class Simulation:
             self.sim_input.profile_source_T, tank_height, mesh, V_profile
         )
 
-        P_prof = dolfinx.fem.Function(V_profile)
-        if self.profile_pressure_hydrostatic:
-            P_prof.interpolate(
-                lambda x: self.sim_input.P_l(x[0] * ureg.m).to("Pa").magnitude
+        # define spatially varying profiles
+        if not self.constant_profiles:
+            eps_g = dolfinx.fem.Function(V_profile)
+            eps_l = dolfinx.fem.Function(V_profile)
+            a = dolfinx.fem.Function(V_profile)
+            P_g = dolfinx.fem.Function(V_profile)
+
+            eps_g.interpolate(
+                lambda x: (
+                    self.sim_input.eps_g(x[0] * ureg.m).to("dimensionless").magnitude
+                )
+            )
+            eps_l.interpolate(
+                lambda x: (
+                    1.0
+                    - self.sim_input.eps_g(x[0] * ureg.m).to("dimensionless").magnitude
+                )
+            )
+            a.interpolate(
+                lambda x: self.sim_input.a_l(x[0] * ureg.m).to("1/m").magnitude
+            )
+            P_g.interpolate(
+                lambda x: self.sim_input.P_g(x[0] * ureg.m).to("Pa").magnitude
             )
         else:
-            P_prof.interpolate(lambda x: x[0] * 0 + P_0)
+            # use values at z=0 for constant profiles
+            eps_g_0 = self.sim_input.eps_g(0 * ureg.m).to("dimensionless").magnitude
+            a_0 = self.sim_input.a_l(0 * ureg.m).to("1/m").magnitude
+            P_g_0 = self.sim_input.P_g(0 * ureg.m).to("Pa").magnitude
 
-        P = P_prof
+            eps_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(eps_g_0))
+            eps_l = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1 - eps_g_0))
+            a = dolfinx.fem.Constant(mesh, PETSc.ScalarType(a_0))
+            P_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(P_g_0))
 
         # VARIATIONAL FORMULATION
 
         # mass transfer rate
-        aJ_T2 = a * h_l_const * (c_T2 - K_s * (P * y_T2 + EPS))
+        aJ_T2 = a * h_l_const * (c_T2 - K_s * (P_g * y_T2 + EPS))
 
         F = 0  # variational formulation
 
         # transient terms: implicit (backward) euler scheme: [u_n+1 - u_n)] / dt = f(u_n+1) -> new state appears in both derivative and function it is equal to
         F += eps_l * ((c_T2 - c_T2_n) / dt) * v_c * ufl.dx
-        F += eps_g * 1 / (const.R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
+        F += eps_g * 1 / (const.R * T) * (P_g * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
         # dispersive terms
         if self.dispersion_on is True:
@@ -397,7 +422,7 @@ class Simulation:
                 * E_g
                 * 1
                 / (const.R * T)
-                * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y))
+                * ufl.dot(ufl.grad(P_g * y_T2), ufl.grad(v_y))
                 * ufl.dx
             )
 
@@ -411,7 +436,7 @@ class Simulation:
         F += (
             1
             / (const.R * T)
-            * ufl.inner(ufl.dot(ufl.grad(eps_g * P * y_T2), vel), v_y)
+            * ufl.inner(ufl.dot(ufl.grad(eps_g * P_g * y_T2), vel), v_y)
             * ufl.dx
         )
 
@@ -443,7 +468,7 @@ class Simulation:
             / (const.R * T)
             * eps_g
             * u_g0
-            * ufl.inner((P * y_T2 - P_T2_inlet), v_y)
+            * ufl.inner((P_g * y_T2 - P_T2_inlet), v_y)
             * ds(1)
         )
 
@@ -506,7 +531,7 @@ class Simulation:
 
             flux_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
-                    eps_g * vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
+                    eps_g * vel_x * P_g / (const.R * T) * y_T2_post * tank_area * ds(2)
                 )
             )
             flux_T2_2 = dolfinx.fem.assemble_scalar(

@@ -12,6 +12,8 @@ import warnings
 from dataclasses import dataclass
 import enum
 
+PROFILE = "profile"
+
 
 class CorrelationType(enum.Enum):  # TODO do we really use it ?
     MASS_TRANSFER_COEFF = "h_l"
@@ -34,6 +36,7 @@ class CorrelationType(enum.Enum):  # TODO do we really use it ?
     INTERFACIAL_AREA = "a"
     TRITIUM_SOURCE = "source_T"
     LIQUID_PRESSURE_PROFILE = "P_l"
+    GAS_PRESSURE_PROFILE = "P_g"
 
 
 @dataclass
@@ -47,18 +50,24 @@ class Correlation:
     output_units: str | None = None
 
     def _validate_inputs(self, kwargs: dict[str, pint.Quantity]) -> None:
-        """
-        check the dimensions are correct
-        """
-        for arg_name, expected_dimension in zip(kwargs, self.input_units):
+        for arg_name, expected in zip(kwargs, self.input_units):
             arg = kwargs[arg_name]
+            if expected == PROFILE:
+                if not callable(arg):
+                    raise ValueError(
+                        f"{self.identifier}: argument '{arg_name}' expected to be a "
+                        f"profile (callable f(z) -> Quantity), got {type(arg)}"
+                    )
+                continue
             if not isinstance(arg, ureg.Quantity):
                 raise ValueError(
-                    f"Invalid input: expected a pint.Quantity with units of {expected_dimension}, got {arg} of type {type(arg)}"
+                    f"Invalid input: expected a pint.Quantity with units of "
+                    f"{expected}, got {arg} of type {type(arg)}"
                 )
-            if arg.dimensionality != ureg(expected_dimension).dimensionality:
+            if arg.dimensionality != ureg(expected).dimensionality:
                 raise ValueError(
-                    f"Invalid input when resolving for {self.identifier}: expected dimensions of {expected_dimension}, got {arg.dimensionality}"
+                    f"Invalid input when resolving for {self.identifier}: expected "
+                    f"dimensions of {expected}, got {arg.dimensionality}"
                 )
 
     def __call__(self, **kwargs: pint.Quantity) -> pint.Quantity:
@@ -290,32 +299,26 @@ u_g0 = Correlation(
 )
 all_correlations.append(u_g0)
 
-eps_g = Correlation(
-    identifier="eps_g",
-    function=lambda temperature, P_bottom, sigma_l, d_b, flow_g_mol, tank_diameter, u_g0: (
-        get_eps_g(
-            T=temperature,
-            P_0=P_bottom,
-            sigma_l=sigma_l,
-            d_b=d_b,
-            flow_g=flow_g_mol,
-            tank_diameter=tank_diameter,
-            u_g0=u_g0,
-        )
-    ),  # gas void fraction
-    corr_type=CorrelationType.GAS_VOID_FRACTION,
-    input_units=[
-        "kelvin",
-        "Pa",
-        "N/m",
-        "m",
-        "mol/s",
-        "m",
-        "m/s",
-    ],
-    output_units="dimensionless",
-)
-all_correlations.append(eps_g)
+# eps_g_0 = Correlation(
+#     identifier="eps_g_0",
+#     function=lambda temperature, P_bottom, flow_g_mol, area, u_g0: get_eps_g(
+#         T=temperature,
+#         P_g=P_bottom,
+#         n_g_dot=flow_g_mol,
+#         area=area,
+#         v_g=u_g0,
+#     ),  # gas void fraction
+#     corr_type=CorrelationType.GAS_VOID_FRACTION,
+#     input_units=[
+#         "kelvin",
+#         "Pa",
+#         "mol/s",
+#         "m**2",
+#         "m/s",
+#     ],
+#     output_units="dimensionless",
+# )
+# all_correlations.append(eps_g_0)
 
 h_l_higbie = Correlation(
     identifier="h_l_higbie",
@@ -430,14 +433,25 @@ flow_g_vol = Correlation(
 all_correlations.append(flow_g_vol)
 
 
+# specific_interfacial_area = Correlation(
+#     identifier="a",
+#     function=lambda d_b, eps_g: (
+#         6 * eps_g / d_b
+#     ),  # specific interfacial area for spherical bubbles
+#     corr_type=CorrelationType.INTERFACIAL_AREA,
+#     description="specific interfacial area calculated from bubble diameter and gas void fraction, assuming spherical bubbles",
+#     input_units=["m", "dimensionless"],
+#     output_units="1/m",
+# )
+# all_correlations.append(specific_interfacial_area)
 specific_interfacial_area = Correlation(
     identifier="a",
-    function=lambda d_b, eps_g: (
-        6 * eps_g / d_b
+    function=lambda a_l: a_l(
+        z=0 * ureg.m
     ),  # specific interfacial area for spherical bubbles
     corr_type=CorrelationType.INTERFACIAL_AREA,
     description="specific interfacial area calculated from bubble diameter and gas void fraction, assuming spherical bubbles",
-    input_units=["m", "dimensionless"],
+    input_units=[PROFILE],
     output_units="1/m",
 )
 all_correlations.append(specific_interfacial_area)
@@ -498,17 +512,16 @@ def get_u_g0(Eo, Mo, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
     return u_g0
 
 
-def get_eps_g(T, P_0, sigma_l, d_b, flow_g, tank_diameter, u_g0) -> float:
-    eps_g = (
-        const_R
-        * T
-        / (P_0 + 4 * sigma_l / d_b)
-        * flow_g
-        / (np.pi * (tank_diameter / 2) ** 2 * u_g0)
-    )
-    if eps_g > 1 * ureg("dimensionless") or eps_g < 0 * ureg("dimensionless"):
+def get_eps_g(T, P_g, n_g_dot, area, v_g) -> float:
+    gamma = n_g_dot * const_R * T / (P_g * area * v_g)
+
+    eps_g = gamma / (1 + gamma)
+
+    if np.max(eps_g) > 1 * ureg("dimensionless") or np.min(eps_g) < 0 * ureg(
+        "dimensionless"
+    ):
         warnings.warn(f"Warning: unphysical gas fraction: {eps_g}")
-    elif eps_g > 0.1 * ureg("dimensionless"):
+    elif np.max(eps_g) > 0.1 * ureg("dimensionless"):
         warnings.warn(
             f"Warning: high gas fraction: {eps_g}, models assumptions may not hold"
         )
@@ -548,3 +561,53 @@ P_l_hydrostatic = Profile(
     description="hydrostatic pressure profile along tank height",
 )
 all_correlations.append(P_l_hydrostatic)
+
+
+P_g = Profile(
+    identifier="P_g",
+    function=lambda P_l, d_b_l, sigma_l: lambda z: P_l(z) + 4 * sigma_l / d_b_l(z),
+    corr_type=CorrelationType.GAS_PRESSURE_PROFILE,
+    input_units=[PROFILE, PROFILE, "N/m"],
+    output_units="Pa",
+    description="pressure in a mechanically stable bubble immerged in a liquid",
+)
+all_correlations.append(P_g)
+
+
+d_b_profile = Profile(
+    identifier="d_b_l",
+    function=lambda d_b, P_l, P_bottom: lambda z: d_b * (P_bottom / P_l(z)) ** (1 / 3),
+    corr_type=CorrelationType.BUBBLE_DIAMETER,
+    input_units=["m", PROFILE, "Pa"],
+    output_units="m",
+    description="bubble diameter profile from hydrostatic expansion (P d_b^3 = const)",
+)
+all_correlations.append(d_b_profile)
+
+eps_g_profile = Profile(
+    identifier="eps_g",
+    function=lambda temperature, P_g, flow_g_mol, area, u_g0: (
+        lambda z: get_eps_g(
+            T=temperature,
+            P_g=P_g(z),
+            n_g_dot=flow_g_mol,
+            area=area,
+            v_g=u_g0,
+        )
+    ),
+    corr_type=CorrelationType.GAS_VOID_FRACTION,
+    input_units=["kelvin", PROFILE, "mol/s", "m^2", "m/s"],
+    output_units="dimensionless",
+    description="gas void fraction profile (local P and d_b)",
+)
+all_correlations.append(eps_g_profile)
+
+a_profile = Profile(
+    identifier="a_l",
+    function=lambda eps_g, d_b_l: lambda z: 6 * eps_g(z) / d_b_l(z),
+    corr_type=CorrelationType.INTERFACIAL_AREA,
+    input_units=[PROFILE, PROFILE],
+    output_units="1/m",
+    description="specific interfacial area profile",
+)
+all_correlations.append(a_profile)

@@ -87,7 +87,7 @@ class SimulationInput:
     K_s: pint.Quantity
     P_bottom: pint.Quantity
     rho_l: pint.Quantity
-    eps_g: pint.Quantity
+    # eps_g_0: pint.Quantity
     E_g: pint.Quantity
     E_l: pint.Quantity
     Q_T: pint.Quantity
@@ -100,7 +100,6 @@ class SimulationInput:
     c_T2_0: pint.Quantity = 0 * ureg("molT2/m**3")
     profile_c_T2_0: Callable[[float], pint.Quantity] | None = None
     """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
-    P_l: Callable[[pint.Quantity], pint.Quantity] | None = None
     required_keys = (
         "height",
         "area",
@@ -111,12 +110,18 @@ class SimulationInput:
         "K_s",
         "P_bottom",
         "rho_l",
-        "eps_g",
+        # "eps_g_0",
         "E_g",
         "E_l",
         "Q_T",
     )
-    required_profiles = ("P_l",)  # these parameters will be used to solve the model
+    required_profiles = (
+        "P_l",
+        "P_g",
+        "d_b_l",
+        "eps_g",
+        "a_l",
+    )  # these parameters will be used to solve the model
     graph: nx.Graph | None = None
     """ Stores the intermediate parameters and their relationships that built the SimulationInput. 
     It has attributes "nodes" and "edges".
@@ -125,14 +130,24 @@ class SimulationInput:
         - origin: "input" | correlation identifier
     e.g use: mySimulationInput.graph.nodes["height"]["value"]
     """
+    # pressure dependant profiles
+    P_l: Callable[[pint.Quantity], pint.Quantity] | None = None
+    P_g: Callable[[pint.Quantity], pint.Quantity] | None = None
+    d_b_l: Callable[[pint.Quantity], pint.Quantity] | None = None
+    eps_g: Callable[[pint.Quantity], pint.Quantity] | None = None
+    a_l: Callable[[pint.Quantity], pint.Quantity] | None = None
 
     @property
     def volume(self):
         return self.area * self.height
 
     @property
+    def eps_g_0(self):
+        return self.eps_g(0 * ureg.m)
+
+    @property
     def eps_l(self):
-        return 1 - self.eps_g
+        return 1 - self.eps_g_0
 
     def set_S_T(self, val: pint.Quantity):
         self.Q_T = (val.to("molT/m**3/s") * self.volume).to("molT/s")
@@ -158,7 +173,7 @@ class SimulationInput:
             * self.height
             * self.h_l
             * self.a
-            / (self.eps_g * self.u_g0)
+            / (self.eps_g_0 * self.u_g0)
         ).to("dimensionless")
 
     def get_dP_dx(self) -> pint.Quantity:
@@ -188,7 +203,7 @@ class SimulationInput:
         self,
     ):  # to see if the two definitions of superficial velocity are consistent -> TODO remove
         print(
-            f"{self.eps_g * self.u_g0} vs {self.graph.nodes['flow_g_vol']['value'] / self.area}"
+            f"{self.eps_g_0 * self.u_g0} vs {self.graph.nodes['flow_g_vol']['value'] / self.area}"
         )
 
     def __post_init__(self):
