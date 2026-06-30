@@ -275,11 +275,11 @@ class Simulation:
     profile_pressure_hydrostatic: bool = True
     dispersion_on: bool = True
 
-    def hydrostatic_pressure(self, x: pint.Quantity) -> pint.Quantity:
-        """returns the hydrostatic pressure at a given height x in the tank given P_bottom"""
+    def hydrostatic_pressure(self, z: pint.Quantity) -> pint.Quantity:
+        """returns the hydrostatic pressure at a given height z in the tank given P_bottom"""
         rho = self.sim_input.rho_l
         g = const_g
-        return (self.sim_input.P_bottom + rho * g * x).to("Pa")
+        return (self.sim_input.P_bottom - rho * g * z).to("Pa")
 
     def normalize_profile(
         self, profile: Callable[[float], float] | None, length: float, mesh, func_space
@@ -438,7 +438,7 @@ class Simulation:
             dolfinx.fem.Constant(mesh, 0.0),
             dolfinx.fem.locate_dofs_topological(V.sub(1), fdim, gas_inlet_facets),
             V.sub(1),
-        )  # y_T2 = 0 at gas inlet
+        )  # Dirichlet BC y_T2 = 0 at gas inlet
 
         # Custom measure
         all_facets = np.concatenate((gas_inlet_facets, gas_outlet_facets))
@@ -448,11 +448,22 @@ class Simulation:
         facet_markers = dolfinx.mesh.meshtags(mesh, fdim, all_facets, all_tags)
         ds = ufl.Measure("ds", domain=mesh, subdomain_data=facet_markers)
 
+        # Danckwert BC at gas inlet
+        P_T2_inlet = 0
+        F += (
+            1
+            / (const.R * T)
+            * eps_g
+            * u_g0
+            * ufl.inner((P * y_T2 - P_T2_inlet), v_y)
+            * ds(1)
+        )
+
         # set up problem
         problem = NonlinearProblem(
             F,
             u,
-            bcs=[bc1],  # Neumann BCs on c_T2 at inlet and outlet are naturally enforced
+            # bcs=[bc1],  # Neumann BCs on c_T2 at inlet and outlet are naturally enforced
             petsc_options_prefix="librasparge",
             # petsc_options={"snes_monitor": None},
         )
