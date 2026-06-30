@@ -21,7 +21,6 @@ def get_standard_input():
         eps_g=0.001 * ureg.dimensionless,
         E_g=1e-2 * ureg("m^2/s"),
         E_l=1e-1 * ureg("m^2/s"),
-        D_l=3e-9 * ureg("m^2/s"),
         Q_T=1e8 * ureg("T/s"),
     )
     my_input.signal_irr = lambda t: 1 if t > 1 * ureg.hour and t < 3 * ureg.hour else 0

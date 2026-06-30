@@ -206,7 +206,7 @@ class SimulationInput:
                 {
                     key: str(value)
                     for key, value in self.__dict__.items()
-                    if value is not None and not callable(value)
+                    if isinstance(value, pint.Quantity)
                 },
                 f,
                 indent=2,
