@@ -36,8 +36,8 @@ standard_input.c_T2_0 = 3e-11 * ureg.molT2 / ureg.m**3
 my_simulation = Simulation(
     standard_input,
     t_final=6 * ureg.days,
-    profile_pressure_hydrostatic=True,
     dispersion_on=True,
+    constant_profiles=True,
 )
 
 if __name__ == "__main__":

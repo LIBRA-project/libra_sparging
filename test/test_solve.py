@@ -36,7 +36,7 @@ def standard_input():
 @pytest.fixture
 def standard_simulation():
     my_input = get_standard_input()  # can't use standard_input fixture
-    return Simulation(my_input, t_final=6 * ureg.hours)
+    return Simulation(my_input, t_final=6 * ureg.hours, constant_profiles=True)
 
 
 def test_model_solve_successfull(tmp_path, standard_simulation):
@@ -108,7 +108,7 @@ def test_source_T_normalization(case, standard_input):
             my_input.profile_source_T = lambda xi: 3 + 3 * xi  # not normalized
 
     t_final = 50 * ureg.seconds
-    my_simulation = Simulation(my_input, t_final=t_final)
+    my_simulation = Simulation(my_input, t_final=t_final, constant_profiles=True)
 
     # RUN
     output = my_simulation.solve(fast_solve=True)
