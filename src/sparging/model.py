@@ -436,7 +436,7 @@ class Simulation:
         F += (
             1
             / (const.R * T)
-            * ufl.inner(ufl.dot(ufl.grad(eps_g * P_g * y_T2), vel), v_y)
+            * ufl.inner(ufl.dot(ufl.grad(P_g * y_T2), vel), v_y)
             * ufl.dx
         )
 
@@ -466,11 +466,12 @@ class Simulation:
         F += (
             1
             / (const.R * T)
-            * eps_g
-            * u_g0
+            * vel_x
             * ufl.inner((P_g * y_T2 - P_T2_inlet), v_y)
             * ds(1)
         )
+
+        # n = ufl.FacetNormal(mesh)
 
         # set up problem
         problem = NonlinearProblem(

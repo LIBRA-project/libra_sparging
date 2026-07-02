@@ -203,7 +203,7 @@ class SimulationInput:
         self,
     ):  # to see if the two definitions of superficial velocity are consistent -> TODO remove
         print(
-            f"{self.eps_g_0 * self.u_g0} vs {self.graph.nodes['flow_g_vol']['value'] / self.area}"
+            f"{self.eps_g_0 * self.graph.nodes['v_g0']['value']} vs {self.graph.nodes['flow_g_vol']['value'] / self.area} vs {self.graph.nodes['u_g0']['value']}"
         )
 
     def __post_init__(self):
