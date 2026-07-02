@@ -81,7 +81,7 @@ def get_sim_input_standard() -> SimulationInput:
     )
 
     sparging_params = SpargingParameters(
-        h_l=all_correlations("h_l_higbie"),
+        h_l=all_correlations("h_l_briggs"),
     )
 
     my_input = SimulationInput.from_parameters(
