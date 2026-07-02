@@ -37,7 +37,7 @@ my_simulation = Simulation(
     standard_input,
     t_final=6 * ureg.days,
     dispersion_on=True,
-    constant_profiles=True,
+    constant_profiles=False,
 )
 
 if __name__ == "__main__":

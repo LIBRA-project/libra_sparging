@@ -568,7 +568,7 @@ def get_h_briggs(Re: float, Sc: float, D_l: float, d_b: float) -> float:
     return h_l
 
 
-P_l_hydrostatic = Profile(
+P_l = Profile(
     identifier="P_l",
     function=lambda P_bottom, rho_l: lambda z: P_bottom - rho_l * const_g * z,
     corr_type=CorrelationType.LIQUID_PRESSURE_PROFILE,
@@ -576,7 +576,7 @@ P_l_hydrostatic = Profile(
     output_units="Pa",
     description="hydrostatic pressure profile along tank height",
 )
-all_correlations.append(P_l_hydrostatic)
+all_correlations.append(P_l)
 
 
 P_g = Profile(
