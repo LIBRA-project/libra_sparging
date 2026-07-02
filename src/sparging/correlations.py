@@ -32,7 +32,6 @@ class CorrelationType(enum.Enum):  # TODO do we really use it ?
     BUBBLE_VELOCITY = "v_g0"
     GAS_PHASE_DISPERSION = "E_g"
     LIQUID_PHASE_DISPERSION = "E_l"
-    PRESSURE = "P"
     FLOW_RATE = "flow_g_mol"
     INTERFACIAL_AREA = "a"
     TRITIUM_SOURCE = "source_T"
@@ -234,24 +233,25 @@ K_s = Correlation(
 )
 all_correlations.append(K_s)
 
-d_b = Correlation(
-    identifier="d_b",
-    function=lambda flow_g_vol, nozzle_diameter, nb_nozzle: get_d_b(
+d_b_0 = Correlation(
+    identifier="d_b_0",
+    function=lambda flow_g_vol, nozzle_diameter, nb_nozzle: get_d_b_0(
         flow_g_vol=flow_g_vol, nozzle_diameter=nozzle_diameter, nb_nozzle=nb_nozzle
     ),  # mean bubble diameter, Kanai 2017
     corr_type=CorrelationType.BUBBLE_DIAMETER,
     input_units=["m**3/s", "m", "dimensionless"],
     output_units="m",
 )
-all_correlations.append(d_b)
+all_correlations.append(d_b_0)
 
 Eo = Correlation(
     identifier="Eo",
-    function=lambda drho, d_b, sigma_l: (const_g * drho * d_b**2 / sigma_l).to(
+    function=lambda drho, d_b_0, sigma_l: (const_g * drho * d_b_0**2 / sigma_l).to(
         "dimensionless"
     ),  # Eotvos number
     corr_type=CorrelationType.EOTVOS_NUMBER,
     input_units=["kg/m**3", "m", "N/m"],
+    output_units="dimensionless",
 )
 all_correlations.append(Eo)
 
@@ -262,6 +262,7 @@ Mo = Correlation(
     ).to("dimensionless"),  # Morton number
     corr_type=CorrelationType.MORTON_NUMBER,
     input_units=["kg/m**3", "Pa*s", "kg/m**3", "N/m"],
+    output_units="dimensionless",
 )
 all_correlations.append(Mo)
 
@@ -270,24 +271,26 @@ Sc = Correlation(
     function=lambda nu_l, D_l: (nu_l / D_l).to("dimensionless"),  # Schmidt number
     corr_type=CorrelationType.SCHMIDT_NUMBER,
     input_units=["m**2/s", "m**2/s"],
+    output_units="dimensionless",
 )
 all_correlations.append(Sc)
 
 # Bubble Reynolds number
 Re = Correlation(
     identifier="Re",
-    function=lambda rho_l, v_g0, d_b, mu_l: (rho_l * v_g0 * d_b / mu_l).to(
+    function=lambda rho_l, v_g0, d_b_0, mu_l: (rho_l * v_g0 * d_b_0 / mu_l).to(
         "dimensionless"
     ),
     corr_type=CorrelationType.REYNOLDS_NUMBER,
     input_units=["kg/m**3", "m/s", "m", "Pa*s"],
+    output_units="dimensionless",
 )
 all_correlations.append(Re)
 
 v_g0 = Correlation(
     identifier="v_g0",
-    function=lambda Eo, Mo, mu_l, rho_l, d_b: get_v_g0(
-        Eo=Eo, Mo=Mo, mu_l=mu_l, rho_l=rho_l, d_b=d_b
+    function=lambda Eo, Mo, mu_l, rho_l, d_b_0: get_v_g0(
+        Eo=Eo, Mo=Mo, mu_l=mu_l, rho_l=rho_l, d_b=d_b_0
     ),  # initial gas velocity
     corr_type=CorrelationType.BUBBLE_VELOCITY,
     input_units=[
@@ -311,31 +314,11 @@ u_g0 = Correlation(
 )
 all_correlations.append(u_g0)
 
-# eps_g_0 = Correlation(
-#     identifier="eps_g_0",
-#     function=lambda temperature, P_bottom, flow_g_mol, area, u_g0: get_eps_g(
-#         T=temperature,
-#         P_g=P_bottom,
-#         n_g_dot=flow_g_mol,
-#         area=area,
-#         v_g=u_g0,
-#     ),  # gas void fraction
-#     corr_type=CorrelationType.GAS_VOID_FRACTION,
-#     input_units=[
-#         "kelvin",
-#         "Pa",
-#         "mol/s",
-#         "m**2",
-#         "m/s",
-#     ],
-#     output_units="dimensionless",
-# )
-# all_correlations.append(eps_g_0)
 
 h_l_higbie = Correlation(
     identifier="h_l_higbie",
-    function=lambda D_l, v_g0, d_b: get_h_higbie(
-        D_l=D_l, v_g=v_g0, d_b=d_b
+    function=lambda D_l, v_g0, d_b_0: get_h_higbie(
+        D_l=D_l, v_g=v_g0, d_b=d_b_0
     ),  # mass transfer coefficient with Higbie correlation
     corr_type=CorrelationType.MASS_TRANSFER_COEFF,
     source="Higbie 1935",
@@ -347,8 +330,8 @@ all_correlations.append(h_l_higbie)
 
 h_l_malara = Correlation(
     identifier="h_l_malara",
-    function=lambda D_l, d_b: get_h_malara(
-        D_l=D_l, d_b=d_b
+    function=lambda D_l, d_b_0: get_h_malara(
+        D_l=D_l, d_b=d_b_0
     ),  # mass transfer coefficient with Malara correlation
     corr_type=CorrelationType.MASS_TRANSFER_COEFF,
     source="Malara 1995",
@@ -360,8 +343,8 @@ all_correlations.append(h_l_malara)
 
 h_l_briggs = Correlation(
     identifier="h_l_briggs",
-    function=lambda Re, Sc, D_l, d_b: get_h_briggs(
-        Re=Re, Sc=Sc, D_l=D_l, d_b=d_b
+    function=lambda Re, Sc, D_l, d_b_0: get_h_briggs(
+        Re=Re, Sc=Sc, D_l=D_l, d_b=d_b_0
     ),  # mass transfer coefficient with Briggs correlation
     corr_type=CorrelationType.MASS_TRANSFER_COEFF,
     source="Briggs 1970",
@@ -413,62 +396,30 @@ all_correlations.append(drho)
 he_molar_mass = ureg("4.003e-3 kg/mol")
 rho_g = Correlation(
     identifier="rho_g",
-    function=lambda temperature, P_bottom: ureg.Quantity(
-        (P_bottom * he_molar_mass / (const_R * temperature.to("kelvin"))).to("kg/m**3")
+    function=lambda temperature, P_l: ureg.Quantity(
+        (P_l(0 * ureg.m) * he_molar_mass / (const_R * temperature.to("kelvin"))).to(
+            "kg/m**3"
+        )
     ),  # ideal gas law for density of gas phase
     corr_type=CorrelationType.DENSITY,
     description="density of gas phase calculated using ideal gas law",
-    input_units=["kelvin", "Pa"],
+    input_units=["kelvin", PROFILE],
 )
 all_correlations.append(rho_g)
 
-P_bottom = Correlation(
-    identifier="P_bottom",
-    function=lambda P_top, rho_l, height: (
-        P_top + rho_l * const_g * height
-    ),  # convert pressure to Pascals
-    corr_type=CorrelationType.PRESSURE,
-    description="pressure at the bottom of the system",
-    input_units=["Pa", "kg/m**3", "m"],
-    output_units="Pa",
-)
-all_correlations.append(P_bottom)
 
 flow_g_vol = Correlation(
     identifier="flow_g_vol",
-    function=lambda flow_g_mol, temperature, P_bottom: (
-        flow_g_mol * const_R * temperature / P_bottom
+    function=lambda flow_g_mol, temperature, P_l: (
+        flow_g_mol * const_R * temperature / P_l(0 * ureg.m)
     ),  # convert molar flow rate to volumetric flow rate using ideal gas law
     corr_type=CorrelationType.FLOW_RATE,
     description="volumetric flow rate of gas phase calculated from molar flow rate using ideal gas law",
-    input_units=["mol/s", "kelvin", "Pa"],
+    input_units=["mol/s", "kelvin", PROFILE],
     output_units="m**3/s",
 )
 all_correlations.append(flow_g_vol)
 
-
-# specific_interfacial_area = Correlation(
-#     identifier="a",
-#     function=lambda d_b, eps_g: (
-#         6 * eps_g / d_b
-#     ),  # specific interfacial area for spherical bubbles
-#     corr_type=CorrelationType.INTERFACIAL_AREA,
-#     description="specific interfacial area calculated from bubble diameter and gas void fraction, assuming spherical bubbles",
-#     input_units=["m", "dimensionless"],
-#     output_units="1/m",
-# )
-# all_correlations.append(specific_interfacial_area)
-specific_interfacial_area = Correlation(
-    identifier="a",
-    function=lambda a_l: a_l(
-        z=0 * ureg.m
-    ),  # specific interfacial area for spherical bubbles
-    corr_type=CorrelationType.INTERFACIAL_AREA,
-    description="specific interfacial area calculated from bubble diameter and gas void fraction, assuming spherical bubbles",
-    input_units=[PROFILE],
-    output_units="1/m",
-)
-all_correlations.append(specific_interfacial_area)
 
 source_T_integral = Correlation(
     identifier="Q_T",
@@ -482,7 +433,7 @@ source_T_integral = Correlation(
 all_correlations.append(source_T_integral)
 
 
-def get_d_b(
+def get_d_b_0(
     flow_g_vol: pint.Quantity, nozzle_diameter: pint.Quantity, nb_nozzle: pint.Quantity
 ) -> float:
     """
@@ -568,11 +519,14 @@ def get_h_briggs(Re: float, Sc: float, D_l: float, d_b: float) -> float:
     return h_l
 
 
+# hydrostatic pressure profile along tank height
 P_l = Profile(
     identifier="P_l",
-    function=lambda P_bottom, rho_l: lambda z: P_bottom - rho_l * const_g * z,
+    function=lambda P_top, rho_l, height: (
+        lambda z: P_top + rho_l * const_g * (height - z)
+    ),
     corr_type=CorrelationType.LIQUID_PRESSURE_PROFILE,
-    input_units=["Pa", "kg/m^3"],
+    input_units=["Pa", "kg/m^3", "m"],
     output_units="Pa",
     description="hydrostatic pressure profile along tank height",
 )
@@ -581,7 +535,7 @@ all_correlations.append(P_l)
 
 P_g = Profile(
     identifier="P_g",
-    function=lambda P_l, d_b_l, sigma_l: lambda z: P_l(z) + 4 * sigma_l / d_b_l(z),
+    function=lambda P_l, d_b, sigma_l: lambda z: P_l(z) + 4 * sigma_l / d_b(z),
     corr_type=CorrelationType.GAS_PRESSURE_PROFILE,
     input_units=[PROFILE, PROFILE, "N/m"],
     output_units="Pa",
@@ -590,17 +544,17 @@ P_g = Profile(
 all_correlations.append(P_g)
 
 
-d_b_profile = Profile(
-    identifier="d_b_l",
-    function=lambda d_b, P_l, P_bottom: lambda z: d_b * (P_bottom / P_l(z)) ** (1 / 3),
+d_b = Profile(
+    identifier="d_b",
+    function=lambda d_b_0, P_l: lambda z: d_b_0 * (P_l(0 * ureg.m) / P_l(z)) ** (1 / 3),
     corr_type=CorrelationType.BUBBLE_DIAMETER,
-    input_units=["m", PROFILE, "Pa"],
+    input_units=["m", PROFILE],
     output_units="m",
-    description="bubble diameter profile from hydrostatic expansion (P d_b^3 = const)",
+    description="bubble diameter profile from hydrostatic expansion",
 )
-all_correlations.append(d_b_profile)
+all_correlations.append(d_b)
 
-eps_g_profile = Profile(
+eps_g = Profile(
     identifier="eps_g",
     function=lambda temperature, P_g, flow_g_mol, area, v_g0: (
         lambda z: get_eps_g(
@@ -616,14 +570,14 @@ eps_g_profile = Profile(
     output_units="dimensionless",
     description="gas void fraction profile (local P and d_b)",
 )
-all_correlations.append(eps_g_profile)
+all_correlations.append(eps_g)
 
-a_profile = Profile(
-    identifier="a_l",
-    function=lambda eps_g, d_b_l: lambda z: 6 * eps_g(z) / d_b_l(z),
+a = Profile(
+    identifier="a",
+    function=lambda eps_g, d_b: lambda z: 6 * eps_g(z) / d_b(z),
     corr_type=CorrelationType.INTERFACIAL_AREA,
     input_units=[PROFILE, PROFILE],
     output_units="1/m",
     description="specific interfacial area profile",
 )
-all_correlations.append(a_profile)
+all_correlations.append(a)

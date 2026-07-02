@@ -302,12 +302,9 @@ class Simulation:
         tank_height = self.sim_input.height.to("m").magnitude
         tank_area = self.sim_input.area.to("m**2").magnitude
         tank_volume = self.sim_input.volume.to("m**3").magnitude
-        # a = self.sim_input.a.to("1/m").magnitude
         h_l = self.sim_input.h_l.to("m/s").magnitude
         K_s = self.sim_input.K_s.to("mol/m**3/Pa").magnitude  # convert to molT2 ?
-        # P_0 = self.sim_input.P_bottom.to("Pa").magnitude
         T = self.sim_input.temperature.to("K").magnitude
-        # eps_g = self.sim_input.eps_g.to("dimensionless").magnitude
         E_g = self.sim_input.E_g.to("m**2/s").magnitude
         E_l = self.sim_input.E_l.to("m**2/s").magnitude
         u_g0 = self.sim_input.u_g0.to("m/s").magnitude
@@ -386,17 +383,15 @@ class Simulation:
                     - self.sim_input.eps_g(x[0] * ureg.m).to("dimensionless").magnitude
                 )
             )
-            a.interpolate(
-                lambda x: self.sim_input.a_l(x[0] * ureg.m).to("1/m").magnitude
-            )
+            a.interpolate(lambda x: self.sim_input.a(x[0] * ureg.m).to("1/m").magnitude)
             P_g.interpolate(
                 lambda x: self.sim_input.P_g(x[0] * ureg.m).to("Pa").magnitude
             )
         else:
             # use values at z=0 for constant profiles
-            eps_g_0 = self.sim_input.eps_g(0 * ureg.m).to("dimensionless").magnitude
-            a_0 = self.sim_input.a_l(0 * ureg.m).to("1/m").magnitude
-            P_g_0 = self.sim_input.P_g(0 * ureg.m).to("Pa").magnitude
+            eps_g_0 = self.sim_input.eps_g_0.to("dimensionless").magnitude
+            a_0 = self.sim_input.a_0.to("1/m").magnitude
+            P_g_0 = self.sim_input.P_g_0.to("Pa").magnitude
 
             eps_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(eps_g_0))
             eps_l = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1 - eps_g_0))

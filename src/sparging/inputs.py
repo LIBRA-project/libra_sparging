@@ -82,12 +82,9 @@ class SimulationInput:
     area: pint.Quantity
     u_g0: pint.Quantity
     temperature: pint.Quantity
-    a: pint.Quantity
     h_l: pint.Quantity
     K_s: pint.Quantity
-    P_bottom: pint.Quantity
     rho_l: pint.Quantity
-    # eps_g_0: pint.Quantity
     E_g: pint.Quantity
     E_l: pint.Quantity
     Q_T: pint.Quantity
@@ -105,12 +102,9 @@ class SimulationInput:
         "area",
         "u_g0",
         "temperature",
-        "a",
         "h_l",
         "K_s",
-        "P_bottom",
         "rho_l",
-        # "eps_g_0",
         "E_g",
         "E_l",
         "Q_T",
@@ -118,9 +112,8 @@ class SimulationInput:
     required_profiles = (
         "P_l",
         "P_g",
-        "d_b_l",
         "eps_g",
-        "a_l",
+        "a",
     )  # these parameters will be used to solve the model
     graph: nx.Graph | None = None
     """ Stores the intermediate parameters and their relationships that built the SimulationInput. 
@@ -133,21 +126,32 @@ class SimulationInput:
     # pressure dependant profiles
     P_l: Callable[[pint.Quantity], pint.Quantity] | None = None
     P_g: Callable[[pint.Quantity], pint.Quantity] | None = None
-    d_b_l: Callable[[pint.Quantity], pint.Quantity] | None = None
     eps_g: Callable[[pint.Quantity], pint.Quantity] | None = None
-    a_l: Callable[[pint.Quantity], pint.Quantity] | None = None
+    a: Callable[[pint.Quantity], pint.Quantity] | None = None
 
     @property
     def volume(self):
         return self.area * self.height
 
     @property
+    def a_0(self):
+        return self.a(0 * ureg.m)
+
+    @property
     def eps_g_0(self):
         return self.eps_g(0 * ureg.m)
 
     @property
-    def eps_l(self):
+    def eps_l_0(self):
         return 1 - self.eps_g_0
+
+    @property
+    def P_l_0(self):
+        return self.P_l(0 * ureg.m)
+
+    @property
+    def P_g_0(self):
+        return self.P_g(0 * ureg.m)
 
     def set_S_T(self, val: pint.Quantity):
         self.Q_T = (val.to("molT/m**3/s") * self.volume).to("molT/s")
@@ -157,10 +161,10 @@ class SimulationInput:
 
     def get_tau(self) -> pint.Quantity:
         """characteristic time of the sparger under the small partial pressure (SPP) approximation"""
-        return (self.eps_l / (self.h_l * self.a)).to("seconds")
+        return (self.eps_l_0 / (self.h_l * self.a_0)).to("seconds")
 
     def get_c_T2_SS(self) -> pint.Quantity:
-        return (self.get_S_T() * 1 / (self.h_l * self.a)).to("molT2/m^3")
+        return (self.get_S_T() * 1 / (self.h_l * self.a_0)).to("molT2/m^3")
 
     def get_Pi_number(self) -> pint.Quantity:
         """Partial pressure number,
@@ -172,8 +176,8 @@ class SimulationInput:
             * (const_R * self.temperature)
             * self.height
             * self.h_l
-            * self.a
-            / (self.eps_g_0 * self.u_g0)
+            * self.a_0
+            / (self.eps_g_0 * self.graph.nodes["v_g0"]["value"])
         ).to("dimensionless")
 
     def get_dP_dx(self) -> pint.Quantity:
