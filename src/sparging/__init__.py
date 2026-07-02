@@ -22,6 +22,7 @@ from .correlations import (
 from .input_examples import (
     get_sim_input_LIBRA1L,
     get_sim_input_standard,
+    get_sim_input_malara,
     LIBRA_PI_GEOM,
     LIBRA_PI_MAT,
     LIBRA_PI_OPERATING_PARAMS,
