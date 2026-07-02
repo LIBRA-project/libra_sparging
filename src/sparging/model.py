@@ -532,7 +532,7 @@ class Simulation:
 
             flux_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
-                    eps_g * vel_x * P_g / (const.R * T) * y_T2_post * tank_area * ds(2)
+                    vel_x * P_g / (const.R * T) * y_T2_post * tank_area * ds(2)
                 )
             )
             flux_T2_2 = dolfinx.fem.assemble_scalar(
