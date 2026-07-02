@@ -1,5 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, replace
+from datetime import datetime
+from sparging import helpers
 from sparging.correlations import Correlation, all_correlations
 import pint
 from typing import List
@@ -201,15 +203,29 @@ class SimulationInput:
     def to_json(self, path: str):
         import json
 
+        output = {
+            "metadata": {
+                "git_commit": helpers.get_git_hash(),
+                "date": datetime.now().isoformat(),
+            },
+        }
+
+        output["intermediate parameters"] = {}
+        for node in self.graph.nodes:
+            output["intermediate parameters"][node] = {
+                "value": str(self.graph.nodes[node]["value"]),
+                "origin": self.graph.nodes[node]["origin"],
+            }
         with open(path, "w") as f:
             json.dump(
-                {
-                    key: str(value)
-                    for key, value in self.__dict__.items()
-                    if isinstance(value, pint.Quantity)
-                },
+                output,
+                # {
+                #     key: str(value)
+                #     for key, value in self.__dict__.items()
+                #     if isinstance(value, pint.Quantity)
+                # },
                 f,
-                indent=2,
+                indent=4,
             )
 
     @classmethod
