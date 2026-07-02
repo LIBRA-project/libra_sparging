@@ -28,7 +28,8 @@ class CorrelationType(enum.Enum):  # TODO do we really use it ?
     MORTON_NUMBER = "Mo"
     SCHMIDT_NUMBER = "Sc"
     REYNOLDS_NUMBER = "Re"
-    BUBBLE_VELOCITY = "u_g0"
+    SUPERFICIAL_GAS_VELOCITY = "u_g0"
+    BUBBLE_VELOCITY = "v_g0"
     GAS_PHASE_DISPERSION = "E_g"
     LIQUID_PHASE_DISPERSION = "E_l"
     PRESSURE = "P"
@@ -244,7 +245,7 @@ d_b = Correlation(
 )
 all_correlations.append(d_b)
 
-E_o = Correlation(
+Eo = Correlation(
     identifier="Eo",
     function=lambda drho, d_b, sigma_l: (const_g * drho * d_b**2 / sigma_l).to(
         "dimensionless"
@@ -252,7 +253,7 @@ E_o = Correlation(
     corr_type=CorrelationType.EOTVOS_NUMBER,
     input_units=["kg/m**3", "m", "N/m"],
 )
-all_correlations.append(E_o)
+all_correlations.append(Eo)
 
 Mo = Correlation(
     identifier="Mo",
@@ -272,19 +273,20 @@ Sc = Correlation(
 )
 all_correlations.append(Sc)
 
+# Bubble Reynolds number
 Re = Correlation(
     identifier="Re",
-    function=lambda rho_l, u_g0, d_b, mu_l: (rho_l * u_g0 * d_b / mu_l).to(
+    function=lambda rho_l, v_g0, d_b, mu_l: (rho_l * v_g0 * d_b / mu_l).to(
         "dimensionless"
-    ),  # Reynolds number
+    ),
     corr_type=CorrelationType.REYNOLDS_NUMBER,
     input_units=["kg/m**3", "m/s", "m", "Pa*s"],
 )
 all_correlations.append(Re)
 
-u_g0 = Correlation(
-    identifier="u_g0",
-    function=lambda Eo, Mo, mu_l, rho_l, d_b: get_u_g0(
+v_g0 = Correlation(
+    identifier="v_g0",
+    function=lambda Eo, Mo, mu_l, rho_l, d_b: get_v_g0(
         Eo=Eo, Mo=Mo, mu_l=mu_l, rho_l=rho_l, d_b=d_b
     ),  # initial gas velocity
     corr_type=CorrelationType.BUBBLE_VELOCITY,
@@ -295,6 +297,16 @@ u_g0 = Correlation(
         "kg/m**3",
         "m",
     ],
+    output_units="m/s",
+)
+all_correlations.append(v_g0)
+
+# superficial gas velocity at the inlet
+u_g0 = Correlation(
+    identifier="u_g0",
+    function=lambda flow_g_vol, area: (flow_g_vol / area).to("m/s"),
+    corr_type=CorrelationType.SUPERFICIAL_GAS_VELOCITY,
+    input_units=["m^3/s", "m^2"],
     output_units="m/s",
 )
 all_correlations.append(u_g0)
@@ -322,8 +334,8 @@ all_correlations.append(u_g0)
 
 h_l_higbie = Correlation(
     identifier="h_l_higbie",
-    function=lambda D_l, u_g0, d_b: get_h_higbie(
-        D_l=D_l, u_g=u_g0, d_b=d_b
+    function=lambda D_l, v_g0, d_b: get_h_higbie(
+        D_l=D_l, v_g=v_g0, d_b=d_b
     ),  # mass transfer coefficient with Higbie correlation
     corr_type=CorrelationType.MASS_TRANSFER_COEFF,
     source="Higbie 1935",
@@ -359,11 +371,12 @@ h_l_briggs = Correlation(
 )
 all_correlations.append(h_l_briggs)
 
+# liquid phase axial dispersion coefficient
 E_l = Correlation(
     identifier="E_l",
     function=lambda tank_diameter, u_g0: ureg.Quantity(
         0.678 * tank_diameter.magnitude**1.4 * u_g0.magnitude**0.3, "m**2/s"
-    ),  # liquid phase axial dispersion coefficient
+    ),
     corr_type=CorrelationType.LIQUID_PHASE_DISPERSION,
     source="Deckwer 1974",
     description="liquid phase axial dispersion coefficient, assumed equal to diffusivity of tritium in liquid FLiBe",
@@ -372,6 +385,7 @@ E_l = Correlation(
 )
 all_correlations.append(E_l)
 
+# gas phase axial dispersion coefficient
 E_g = Correlation(
     identifier="E_g",
     function=lambda tank_diameter, u_g0: (
@@ -490,7 +504,7 @@ def get_d_b(
     )
 
 
-def get_u_g0(Eo, Mo, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
+def get_v_g0(Eo, Mo, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
     """
     bubble initial velocity [m/s], correlation for terminal velocity from Clift 1978
     """
@@ -505,11 +519,11 @@ def get_u_g0(Eo, Mo, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
         raise ValueError(
             f"Clift correlation is not valid for H = {H}, which is calculated based on the input parameters. Check the input parameters and the validity of the correlation for the given range of parameters."
         )
-    u_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
-    if u_g0 > ureg("1 m/s") or u_g0 < ureg("0.1 m/s"):
-        warnings.warn(f"Warning: bubble velocity {u_g0} is out of the typical range")
+    v_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
+    if v_g0 > ureg("1 m/s") or v_g0 < ureg("0.1 m/s"):
+        warnings.warn(f"Warning: bubble velocity {v_g0} is out of the typical range")
 
-    return u_g0
+    return v_g0
 
 
 def get_eps_g(T, P_g, n_g_dot, area, v_g) -> float:
@@ -528,11 +542,11 @@ def get_eps_g(T, P_g, n_g_dot, area, v_g) -> float:
     return eps_g
 
 
-def get_h_higbie(D_l: float, u_g: float, d_b: float) -> float:
-    """mass transfer coefficient [m/s] for tritium in liquid FLiBe using Higbie penetration model"""
-    h_l = (
-        (D_l * u_g) / (const.pi * d_b)
-    ) ** 0.5  # mass transport coefficient Higbie penetration model
+def get_h_higbie(D_l: float, v_g: float, d_b: float) -> float:
+    """
+    Higbie penetration model average mass transfer coefficient [m/s]-> suited for large mobile interfaces
+    """
+    h_l = 2 * ((D_l * v_g) / (const.pi * d_b)) ** 0.5
     return h_l
 
 
@@ -546,7 +560,9 @@ def get_h_malara(D_l: float, d_b: float) -> float:
 
 
 def get_h_briggs(Re: float, Sc: float, D_l: float, d_b: float) -> float:
-    """mass transfer coefficient [m/s] for tritium in liquid FLiBe using Briggs 1970 correlation"""
+    """
+    Sherwood based mass transfer coefficient [m/s] for tritium in liquid FLiBe (Briggs 1970 correlation) -> suited for small rigid interfaces
+    """
     Sh = 0.089 * Re**0.69 * Sc**0.33  # Sherwood number
     h_l = Sh * D_l / d_b
     return h_l
@@ -586,13 +602,13 @@ all_correlations.append(d_b_profile)
 
 eps_g_profile = Profile(
     identifier="eps_g",
-    function=lambda temperature, P_g, flow_g_mol, area, u_g0: (
+    function=lambda temperature, P_g, flow_g_mol, area, v_g0: (
         lambda z: get_eps_g(
             T=temperature,
             P_g=P_g(z),
             n_g_dot=flow_g_mol,
             area=area,
-            v_g=u_g0,
+            v_g=v_g0,
         )
     ),
     corr_type=CorrelationType.GAS_VOID_FRACTION,
