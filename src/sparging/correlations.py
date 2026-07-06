@@ -304,7 +304,7 @@ v_g0 = Correlation(
     ],
     output_units="m/s",
     source="Chavez 2021: https://doi.org/10.1016/j.ijheatfluidflow.2021.108875",
-    description="Clift 1978 correlation for terminal velocity, validated for single He bubble rising in FLiNaK",
+    description="Clift 1978 correlation for terminal velocity, validated for single He bubble rising in steady FLiNaK. Likely to be applicable to FLiBe (similar surface tensions, density and viscosity).",
 )
 all_correlations.append(v_g0)
 
