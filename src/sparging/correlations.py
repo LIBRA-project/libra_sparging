@@ -233,20 +233,22 @@ K_s = Correlation(
 )
 all_correlations.append(K_s)
 
-d_b_0 = Correlation(
-    identifier="d_b_0",
-    function=lambda flow_g_vol, nozzle_diameter, nb_nozzle: get_d_b_0(
+d_b0 = Correlation(
+    identifier="d_b0",
+    function=lambda flow_g_vol, nozzle_diameter, nb_nozzle: get_d_b0(
         flow_g_vol=flow_g_vol, nozzle_diameter=nozzle_diameter, nb_nozzle=nb_nozzle
     ),  # mean bubble diameter, Kanai 2017
     corr_type=CorrelationType.BUBBLE_DIAMETER,
     input_units=["m**3/s", "m", "dimensionless"],
     output_units="m",
+    source="Kanai 2017 (https://doi.org/10.1252/jcej.15we307); report by Evans 2026 (https://doi.org/10.1016/j.nucengdes.2025.114624)",
+    description="Mean bubble diameter, validated for nitrogen sparging in NaNO3 molten salt at 643K and gas flow rates of 3-10 cm3/s. Author suggests it may be applicable to FLiNaK and FLiBe.",
 )
-all_correlations.append(d_b_0)
+all_correlations.append(d_b0)
 
 Eo = Correlation(
     identifier="Eo",
-    function=lambda drho, d_b_0, sigma_l: (const_g * drho * d_b_0**2 / sigma_l).to(
+    function=lambda drho, d_b0, sigma_l: (const_g * drho * d_b0**2 / sigma_l).to(
         "dimensionless"
     ),  # Eotvos number
     corr_type=CorrelationType.EOTVOS_NUMBER,
@@ -278,7 +280,7 @@ all_correlations.append(Sc)
 # Bubble Reynolds number
 Re = Correlation(
     identifier="Re",
-    function=lambda rho_l, v_g0, d_b_0, mu_l: (rho_l * v_g0 * d_b_0 / mu_l).to(
+    function=lambda rho_l, v_g0, d_b0, mu_l: (rho_l * v_g0 * d_b0 / mu_l).to(
         "dimensionless"
     ),
     corr_type=CorrelationType.REYNOLDS_NUMBER,
@@ -289,8 +291,8 @@ all_correlations.append(Re)
 
 v_g0 = Correlation(
     identifier="v_g0",
-    function=lambda Eo, Mo, mu_l, rho_l, d_b_0: get_v_g0(
-        Eo=Eo, Mo=Mo, mu_l=mu_l, rho_l=rho_l, d_b=d_b_0
+    function=lambda Eo, Mo, mu_l, rho_l, d_b0: get_v_g0(
+        Eo=Eo, Mo=Mo, mu_l=mu_l, rho_l=rho_l, d_b=d_b0
     ),  # initial gas velocity
     corr_type=CorrelationType.BUBBLE_VELOCITY,
     input_units=[
@@ -301,6 +303,8 @@ v_g0 = Correlation(
         "m",
     ],
     output_units="m/s",
+    source="Chavez 2021: https://doi.org/10.1016/j.ijheatfluidflow.2021.108875",
+    description="Clift 1978 correlation for terminal velocity, validated for single He bubble rising in FLiNaK",
 )
 all_correlations.append(v_g0)
 
@@ -317,8 +321,8 @@ all_correlations.append(u_g0)
 
 h_l_higbie = Correlation(
     identifier="h_l_higbie",
-    function=lambda D_l, v_g0, d_b_0: get_h_higbie(
-        D_l=D_l, v_g=v_g0, d_b=d_b_0
+    function=lambda D_l, v_g0, d_b0: get_h_higbie(
+        D_l=D_l, v_g=v_g0, d_b=d_b0
     ),  # mass transfer coefficient with Higbie correlation
     corr_type=CorrelationType.MASS_TRANSFER_COEFF,
     source="Higbie 1935",
@@ -330,8 +334,8 @@ all_correlations.append(h_l_higbie)
 
 h_l_malara = Correlation(
     identifier="h_l_malara",
-    function=lambda D_l, d_b_0: get_h_malara(
-        D_l=D_l, d_b=d_b_0
+    function=lambda D_l, d_b0: get_h_malara(
+        D_l=D_l, d_b=d_b0
     ),  # mass transfer coefficient with Malara correlation
     corr_type=CorrelationType.MASS_TRANSFER_COEFF,
     source="Malara 1995",
@@ -343,8 +347,8 @@ all_correlations.append(h_l_malara)
 
 h_l_briggs = Correlation(
     identifier="h_l_briggs",
-    function=lambda Re, Sc, D_l, d_b_0: get_h_briggs(
-        Re=Re, Sc=Sc, D_l=D_l, d_b=d_b_0
+    function=lambda Re, Sc, D_l, d_b0: get_h_briggs(
+        Re=Re, Sc=Sc, D_l=D_l, d_b=d_b0
     ),  # mass transfer coefficient with Briggs correlation
     corr_type=CorrelationType.MASS_TRANSFER_COEFF,
     source="Briggs 1970",
@@ -433,7 +437,7 @@ source_T_integral = Correlation(
 all_correlations.append(source_T_integral)
 
 
-def get_d_b_0(
+def get_d_b0(
     flow_g_vol: pint.Quantity, nozzle_diameter: pint.Quantity, nb_nozzle: pint.Quantity
 ) -> float:
     """
@@ -546,11 +550,11 @@ all_correlations.append(P_g)
 
 d_b = Profile(
     identifier="d_b",
-    function=lambda d_b_0, P_l: lambda z: d_b_0 * (P_l(0 * ureg.m) / P_l(z)) ** (1 / 3),
+    function=lambda d_b0, P_l: lambda z: d_b0 * (P_l(0 * ureg.m) / P_l(z)) ** (1 / 3),
     corr_type=CorrelationType.BUBBLE_DIAMETER,
     input_units=["m", PROFILE],
     output_units="m",
-    description="bubble diameter profile from hydrostatic expansion",
+    description="Bubble diameter profile from hydrostatic expansion",
 )
 all_correlations.append(d_b)
 
