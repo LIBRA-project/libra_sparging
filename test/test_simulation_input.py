@@ -33,7 +33,7 @@ flibe = BreederMaterial(
 operating_params = OperatingParameters(
     temperature=600 * ureg.celsius,
     P_top=1 * ureg.atm,
-    flow_g_mol=400 * ureg.sccm,
+    ndot_g0=400 * ureg.sccm,
     tbr=0.1 * ureg("triton / neutron"),
     n_gen_rate=1e9 * ureg("neutron / s"),
 )
@@ -132,13 +132,13 @@ def test_find_in_graph_result(in_discovered: bool):
     Test finding a node in the graph.
     This test checks that the `find_in_graph` function can successfully find the `d_b` parameter
     using the provided `ColumnGeometry` and `OperatingParameters`. It also tests both cases where
-    `flow_g_vol` is provided in the discovered nodes and where it is not, ensuring that the
+    `Vdot_g0` is provided in the discovered nodes and where it is not, ensuring that the
     function can handle both scenarios correctly.
     """
     # BUILD
     discovered_graph = nx.Graph()
     if in_discovered:
-        discovered_graph.add_node("flow_g_vol", value=0.01 * ureg.m**3 / ureg.s)
+        discovered_graph.add_node("Vdot_g0", value=0.01 * ureg.m**3 / ureg.s)
 
     # RUN
     find_in_graph(
@@ -152,9 +152,9 @@ def test_find_in_graph_result(in_discovered: bool):
 
     correlation = sparging.all_correlations("d_b")
 
-    flow_g_vol = discovered_graph.nodes["flow_g_vol"]["value"]
+    Vdot_g0 = discovered_graph.nodes["Vdot_g0"]["value"]
     expected_value = correlation(
-        flow_g_vol=flow_g_vol,
+        Vdot_g0=Vdot_g0,
         nozzle_diameter=geom.nozzle_diameter,
         nb_nozzle=geom.nb_nozzle,
     )
@@ -164,7 +164,7 @@ def test_find_in_graph_result(in_discovered: bool):
     )
 
 
-@pytest.mark.parametrize("missing_param", ("nb_nozzle", "flow_g_mol", "n_gen_rate"))
+@pytest.mark.parametrize("missing_param", ("nb_nozzle", "ndot_g0", "n_gen_rate"))
 def test_find_in_graph_unresolvable(missing_param: str):
     """
     Test that find_in_graph raises an error when a parameter cannot be resolved.
@@ -178,7 +178,7 @@ def test_find_in_graph_unresolvable(missing_param: str):
         case "nb_nozzle":
             to_find = "d_b"
             setattr(broken_geom, missing_param, None)
-        case "flow_g_mol":
+        case "ndot_g0":
             to_find = "d_b"
             setattr(broken_op_params, missing_param, None)
         case "n_gen_rate":
@@ -199,13 +199,13 @@ def test_find_in_graph_unresolvable(missing_param: str):
         )
 
 
-@pytest.mark.parametrize("required_node", ("flow_g_mol", "non_existent_param"))
+@pytest.mark.parametrize("required_node", ("ndot_g0", "non_existent_param"))
 def test_check_input_none(required_node: str):
     """
     Test that check_input returns None when the required node is not found in the graph.
     """
     # BUILD
-    broken_op_params = dataclasses.replace(operating_params, flow_g_mol=None)
+    broken_op_params = dataclasses.replace(operating_params, ndot_g0=None)
     # RUN
     result = check_input(required_node, [geom, broken_op_params])
     # TEST

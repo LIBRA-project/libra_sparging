@@ -49,9 +49,9 @@ class BreederMaterial:
 @dataclass
 class OperatingParameters:
     temperature: pint.Quantity
-    flow_g_mol: pint.Quantity
+    ndot_g0: pint.Quantity
     P_top: pint.Quantity
-    flow_g_vol: pint.Quantity | None = None
+    Vdot_g0: pint.Quantity | None = None
     P_bottom: pint.Quantity | Correlation | None = None
     tbr: pint.Quantity | None = None
     n_gen_rate: pint.Quantity | None = None
@@ -198,16 +198,14 @@ class SimulationInput:
         """
         # return (self.eps_g * self.u_g0 * self.height / self.E_g).to("dimensionless")
         return (
-            (self.graph.nodes["flow_g_vol"]["value"] / self.area)
-            * self.height
-            / self.E_g
+            (self.graph.nodes["Vdot_g0"]["value"] / self.area) * self.height / self.E_g
         ).to("dimensionless")
 
     def test_eps_g(
         self,
     ):  # to see if the two definitions of superficial velocity are consistent -> TODO remove
         print(
-            f"{self.eps_g_0 * self.graph.nodes['v_g0']['value']} vs {self.graph.nodes['flow_g_vol']['value'] / self.area} vs {self.graph.nodes['u_g0']['value']}"
+            f"{self.eps_g_0 * self.graph.nodes['v_g0']['value']} vs {self.graph.nodes['Vdot_g0']['value'] / self.area} vs {self.graph.nodes['u_g0']['value']}"
         )
 
     def __post_init__(self):

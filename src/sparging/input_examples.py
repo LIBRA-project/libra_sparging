@@ -35,7 +35,7 @@ def get_sim_input_LIBRA1L() -> tuple[SimulationInput, pint.Quantity]:
     operating_params = OperatingParameters(
         temperature=600 * ureg.celsius,
         P_top=1 * ureg.atm,
-        flow_g_mol=40 * ureg.sccm,
+        ndot_g0=40 * ureg.sccm,
         tbr=2e-3 * ureg("triton / neutron"),  # according to LIBRA 1L paper
         n_gen_rate=1e9 * ureg("neutron / s"),
     )
@@ -75,7 +75,7 @@ def get_sim_input_standard() -> SimulationInput:
     operating_params = OperatingParameters(
         temperature=600 * ureg.celsius,
         P_top=1 * ureg.atm,
-        flow_g_mol=400 * ureg.sccm,
+        ndot_g0=400 * ureg.sccm,
         tbr=0.1 * ureg("triton / neutron"),
         n_gen_rate=1e9 * ureg("neutron / s"),
     )
@@ -109,7 +109,7 @@ def get_sim_input_malara() -> SimulationInput:
     operating_params = OperatingParameters(
         temperature=623 * ureg.kelvin,
         P_top=5e5 * ureg.pascal,
-        flow_g_mol=0.19 * ureg("mol / s"),
+        ndot_g0=0.19 * ureg("mol / s"),
         tbr=0.1 * ureg("triton / neutron"),
         n_gen_rate=1e9 * ureg("neutron / s"),
     )
@@ -142,7 +142,7 @@ LIBRA_PI_MAT = BreederMaterial(
 LIBRA_PI_OPERATING_PARAMS = OperatingParameters(
     temperature=550 * ureg.celsius,
     P_top=1.2 * ureg.atm,
-    flow_g_mol=400 * ureg.sccm,
+    ndot_g0=400 * ureg.sccm,
     tbr=0.1 * ureg("triton / neutron"),
     n_gen_rate=1e9 * ureg("neutron / s"),
 )

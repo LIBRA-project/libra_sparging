@@ -32,7 +32,7 @@ class CorrelationType(enum.Enum):  # TODO do we really use it ?
     BUBBLE_VELOCITY = "v_g0"
     GAS_PHASE_DISPERSION = "E_g"
     LIQUID_PHASE_DISPERSION = "E_l"
-    FLOW_RATE = "flow_g_mol"
+    FLOW_RATE = "ndot_g0"
     INTERFACIAL_AREA = "a"
     TRITIUM_SOURCE = "source_T"
     LIQUID_PRESSURE_PROFILE = "P_l"
@@ -235,8 +235,8 @@ all_correlations.append(K_s)
 
 d_b0 = Correlation(
     identifier="d_b0",
-    function=lambda flow_g_vol, nozzle_diameter, nb_nozzle: get_d_b0(
-        flow_g_vol=flow_g_vol, nozzle_diameter=nozzle_diameter, nb_nozzle=nb_nozzle
+    function=lambda Vdot_g0, nozzle_diameter, nb_nozzle: get_d_b0(
+        Vdot_g0=Vdot_g0, nozzle_diameter=nozzle_diameter, nb_nozzle=nb_nozzle
     ),  # mean bubble diameter, Kanai 2017
     corr_type=CorrelationType.BUBBLE_DIAMETER,
     input_units=["m**3/s", "m", "dimensionless"],
@@ -311,7 +311,7 @@ all_correlations.append(v_g0)
 # superficial gas velocity at the inlet
 u_g0 = Correlation(
     identifier="u_g0",
-    function=lambda flow_g_vol, area: (flow_g_vol / area).to("m/s"),
+    function=lambda Vdot_g0, area: (Vdot_g0 / area).to("m/s"),
     corr_type=CorrelationType.SUPERFICIAL_GAS_VELOCITY,
     input_units=["m^3/s", "m^2"],
     output_units="m/s",
@@ -412,17 +412,17 @@ rho_g = Correlation(
 all_correlations.append(rho_g)
 
 
-flow_g_vol = Correlation(
-    identifier="flow_g_vol",
-    function=lambda flow_g_mol, temperature, P_l: (
-        flow_g_mol * const_R * temperature / P_l(0 * ureg.m)
+Vdot_g0 = Correlation(
+    identifier="Vdot_g0",
+    function=lambda ndot_g0, temperature, P_l: (
+        ndot_g0 * const_R * temperature / P_l(0 * ureg.m)
     ),  # convert molar flow rate to volumetric flow rate using ideal gas law
     corr_type=CorrelationType.FLOW_RATE,
     description="volumetric flow rate of gas phase calculated from molar flow rate using ideal gas law",
     input_units=["mol/s", "kelvin", PROFILE],
     output_units="m**3/s",
 )
-all_correlations.append(flow_g_vol)
+all_correlations.append(Vdot_g0)
 
 
 source_T_integral = Correlation(
@@ -438,12 +438,12 @@ all_correlations.append(source_T_integral)
 
 
 def get_d_b0(
-    flow_g_vol: pint.Quantity, nozzle_diameter: pint.Quantity, nb_nozzle: pint.Quantity
+    Vdot_g0: pint.Quantity, nozzle_diameter: pint.Quantity, nb_nozzle: pint.Quantity
 ) -> float:
     """
     mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
     """
-    nozzle_flow = flow_g_vol / nb_nozzle  # volumetric flow per nozzle [m3/s]
+    nozzle_flow = Vdot_g0 / nb_nozzle  # volumetric flow per nozzle [m3/s]
     if nozzle_flow < ureg("3 cm**3/s") or nozzle_flow > ureg("10 cm**3/s"):
         warnings.warn(
             f"nozzle flow {nozzle_flow.to('cm**3/s')} is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)"
@@ -560,11 +560,11 @@ all_correlations.append(d_b)
 
 eps_g = Profile(
     identifier="eps_g",
-    function=lambda temperature, P_g, flow_g_mol, area, v_g0: (
+    function=lambda temperature, P_g, ndot_g0, area, v_g0: (
         lambda z: get_eps_g(
             T=temperature,
             P_g=P_g(z),
-            n_g_dot=flow_g_mol,
+            n_g_dot=ndot_g0,
             area=area,
             v_g=v_g0,
         )

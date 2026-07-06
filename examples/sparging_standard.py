@@ -49,6 +49,7 @@ if __name__ == "__main__":
     # P = output.exported_fields["pressure"]
     # plt.plot(output.x_ct, P)
     # output.exports_to_csv(FOLDER)
+    output.export = ["pressure, "]
 
     output.profiles_to_csv(FOLDER)
     output.profiles_to_cdf(FOLDER)
