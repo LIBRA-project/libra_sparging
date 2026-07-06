@@ -28,7 +28,7 @@ class CorrelationType(enum.Enum):  # TODO do we really use it ?
     MORTON_NUMBER = "Mo"
     SCHMIDT_NUMBER = "Sc"
     REYNOLDS_NUMBER = "Re"
-    SUPERFICIAL_GAS_VELOCITY = "u_g0"
+    SUPERFICIAL_GAS_VELOCITY = "u_g"
     BUBBLE_VELOCITY = "v_g0"
     GAS_PHASE_DISPERSION = "E_g"
     LIQUID_PHASE_DISPERSION = "E_l"
@@ -308,16 +308,6 @@ v_g0 = Correlation(
 )
 all_correlations.append(v_g0)
 
-# superficial gas velocity at the inlet
-u_g0 = Correlation(
-    identifier="u_g0",
-    function=lambda Vdot_g0, area: (Vdot_g0 / area).to("m/s"),
-    corr_type=CorrelationType.SUPERFICIAL_GAS_VELOCITY,
-    input_units=["m^3/s", "m^2"],
-    output_units="m/s",
-)
-all_correlations.append(u_g0)
-
 
 h_l_higbie = Correlation(
     identifier="h_l_higbie",
@@ -361,13 +351,14 @@ all_correlations.append(h_l_briggs)
 # liquid phase axial dispersion coefficient
 E_l = Correlation(
     identifier="E_l",
-    function=lambda tank_diameter, u_g0: ureg.Quantity(
-        0.678 * tank_diameter.magnitude**1.4 * u_g0.magnitude**0.3, "m**2/s"
+    function=lambda tank_diameter, u_g: ureg.Quantity(
+        0.678 * tank_diameter.magnitude**1.4 * u_g(0 * ureg.m).magnitude ** 0.3,
+        "m**2/s",
     ),
     corr_type=CorrelationType.LIQUID_PHASE_DISPERSION,
     source="Deckwer 1974",
     description="liquid phase axial dispersion coefficient, assumed equal to diffusivity of tritium in liquid FLiBe",
-    input_units=["m", "m/s"],
+    input_units=["m", PROFILE],
     output_units="m**2/s",
 )
 all_correlations.append(E_l)
@@ -375,13 +366,13 @@ all_correlations.append(E_l)
 # gas phase axial dispersion coefficient
 E_g = Correlation(
     identifier="E_g",
-    function=lambda tank_diameter, u_g0: (
-        0.2 * ureg("1/m") * tank_diameter**2 * u_g0
+    function=lambda tank_diameter, u_g: (
+        0.2 * ureg("1/m") * tank_diameter**2 * u_g(0 * ureg.m)
     ),  # gas phase axial dispersion coefficient
     corr_type=CorrelationType.GAS_PHASE_DISPERSION,
     source="Malara 1995",
     description="gas phase axial dispersion coefficient [m2/s], Malara 1995",
-    input_units=["m", "m/s"],
+    input_units=["m", PROFILE],
     output_units="m**2/s",
 )
 all_correlations.append(E_g)
@@ -585,3 +576,15 @@ a = Profile(
     description="specific interfacial area profile",
 )
 all_correlations.append(a)
+
+u_g = Profile(
+    identifier="u_g",
+    function=lambda Vdot_g0, area, P_g: (
+        lambda z: (Vdot_g0 / area).to("m/s") * (P_g(0 * ureg.m) / P_g(z))
+    ),
+    corr_type=CorrelationType.SUPERFICIAL_GAS_VELOCITY,
+    input_units=["m^3/s", "m^2", PROFILE],
+    output_units="m/s",
+    description="superficial gas velocity profile",
+)
+all_correlations.append(u_g)

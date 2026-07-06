@@ -307,7 +307,6 @@ class Simulation:
         T = self.sim_input.temperature.to("K").magnitude
         E_g = self.sim_input.E_g.to("m**2/s").magnitude
         E_l = self.sim_input.E_l.to("m**2/s").magnitude
-        u_g0 = self.sim_input.u_g0.to("m/s").magnitude
         Q_T2 = self.sim_input.Q_T.to("molT2/s").magnitude
 
         dt = (
@@ -337,40 +336,13 @@ class Simulation:
         u_n = dolfinx.fem.Function(V)
         v_c, v_y = ufl.TestFunctions(V)
 
-        # set initial concentration
-        c_T2_0_ufl_expr = dolfinx.fem.Constant(
-            mesh, self.sim_input.c_T2_0.to("molT2/m**3").magnitude
-        ) * self.normalize_profile(
-            self.sim_input.profile_c_T2_0, tank_height, mesh, V_profile
-        )
-        u_n.sub(0).interpolate(
-            dolfinx.fem.Expression(
-                c_T2_0_ufl_expr, V.sub(0).element.interpolation_points
-            )
-        )
-
-        c_T2, y_T2 = ufl.split(u)
-        c_T2_n, y_T2_n = ufl.split(u_n)
-
-        vel_x = u_g0  # TODO velocity should vary with hydrostatic pressure
-        vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
-
-        h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
-
-        gen_T2_ave = dolfinx.fem.Constant(
-            mesh, Q_T2 / tank_volume * self.sim_input.signal_irr(0 * ureg.s)
-        )  # magnitude of the generation term
-
-        gen_T2 = gen_T2_ave * self.normalize_profile(
-            self.sim_input.profile_source_T, tank_height, mesh, V_profile
-        )
-
         # define spatially varying profiles
         if not self.constant_profiles:
             eps_g = dolfinx.fem.Function(V_profile)
             eps_l = dolfinx.fem.Function(V_profile)
             a = dolfinx.fem.Function(V_profile)
             P_g = dolfinx.fem.Function(V_profile)
+            u_g = dolfinx.fem.Function(V_profile)
 
             eps_g.interpolate(
                 lambda x: (
@@ -387,16 +359,49 @@ class Simulation:
             P_g.interpolate(
                 lambda x: self.sim_input.P_g(x[0] * ureg.m).to("Pa").magnitude
             )
+            u_g.interpolate(
+                lambda x: self.sim_input.u_g(x[0] * ureg.m).to("m/s").magnitude
+            )
         else:
             # use values at z=0 for constant profiles
-            eps_g_0 = self.sim_input.eps_g_0.to("dimensionless").magnitude
+            eps_g0 = self.sim_input.eps_g0.to("dimensionless").magnitude
             a_0 = self.sim_input.a_0.to("1/m").magnitude
-            P_g_0 = self.sim_input.P_g_0.to("Pa").magnitude
+            P_g0 = self.sim_input.P_g0.to("Pa").magnitude
+            u_g0 = self.sim_input.u_g0.to("m/s").magnitude
 
-            eps_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(eps_g_0))
-            eps_l = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1 - eps_g_0))
+            eps_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(eps_g0))
+            eps_l = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1 - eps_g0))
             a = dolfinx.fem.Constant(mesh, PETSc.ScalarType(a_0))
-            P_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(P_g_0))
+            P_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(P_g0))
+            u_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(u_g0))
+
+        # set initial concentration
+        c_T2_0_ufl_expr = dolfinx.fem.Constant(
+            mesh, self.sim_input.c_T2_0.to("molT2/m**3").magnitude
+        ) * self.normalize_profile(
+            self.sim_input.profile_c_T2_0, tank_height, mesh, V_profile
+        )
+        u_n.sub(0).interpolate(
+            dolfinx.fem.Expression(
+                c_T2_0_ufl_expr, V.sub(0).element.interpolation_points
+            )
+        )
+
+        c_T2, y_T2 = ufl.split(u)
+        c_T2_n, y_T2_n = ufl.split(u_n)
+
+        # vel_x = u_g0  # TODO velocity should vary with hydrostatic pressure
+        # vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
+
+        h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
+
+        gen_T2_ave = dolfinx.fem.Constant(
+            mesh, Q_T2 / tank_volume * self.sim_input.signal_irr(0 * ureg.s)
+        )  # magnitude of the generation term
+
+        gen_T2 = gen_T2_ave * self.normalize_profile(
+            self.sim_input.profile_source_T, tank_height, mesh, V_profile
+        )
 
         # VARIATIONAL FORMULATION
 
@@ -431,7 +436,9 @@ class Simulation:
         F += (
             1
             / (const.R * T)
-            * ufl.inner(ufl.dot(ufl.grad(P_g * y_T2), vel), v_y)
+            # * ufl.inner(ufl.dot(ufl.grad(P_g * y_T2), vel), v_y)
+            * ufl.grad(u_g * P_g * y_T2)[0]
+            * v_y
             * ufl.dx
         )
 
@@ -458,13 +465,7 @@ class Simulation:
 
         # Danckwert BC at gas inlet
         P_T2_inlet = 0
-        F += (
-            1
-            / (const.R * T)
-            * vel_x
-            * ufl.inner((P_g * y_T2 - P_T2_inlet), v_y)
-            * ds(1)
-        )
+        F += 1 / (const.R * T) * u_g * ufl.inner((P_g * y_T2 - P_T2_inlet), v_y) * ds(1)
 
         # n = ufl.FacetNormal(mesh)
 
@@ -527,7 +528,7 @@ class Simulation:
 
             flux_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
-                    vel_x * P_g / (const.R * T) * y_T2_post * tank_area * ds(2)
+                    u_g * P_g / (const.R * T) * y_T2_post * tank_area * ds(2)
                 )
             )
             flux_T2_2 = dolfinx.fem.assemble_scalar(

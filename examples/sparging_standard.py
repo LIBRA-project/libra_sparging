@@ -39,7 +39,6 @@ my_simulation = Simulation(
     dispersion_on=True,
     constant_profiles=False,
 )
-
 if __name__ == "__main__":
     # my_simulation.exports = ["pressure", "J_T2"]
     output = my_simulation.solve(fast_solve=True)
@@ -49,7 +48,7 @@ if __name__ == "__main__":
     # P = output.exported_fields["pressure"]
     # plt.plot(output.x_ct, P)
     # output.exports_to_csv(FOLDER)
-    output.export = ["pressure, "]
+    # output.export = ["pressure, "]
 
     output.profiles_to_csv(FOLDER)
     output.profiles_to_cdf(FOLDER)

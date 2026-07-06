@@ -65,7 +65,6 @@ class OperatingParameters:
 class SpargingParameters:
     h_l: pint.Quantity | Correlation
     eps_g: pint.Quantity | Correlation | None = None
-    u_g0: pint.Quantity | Correlation | None = None
     d_b: pint.Quantity | Correlation | None = None
     rho_g: pint.Quantity | Correlation | None = None
     E_g: pint.Quantity | Correlation | None = None
@@ -80,7 +79,6 @@ class SpargingParameters:
 class SimulationInput:
     height: pint.Quantity
     area: pint.Quantity
-    u_g0: pint.Quantity
     temperature: pint.Quantity
     h_l: pint.Quantity
     K_s: pint.Quantity
@@ -100,7 +98,6 @@ class SimulationInput:
     required_keys = (
         "height",
         "area",
-        "u_g0",
         "temperature",
         "h_l",
         "K_s",
@@ -114,6 +111,7 @@ class SimulationInput:
         "P_g",
         "eps_g",
         "a",
+        "u_g",
     )  # these parameters will be used to solve the model
     graph: nx.Graph | None = None
     """ Stores the intermediate parameters and their relationships that built the SimulationInput. 
@@ -128,6 +126,7 @@ class SimulationInput:
     P_g: Callable[[pint.Quantity], pint.Quantity] | None = None
     eps_g: Callable[[pint.Quantity], pint.Quantity] | None = None
     a: Callable[[pint.Quantity], pint.Quantity] | None = None
+    u_g: Callable[[pint.Quantity], pint.Quantity] | None = None
 
     @property
     def volume(self):
@@ -138,20 +137,24 @@ class SimulationInput:
         return self.a(0 * ureg.m)
 
     @property
-    def eps_g_0(self):
+    def eps_g0(self):
         return self.eps_g(0 * ureg.m)
 
     @property
-    def eps_l_0(self):
-        return 1 - self.eps_g_0
+    def eps_l0(self):
+        return 1 - self.eps_g0
 
     @property
-    def P_l_0(self):
+    def P_l0(self):
         return self.P_l(0 * ureg.m)
 
     @property
-    def P_g_0(self):
+    def P_g0(self):
         return self.P_g(0 * ureg.m)
+
+    @property
+    def u_g0(self):
+        return self.u_g(0 * ureg.m)
 
     def set_S_T(self, val: pint.Quantity):
         self.Q_T = (val.to("molT/m**3/s") * self.volume).to("molT/s")
@@ -161,7 +164,7 @@ class SimulationInput:
 
     def get_tau(self) -> pint.Quantity:
         """characteristic time of the sparger under the small partial pressure (SPP) approximation"""
-        return (self.eps_l_0 / (self.h_l * self.a_0)).to("seconds")
+        return (self.eps_l0 / (self.h_l * self.a_0)).to("seconds")
 
     def get_c_T2_SS(self) -> pint.Quantity:
         return (self.get_S_T() * 1 / (self.h_l * self.a_0)).to("molT2/m^3")
@@ -177,7 +180,7 @@ class SimulationInput:
             * self.height
             * self.h_l
             * self.a_0
-            / (self.eps_g_0 * self.graph.nodes["v_g0"]["value"])
+            / (self.eps_g0 * self.graph.nodes["v_g0"]["value"])
         ).to("dimensionless")
 
     def get_dP_dx(self) -> pint.Quantity:
@@ -196,16 +199,13 @@ class SimulationInput:
         returns Bodenstein number = ratio of convective to dispersive transport for the gas phase
         corresponds to Peclet number at the scale of the tank
         """
-        # return (self.eps_g * self.u_g0 * self.height / self.E_g).to("dimensionless")
-        return (
-            (self.graph.nodes["Vdot_g0"]["value"] / self.area) * self.height / self.E_g
-        ).to("dimensionless")
+        return (self.u_g0 * self.height / self.E_g).to("dimensionless")
 
     def test_eps_g(
         self,
     ):  # to see if the two definitions of superficial velocity are consistent -> TODO remove
         print(
-            f"{self.eps_g_0 * self.graph.nodes['v_g0']['value']} vs {self.graph.nodes['Vdot_g0']['value'] / self.area} vs {self.graph.nodes['u_g0']['value']}"
+            f"{self.eps_g0 * self.graph.nodes['v_g0']['value']} vs {self.graph.nodes['Vdot_g0']['value'] / self.area} vs {self.u_g0}"
         )
 
     def __post_init__(self):
