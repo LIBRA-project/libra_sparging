@@ -43,26 +43,26 @@ def test_simulation_results_serialization(tmp_path):
     assert len(res.times) == len(new_res_json.times), (
         "JSON Times arrays have different lengths"
     )
-    assert len(res.c_T2_solutions) == len(new_res_json.c_T2_solutions), (
-        "JSON c_T2_solutions arrays have different lengths"
+    assert len(res.c_T2_profiles) == len(new_res_json.c_T2_profiles), (
+        "JSON c_T2_profiles arrays have different lengths"
     )
 
     assert np.allclose(res.times, new_res_json.times, atol=0), (
         "JSON Times arrays are not close"
     )
-    assert np.allclose(res.c_T2_solutions, new_res_json.c_T2_solutions, atol=0), (
-        "JSON c_T2_solutions arrays are not close"
+    assert np.allclose(res.c_T2_profiles, new_res_json.c_T2_profiles, atol=0), (
+        "JSON c_T2_profiles arrays are not close"
     )
 
     assert len(res.times) == len(new_res_pickle.times), (
         "Pickle Times arrays have different lengths"
     )
-    assert len(res.c_T2_solutions) == len(new_res_pickle.c_T2_solutions), (
-        "Pickle c_T2_solutions arrays have different lengths"
+    assert len(res.c_T2_profiles) == len(new_res_pickle.c_T2_profiles), (
+        "Pickle c_T2_profiles arrays have different lengths"
     )
     assert np.allclose(res.times, new_res_pickle.times, atol=0), (
         "Pickle Times arrays are not close"
     )
-    assert np.allclose(res.c_T2_solutions, new_res_pickle.c_T2_solutions, atol=0), (
-        "Pickle c_T2_solutions arrays are not close"
+    assert np.allclose(res.c_T2_profiles, new_res_pickle.c_T2_profiles, atol=0), (
+        "Pickle c_T2_profiles arrays are not close"
     )

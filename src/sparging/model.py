@@ -34,62 +34,57 @@ EPS = 1e-26
 @dataclass
 class SimulationResults:
     times: np.ndarray[pint.Quantity]
-    c_T2_solutions: np.ndarray[pint.Quantity]
-    """ line : time step, column : spatial coordinate """
-    y_T2_solutions: np.ndarray[pint.Quantity]
-    aJ_T2_solutions: np.ndarray[pint.Quantity]
+    c_T2_profiles: np.ndarray[pint.Quantity]
+    """profiles c_T2(z) stacked over time. axis 0: time step, axis 1: position z"""
+    y_T2_profiles: np.ndarray[pint.Quantity]
+    aJ_T2_profiles: np.ndarray[pint.Quantity]
     x_ct: np.ndarray[pint.Quantity]
     x_y: np.ndarray[pint.Quantity]
-    inventories_T2_salt: np.ndarray[pint.Quantity]
-    sources_T2: np.ndarray[pint.Quantity]
-    fluxes_T2: np.ndarray[pint.Quantity]
+    n_T2_salt_series: np.ndarray[pint.Quantity]
+    """liquid tritium inventory n_T2(t) [molT2] over time"""
+    sources_T2_series: np.ndarray[pint.Quantity]
+    ndot_T2_series: np.ndarray[pint.Quantity]
     dt: pint.Quantity = None
     dx: pint.Quantity = None
     sim_input: SimulationInput = None
 
-    keys_to_ignore_results = [  # TODO do it the other way: keys_to_include_results
-        # "c_T2_solutions",
-        # "y_T2_solutions",
-        # "J_T2_solutions",
-        # "x_ct",
-        # "x_y",
-        # "inventories_T2_salt",
-        # "times",
-        # "sources_T2",
-        # "fluxes_T2",
+    keys_to_ignore_results = [
         "sim_input",
         "dt",
         "dx",
     ]
 
+    # Backward-compatibility: old field names -> new (axis-named) fields.
+    # Applied when deserializing legacy JSON/pickle files.
+    _legacy_key_map = {
+        "c_T2_solutions": "c_T2_profiles",
+        "y_T2_solutions": "y_T2_profiles",
+        "aJ_T2_solutions": "aJ_T2_profiles",
+        "inventories_T2_salt": "n_T2_salt_series",
+        "sources_T2": "sources_T2_series",
+        "ndot_T2": "ndot_T2_series",
+    }
+
     def to_yaml(self, output_path: Path):
         sim_dict = self.sim_input.__dict__.copy()
         helpers.setup_yaml()
-
-        # structure the output
         output = {
             "metadata": {
                 "git_commit": helpers.get_git_hash(),
                 "date": datetime.now().isoformat(),
             },
         }
-
         output["simulation parameters"] = {}
         for key, value in sim_dict.items():
             output["simulation parameters"][key] = str(value)
-
         output["results"] = self.__dict__.copy()
-        # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
         for key in self.keys_to_ignore_results:
             output["results"].pop(key, None)
-
         with open(output_path, "w") as f:
             yaml.dump(output, f, sort_keys=False)
 
     def serialize_output(self):
         sim_dict = self.sim_input.__dict__.copy()
-
-        # structure the output
         output = {
             "metadata": {
                 "git_commit": helpers.get_git_hash(),
@@ -100,20 +95,16 @@ class SimulationResults:
         for key, value in sim_dict.items():
             output["simulation parameters"][key] = str(value)
         output["results"] = self.__dict__.copy()
-
-        # remove objects incompatible with serialization
         for key in self.keys_to_ignore_results:
             output["results"].pop(key, None)
 
         for key, value in output.items():
             if isinstance(value, np.ndarray):
-                # convert numpy arrays to lists for JSON serialization
                 output[key] = value.tolist()
                 logger.verbose(
                     "found list in results, converting to list for JSON serialization"
                 )
             if isinstance(value, pint.Quantity):
-                # convert pint.Quantity to string for JSON serialization
                 output[key] = value.to_base_units().magnitude
                 logger.verbose(
                     "found pint.Quantity in results, converting to magnitude for JSON serialization"
@@ -127,18 +118,15 @@ class SimulationResults:
             if isinstance(v, pint.Quantity):
                 units = str(v.units)
                 output["results"][k] = {"value": v.magnitude, "units": units}
-
                 if isinstance(v.magnitude, np.ndarray):
                     logger.verbose(
                         f"found pint.Quantity with numpy array magnitude in results[{k}], converting to list for JSON serialization"
                     )
                     output["results"][k]["value"] = v.magnitude.tolist()
-
         return output
 
     def to_json(self, output_path: Path):
         output = self.serialize_output()
-
         with open(output_path, "w") as f:
             json.dump(output, f, indent=3)
 
@@ -146,27 +134,24 @@ class SimulationResults:
         import pickle
 
         output = self.serialize_output()
-
         with open(output_path, "wb") as f:
             pickle.dump(output, f)
 
     def profiles_to_csv(self, output_directory: Path):
         """Save c_T2 and y_T2 profiles at all time steps as CSV files."""
         times_s = np.array([t.to("seconds").magnitude for t in self.times])
-
         col_names = [f"t={t:.1f}s" for t in times_s]
 
         df_c_T2 = pd.DataFrame(
-            np.column_stack([self.x_ct.magnitude, self.c_T2_solutions.magnitude.T]),
+            np.column_stack([self.x_ct.magnitude, self.c_T2_profiles.magnitude.T]),
             columns=["x_metres", *col_names],
         )
         df_y_T2 = pd.DataFrame(
-            np.column_stack([self.x_y.magnitude, self.y_T2_solutions.magnitude.T]),
+            np.column_stack([self.x_y.magnitude, self.y_T2_profiles.magnitude.T]),
             columns=["x_metres", *col_names],
         )
-
         df_aJ_T2 = pd.DataFrame(
-            np.column_stack([self.x_y.magnitude, self.aJ_T2_solutions.magnitude.T]),
+            np.column_stack([self.x_y.magnitude, self.aJ_T2_profiles.magnitude.T]),
             columns=["x_metres", *col_names],
         )
 
@@ -180,23 +165,18 @@ class SimulationResults:
         """Export profiles to a self-describing NetCDF file, preserving units."""
         import xarray as xr
 
-        # --- Helper: split a pint Quantity (scalar or array) into (magnitude, unit_str)
         def split(q, target_unit=None):
             if target_unit is not None:
                 q = q.to(target_unit)
-            return np.asarray(
-                q.magnitude
-            ), f"{q.units:~P}"  # "~" → short symbol, e.g. "mol/m³" -> "mol / m ** 3"
+            return np.asarray(q.magnitude), f"{q.units:~P}"
 
-        # --- Coordinates ---
         t_mag, t_unit = split(self.times, "s")
         x_ct_mag, x_ct_unit = split(self.x_ct, "m")
         x_y_mag, x_y_unit = split(self.x_y, "m")
 
-        # --- Data variables (note: c_T2_solutions is a 2D pint Quantity, shape (n_t, n_x)) ---
-        aJ_T2_mag, aJ_T2_unit = split(self.aJ_T2_solutions, "molT2/m^3/s")
-        c_mag, c_unit = split(self.c_T2_solutions, "molT2/m^3")
-        y_mag, y_unit = split(self.y_T2_solutions)  # dimensionless → keep native
+        aJ_T2_mag, aJ_T2_unit = split(self.aJ_T2_profiles, "molT2/m^3/s")
+        c_mag, c_unit = split(self.c_T2_profiles, "molT2/m^3")
+        y_mag, y_unit = split(self.y_T2_profiles)
 
         ds = xr.Dataset(
             data_vars={
@@ -236,9 +216,13 @@ class SimulationResults:
 
     @classmethod
     def deserialize_output(cls, data: dict) -> SimulationResults:
-        # only read the "results" key
-        # for each key in results, if the dict have "value" and "units" keys, convert it back to pint.Quantity
         results = data.get("results", {})
+
+        # backward compatibility: remap legacy field names to axis-named fields
+        for old_key, new_key in cls._legacy_key_map.items():
+            if old_key in results and new_key not in results:
+                results[new_key] = results.pop(old_key)
+
         for k, v in results.items():
             if isinstance(v, dict) and "value" in v and "units" in v:
                 results[k] = ureg.Quantity(v["value"], v["units"])
@@ -249,7 +233,6 @@ class SimulationResults:
     def from_json(cls, input_path: Path) -> SimulationResults:
         with open(input_path, "r") as f:
             data = json.load(f)
-
         return cls.deserialize_output(data)
 
     @classmethod
@@ -258,7 +241,6 @@ class SimulationResults:
 
         with open(input_path, "rb") as f:
             data = pickle.load(f)
-
         return cls.deserialize_output(data)
 
 
@@ -376,14 +358,14 @@ class Simulation:
             u_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(u_g0))
 
         # set initial concentration
-        c_T2_0_ufl_expr = dolfinx.fem.Constant(
-            mesh, self.sim_input.c_T2_0.to("molT2/m**3").magnitude
+        c_T2_init_ufl_expr = dolfinx.fem.Constant(
+            mesh, self.sim_input.c_T2_init.to("molT2/m**3").magnitude
         ) * self.normalize_profile(
-            self.sim_input.profile_c_T2_0, tank_height, mesh, V_profile
+            self.sim_input.profile_c_T2_init, tank_height, mesh, V_profile
         )
         u_n.sub(0).interpolate(
             dolfinx.fem.Expression(
-                c_T2_0_ufl_expr, V.sub(0).element.interpolation_points
+                c_T2_init_ufl_expr, V.sub(0).element.interpolation_points
             )
         )
 
@@ -508,39 +490,34 @@ class Simulation:
             y_T2_vals = u_n.x.array[y_dofs][y_sort_coords]
             aJ_T2_func.interpolate(aJ_T2_expr)
             aJ_T2_vals = aJ_T2_func.x.array[profile_dofs][ct_sort_coords]
-            times.append(t)
-            c_T2_solutions.append(c_T2_vals.copy())
-            y_T2_solutions.append(y_T2_vals.copy())
-            aJ_T2_solutions.append(aJ_T2_vals.copy())
-            sources_T2.append(
-                Q_T2 * self.sim_input.signal_irr(t * ureg.s)
-            )  # total T generation rate in the tank [mol/s] TODO useless: signal_irr is already given
 
-            flux_T2 = dolfinx.fem.assemble_scalar(
+            times.append(t)
+            c_T2_profiles.append(c_T2_vals.copy())
+            y_T2_profiles.append(y_T2_vals.copy())
+            aJ_T2_profiles.append(aJ_T2_vals.copy())
+            sources_T2_series.append(Q_T2 * self.sim_input.signal_irr(t * ureg.s))
+
+            ndot_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
                     u_g * P_g / (const.R * T) * y_T2_post * tank_area * ds(2)
                 )
             )
-            flux_T2_2 = dolfinx.fem.assemble_scalar(
-                dolfinx.fem.form(tank_area * aJ_T2_func * ufl.dx)
-            )  # other expression: integral of J over volume
+            ndot_T2_series.append(ndot_T2)
 
-            fluxes_T2.append(flux_T2)
-
-            inventory_T2_salt = dolfinx.fem.assemble_scalar(
+            n_T2_salt = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(c_T2_post * ufl.dx)
             )
-            inventory_T2_salt *= tank_area  # get total amount of T2 in [mol]
-            inventories_T2_salt.append(inventory_T2_salt)
+            n_T2_salt *= tank_area  # total amount of T2 in [mol]
+            n_T2_salt_series.append(n_T2_salt)
 
         t = 0
         times = []
-        c_T2_solutions = []
-        y_T2_solutions = []
-        aJ_T2_solutions = []
-        sources_T2 = []
-        fluxes_T2 = []
-        inventories_T2_salt = []
+        c_T2_profiles = []
+        y_T2_profiles = []
+        aJ_T2_profiles = []
+        sources_T2_series = []
+        ndot_T2_series = []
+        n_T2_salt_series = []
         # initialize (t=0)
         post_process(t)
 
@@ -563,14 +540,14 @@ class Simulation:
 
         results = SimulationResults(
             times=np.array(times) * ureg("s"),
-            c_T2_solutions=np.array(c_T2_solutions) * ureg("molT2/m^3"),
-            y_T2_solutions=np.array(y_T2_solutions) * ureg("dimensionless"),
-            aJ_T2_solutions=np.array(aJ_T2_solutions) * ureg("molT2/m^3/s"),
+            c_T2_profiles=np.array(c_T2_profiles) * ureg("molT2/m^3"),
+            y_T2_profiles=np.array(y_T2_profiles) * ureg("dimensionless"),
+            aJ_T2_profiles=np.array(aJ_T2_profiles) * ureg("molT2/m^3/s"),
             x_ct=x_ct * ureg("m"),
             x_y=x_y * ureg("m"),
-            inventories_T2_salt=np.array(inventories_T2_salt) * ureg("molT2"),
-            sources_T2=np.array(sources_T2) * ureg("molT2/s"),
-            fluxes_T2=np.array(fluxes_T2) * ureg("molT2/s"),
+            n_T2_salt_series=np.array(n_T2_salt_series) * ureg("molT2"),
+            sources_T2_series=np.array(sources_T2_series) * ureg("molT2/s"),
+            ndot_T2_series=np.array(ndot_T2_series) * ureg("molT2/s"),
             sim_input=self.sim_input,
             dt=dt * ureg("s"),
             dx=dx * ureg("m"),

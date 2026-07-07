@@ -31,7 +31,7 @@ standard_input.signal_sparging = lambda t: 1
 # standard_input.signal_irr = lambda t: 1 if t <= 24 * ureg.hours else 0
 standard_input.signal_irr = lambda t: 1
 # standard_input.profile_source_T = lambda z: 1 - z * ureg.m / standard_input.height
-standard_input.c_T2_0 = 3e-11 * ureg.molT2 / ureg.m**3
+standard_input.c_T2_init = 3e-11 * ureg.molT2 / ureg.m**3
 
 my_simulation = Simulation(
     standard_input,

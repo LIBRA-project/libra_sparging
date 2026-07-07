@@ -55,11 +55,11 @@ if __name__ == "__main__":
     # my_simulation.sim_input.E_l *= 1e-5
     output = my_simulation.solve(fast_solve=True)
     popt, pcov = pp.fit_exp(
-        output.inventories_T2_salt, output.times, 0 * ureg.s, t_irr, phase="rampup"
+        output.n_T2_salt_series, output.times, 0 * ureg.s, t_irr, phase="rampup"
     )
     print(f"Fitted parameters: n0 = {popt[1]}, tau = {popt[0].to('h')}")
     popt, pcov = pp.fit_exp(
-        output.inventories_T2_salt, output.times, t_irr, t_final, phase="decay"
+        output.n_T2_salt_series, output.times, t_irr, t_final, phase="decay"
     )
     print(f"Fitted parameters: n0 = {popt[1]}, tau = {popt[0].to('h')}")
     animation.create_animation(output, show_activity=False)

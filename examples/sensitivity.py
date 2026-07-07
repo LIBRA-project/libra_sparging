@@ -82,16 +82,16 @@ class SpargingProblem(Simulator):
         self.counter += 1
 
         residual_fraction = pp.get_residual_fraction(
-            sim_output.inventories_T2_salt,
+            sim_output.n_T2_salt_series,
             sim_output.times,
             t_irr,
             t_irr + t_sparging,
         )
         tau_real = pp.get_tau_real(
-            sim_output.inventories_T2_salt, sim_output.times, t_0=t_irr
+            sim_output.n_T2_salt_series, sim_output.times, t_0=t_irr
         )
         (tau_exp, _), _ = pp.fit_exp(
-            sim_output.inventories_T2_salt,
+            sim_output.n_T2_salt_series,
             sim_output.times,
             t_0=t_irr,
             t_end=t_irr + t_sparging,
