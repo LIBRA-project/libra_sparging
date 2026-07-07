@@ -193,7 +193,7 @@ class SimulationInput:
             6
             * (const_R * self.temperature)
             * self.h_l
-            / (self.graph.nodes["d_b"]["value"] * self.u_g0)
+            / (self.graph.nodes["d_b"]["value"](0 * ureg.m) * self.u_g0)
         ).to("Pa/(mol/m^3)/m")
 
     def get_Bo(self) -> pint.Quantity:
@@ -219,8 +219,24 @@ class SimulationInput:
                     f"In {self.__class__.__name__}: Invalid type for '{key}': expected a pint.Quantity, got {value} of type {type(value)}"
                 )
 
+    def intermediate_params_dict(self) -> dict:
+        """Return {param_name: {value, origin}} from the resolution graph.
+        Profiles (callables) are evaluated at z=0 and suffixed '_0'."""
+        params = {}
+        for node in self.graph.nodes:
+            value = self.graph.nodes[node]["value"]
+            origin = self.graph.nodes[node]["origin"]
+            if callable(value):
+                params[f"{node}_0"] = {
+                    "value": str(value(0 * ureg.m)),
+                    "origin": origin,
+                }
+            else:
+                params[node] = {"value": str(value), "origin": origin}
+        return params
+
     def to_json(self, path: str):
-        """Export intermediate parameters for inspection"""
+        """Export intermediate parameters for inspection."""
         import json
 
         output = {
@@ -228,31 +244,10 @@ class SimulationInput:
                 "git_commit": helpers.get_git_hash(),
                 "date": datetime.now().isoformat(),
             },
+            "intermediate parameters": self.intermediate_params_dict(),
         }
-
-        output["intermediate parameters"] = {}
-        for node in self.graph.nodes:
-            if callable(self.graph.nodes[node]["value"]):
-                output["intermediate parameters"][f"{node}_0"] = {
-                    "value": str(self.graph.nodes[node]["value"](0 * ureg.m)),
-                    "origin": self.graph.nodes[node]["origin"],
-                }
-            else:
-                output["intermediate parameters"][node] = {
-                    "value": str(self.graph.nodes[node]["value"]),
-                    "origin": self.graph.nodes[node]["origin"],
-                }
         with open(path, "w") as f:
-            json.dump(
-                output,
-                # {
-                #     key: str(value)
-                #     for key, value in self.__dict__.items()
-                #     if isinstance(value, pint.Quantity)
-                # },
-                f,
-                indent=4,
-            )
+            json.dump(output, f, indent=4)
 
     @classmethod
     def from_parameters(

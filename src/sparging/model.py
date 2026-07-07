@@ -145,12 +145,90 @@ class SimulationResults:
                     output["results"][k]["value"] = v.magnitude.tolist()
         return output
 
-    def to_json(self, output_path: Path):
-        output = self.serialize_output()
+    # ---- scalar summary export ---------------------------------------------
+
+    @staticmethod
+    def _serialize_scalar(v):
+        """pint.Quantity -> {value, units}; tuples -> list; else passthrough."""
+        if isinstance(v, pint.Quantity):
+            mag = v.magnitude
+            return {
+                "value": float(mag) if np.ndim(mag) == 0 else np.asarray(mag).tolist(),
+                "units": f"{v.units:~}",
+            }
+        if isinstance(v, tuple):
+            return [SimulationResults._serialize_scalar(x) for x in v]
+        return v
+
+    def _section_intermediate_params(self, **_) -> dict:
+        return self.sim_input.intermediate_params_dict()
+
+    def _section_fit_summary(self, **kwargs) -> dict:
+        from sparging.postprocess import summarize_decay
+
+        summary = summarize_decay(
+            self,
+            t_0=kwargs.get("t_0"),
+            t_end=kwargs.get("t_end"),
+        )
+        return {k: self._serialize_scalar(v) for k, v in summary.items()}
+
+    def _section_analytical_quantities(self, **_) -> dict:
+        si = self.sim_input
+        # each entry wrapped so one failing property doesn't kill the whole export
+        candidates = {
+            "tau_predicted": si.get_tau,
+            "c_T2_steady_state": si.get_c_T2_SS,
+            "Pi_number": si.get_Pi_number,
+            "Bodenstein_number": si.get_Bo,
+            "S_T": si.get_S_T,
+            "dP_dx_over_c": si.get_dP_dx,
+        }
+        out = {}
+        for name, getter in candidates.items():
+            try:
+                out[name] = self._serialize_scalar(getter())
+            except Exception as e:  # e.g. graph missing v_g0 node
+                out[name] = {"error": str(e)}
+        return out
+
+    def to_json(self, output_path: Path, sections: list[str], **kwargs):
+        """Write a SCALAR summary of the run.
+
+        sections: any of
+            "intermediate_params"    -> resolved closure-relation values (from graph)
+            "fit_summary"            -> exponential decay fit of n_T2_salt vs get_tau()
+            "analytical_quantities"  -> Pi, predicted tau, c_T2 steady state, Bo, ...
+
+        Extra kwargs (e.g. t_0, t_end) are forwarded to the section builders.
+        """
+        import json
+
+        builders = {
+            "intermediate_params": self._section_intermediate_params,
+            "fit_summary": self._section_fit_summary,
+            "analytical_quantities": self._section_analytical_quantities,
+        }
+        unknown = [s for s in sections if s not in builders]
+        if unknown:
+            raise ValueError(
+                f"Unknown section(s) {unknown}. Available: {sorted(builders)}"
+            )
+
+        output = {
+            "metadata": {
+                "git_commit": helpers.get_git_hash(),
+                "date": datetime.now().isoformat(),
+            }
+        }
+        for section in sections:
+            output[section] = builders[section](**kwargs)
+
         with open(output_path, "w") as f:
             json.dump(output, f, indent=3)
 
     def to_pickle(self, output_path: Path):
+        """Use to_pickle / from_pickle for full serialization."""
         import pickle
 
         output = self.serialize_output()

@@ -103,15 +103,15 @@ def fit_exp(
 
     # check goodness of fit
     tau_std = np.sqrt(pcov[0, 0])
+    n0_std = np.sqrt(pcov[1, 1])
     tau_rel_error = tau_std / popt[0]
     if tau_rel_error > 0.005:
         warnings.warn(
             f"High relative error in fitted tau: {tau_rel_error:.4f}. Fit may be unreliable."
         )
-    # reattach units
     return (popt[0] * ureg.s, popt[1] * vec.units), (
-        pcov[0] * ureg.s,
-        pcov[1] * vec.units,
+        tau_std * ureg.s,
+        n0_std * vec.units,
     )
 
 
@@ -132,3 +132,42 @@ def get_tau_real(
     idx_tau = np.argmin(np.abs(vec_decay - n0 / np.e))
     tau = times[idx_0 + idx_tau] - t_0
     return tau
+
+
+def summarize_decay(
+    results: SimulationResults,
+    t_0: pint.Quantity | None = None,
+    t_end: pint.Quantity | None = None,
+) -> dict:
+    """Fit n_T2_salt(t) with a decaying exponential over [t_0, t_end] and
+    compare with the analytical prediction. Returns a dict of pint.Quantities."""
+    times = results.times
+    inv = results.n_T2_salt_series
+
+    if t_0 is None:  # default: decay starts at the inventory peak
+        t_0 = times[int(np.argmax(inv))]
+    if t_end is None:
+        t_end = times[-1]
+
+    (tau_fit, n0_fit), (tau_std, n0_std) = fit_exp(inv, times, t_0, t_end, "decay")
+    tau_real = get_tau_real(inv, times, t_0)
+    tau_pred = results.sim_input.get_tau()
+    residual = get_residual_fraction(inv, times, t_0, t_end)
+    rel_error = ((tau_fit - tau_pred) / tau_pred).to("dimensionless")
+
+    logger.info(
+        f"tau_fitted={tau_fit.to('hour'):.3f}, tau_predicted={tau_pred.to('hour'):.3f}, "
+        f"tau_real(1/e)={tau_real.to('hour'):.3f}, rel_error={rel_error.magnitude:.2%}"
+    )
+
+    return {
+        "tau_fitted": tau_fit,
+        "tau_fitted_std": tau_std,
+        "tau_predicted": tau_pred,
+        "tau_real_1e": tau_real,
+        "n0_fitted": n0_fit,
+        "n0_fitted_std": n0_std,
+        "residual_fraction": residual,
+        "tau_rel_error": rel_error,
+        "fit_window": (t_0, t_end),
+    }
