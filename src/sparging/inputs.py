@@ -88,7 +88,7 @@ class SimulationInput:
     E_g: pint.Quantity
     E_l: pint.Quantity
     Q_T: pint.Quantity
-    signal_irr: Callable[[pint.Quantity], float] = lambda t: 1
+    signal_irr: Callable[[pint.Quantity], float] = lambda t: 0
     """callable = f:R+ (time) -> [0,1] """
     signal_sparging: Callable[[pint.Quantity], float] = lambda t: 1
     """callable = f:R+ (time) -> [0,1] """
@@ -97,7 +97,7 @@ class SimulationInput:
     c_T2_init: pint.Quantity = 0 * ureg("molT2/m**3")
     profile_c_T2_init: Callable[[float], pint.Quantity] | None = None
     """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
-    required_keys = (
+    required_scalars = (
         "height",
         "area",
         "temperature",
@@ -212,7 +212,7 @@ class SimulationInput:
 
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error
-        for key in self.required_keys:
+        for key in self.required_scalars:
             value = getattr(self, key)
             if not isinstance(value, pint.Quantity):
                 raise ValueError(
@@ -271,14 +271,14 @@ class SimulationInput:
         ]
         discovered_graph = nx.Graph() if graph is None else graph
 
-        for required_key in (*cls.required_keys, *cls.required_profiles):
+        for required_key in (*cls.required_scalars, *cls.required_profiles):
             find_in_graph(required_key, discovered_graph, input_objs=input_objects)
 
         return cls(
             graph=discovered_graph,
             **{
                 arg: discovered_graph.nodes[arg]["value"]
-                for arg in (*cls.required_keys, *cls.required_profiles)
+                for arg in (*cls.required_scalars, *cls.required_profiles)
             },
         )
 

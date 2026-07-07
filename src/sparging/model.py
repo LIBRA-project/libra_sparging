@@ -630,6 +630,7 @@ class Simulation:
             "y_T2": (ExportKind.PROFILE, "dimensionless", y_T2),
             "P_T2": (ExportKind.PROFILE, "Pa", P_g * y_T2),
             "aJ_T2": (ExportKind.PROFILE, "molT2/m^3/s", aJ_T2),
+            "J_T2": (ExportKind.PROFILE, "molT2/m^2/s", aJ_T2 / a),
             # time-invariant spatial profiles (UFL expression)
             "P_g": (ExportKind.STATIC, "Pa", P_g),
             "eps_g": (ExportKind.STATIC, "dimensionless", eps_g),

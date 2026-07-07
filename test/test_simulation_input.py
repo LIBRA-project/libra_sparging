@@ -56,7 +56,7 @@ sparging_params = SpargingParameters(
 #         "Expected from_parameters to return a SimulationInput instance"
 #     )
 #     # Check that all fields are populated and have the correct types
-#     for field in SimulationInput.required_keys:
+#     for field in SimulationInput.required_scalars:
 #         value = getattr(sim_input, field)
 #         assert isinstance(value, ureg.Quantity), (
 #             f"Expected field '{field}' to be a pint.Quantity, got {type(value)}"
