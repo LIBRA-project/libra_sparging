@@ -39,6 +39,9 @@ my_simulation = Simulation(
     dispersion_on=True,
     constant_profiles=False,
 )
+
+standard_input.to_json(FOLDER / "intermediate_params.json")
+breakpoint()
 if __name__ == "__main__":
     my_simulation.exports = ["P_g", "a", "aJ_T2"]
     output = my_simulation.solve(fast_solve=True)
