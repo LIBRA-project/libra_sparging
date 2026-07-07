@@ -390,9 +390,6 @@ class Simulation:
         c_T2, y_T2 = ufl.split(u)
         c_T2_n, y_T2_n = ufl.split(u_n)
 
-        # vel_x = u_g0  # TODO velocity should vary with hydrostatic pressure
-        # vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
-
         h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
 
         gen_T2_ave = dolfinx.fem.Constant(
@@ -433,14 +430,7 @@ class Simulation:
         F += -gen_T2 * v_c * ufl.dx
 
         # advection of gas
-        F += (
-            1
-            / (const.R * T)
-            # * ufl.inner(ufl.dot(ufl.grad(P_g * y_T2), vel), v_y)
-            * ufl.grad(u_g * P_g * y_T2)[0]
-            * v_y
-            * ufl.dx
-        )
+        F += 1 / (const.R * T) * ufl.grad(u_g * P_g * y_T2)[0] * v_y * ufl.dx
 
         # BOUNDARY CONDITIONS
         gas_inlet_facets = dolfinx.mesh.locate_entities_boundary(

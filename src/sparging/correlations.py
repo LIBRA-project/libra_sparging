@@ -322,18 +322,6 @@ h_l_higbie = Correlation(
 )
 all_correlations.append(h_l_higbie)
 
-h_l_malara = Correlation(
-    identifier="h_l_malara",
-    function=lambda D_l, d_b0: get_h_malara(
-        D_l=D_l, d_b=d_b0
-    ),  # mass transfer coefficient with Malara correlation
-    corr_type=CorrelationType.MASS_TRANSFER_COEFF,
-    source="Malara 1995",
-    description="mass transfer coefficient for tritium in liquid FLiBe using Malara 1995 correlation (used for inert gas stripping from breeder droplets, may not be valid here)",
-    input_units=["m**2/s", "m"],
-    output_units="m/s",
-)
-all_correlations.append(h_l_malara)
 
 h_l_briggs = Correlation(
     identifier="h_l_briggs",
@@ -467,13 +455,15 @@ def get_v_g0(Eo, Mo, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
         )
     v_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
     if v_g0 > ureg("1 m/s") or v_g0 < ureg("0.1 m/s"):
-        warnings.warn(f"Warning: bubble velocity {v_g0} is out of the typical range")
+        warnings.warn(
+            f"Warning: bubble terminal velocity {v_g0} is out of the typical range"
+        )
 
     return v_g0
 
 
-def get_eps_g(T, P_g, n_g_dot, area, v_g) -> float:
-    gamma = n_g_dot * const_R * T / (P_g * area * v_g)
+def get_eps_g(T, P_g, ndot_g, area, v_g) -> float:
+    gamma = ndot_g * const_R * T / (P_g * area * v_g)
 
     eps_g = gamma / (1 + gamma)
 
@@ -483,7 +473,7 @@ def get_eps_g(T, P_g, n_g_dot, area, v_g) -> float:
         warnings.warn(f"Warning: unphysical gas fraction: {eps_g}")
     elif np.max(eps_g) > 0.1 * ureg("dimensionless"):
         warnings.warn(
-            f"Warning: high gas fraction: {eps_g}, models assumptions may not hold"
+            f"Warning: high gas fraction: {eps_g}, model assumptions may not hold"
         )
     return eps_g
 
@@ -493,15 +483,6 @@ def get_h_higbie(D_l: float, v_g: float, d_b: float) -> float:
     Higbie penetration model average mass transfer coefficient [m/s]-> suited for large mobile interfaces
     """
     h_l = 2 * ((D_l * v_g) / (const.pi * d_b)) ** 0.5
-    return h_l
-
-
-def get_h_malara(D_l: float, d_b: float) -> float:
-    """
-    mass transfer coefficient [m/s] for tritium in liquid FLiBe using Malara 1995 correlation
-    (used for inert gas stripping from breeder droplets, may not be valid here)
-    """
-    h_l = 2 * np.pi**2 * D_l / (3 * d_b)
     return h_l
 
 
@@ -555,7 +536,7 @@ eps_g = Profile(
         lambda z: get_eps_g(
             T=temperature,
             P_g=P_g(z),
-            n_g_dot=ndot_g0,
+            ndot_g=ndot_g0,
             area=area,
             v_g=v_g0,
         )
