@@ -40,24 +40,24 @@ my_simulation = Simulation(
     constant_profiles=False,
 )
 
-standard_input.to_json(FOLDER / "intermediate_params.json")
-breakpoint()
 if __name__ == "__main__":
-    my_simulation.exports = ["P_g", "a", "aJ_T2"]
+    my_simulation.exports = [
+        "P_g",
+        "a",
+        "aJ_T2",
+        "c_T2",
+        "y_T2",
+        "P_T2",
+        "n_T2_salt",
+        "ndot_T2",
+    ]
     output = my_simulation.solve(fast_solve=True)
-    output.exports_to_csv(FOLDER)
+
     # save output to file
+    output.exports_to_csv(FOLDER)
     output.to_json(FOLDER / "params.json")
-
-    # P = output.exported_fields["pressure"]
-    # plt.plot(output.x_ct, P)
-    # output.exports_to_csv(FOLDER)
-
-    output.profiles_to_csv(FOLDER)
-    output.profiles_to_cdf(FOLDER)
-
-    # # plot results
-    # from sparging import plotting
-    # plotting.plot_animation(output)
+    standard_input.to_json(
+        FOLDER / "intermediate_params.json"
+    )  # inspect intermediate parameters
 
     animation.create_animation(output, show_activity=False)

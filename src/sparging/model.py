@@ -25,12 +25,26 @@ from collections.abc import Callable
 import logging
 from dataclasses import dataclass, field
 import warnings
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
 EPS = 1e-26
 
 # log.set_log_level(log.LogLevel.INFO)
+
+
+class ExportKind(Enum):
+    PROFILE = "profile"  # time-varying spatial profile -> 2D (n_time, n_x)
+    STATIC = "static"  # time-invariant spatial profile -> 1D (n_x,)
+    SERIES = "series"  # scalar per timestep -> 1D (n_time,)
+
+
+@dataclass
+class Export:
+    kind: ExportKind
+    data: pint.Quantity
+    """PROFILE: (n_time, n_x) | STATIC: (n_x,) | SERIES: (n_time,)"""
 
 
 @dataclass
@@ -169,7 +183,7 @@ class SimulationResults:
         )
 
     def profiles_to_cdf(self, output_directory: Path):
-        """Export profiles to a self-describing NetCDF file, preserving units."""
+        """Export profiles to a self-describing NetCDF file, preserving units. Use for archiving"""
         import xarray as xr
 
         def split(q, target_unit=None):
@@ -222,15 +236,13 @@ class SimulationResults:
         ds.to_netcdf(output_directory / "profiles.nc")
 
     def exports_to_csv(self, output_directory: Path):
-        """Write each requested export to its own CSV file (e.g. 'P_g.csv', 'a.csv').
+        """Write each export to a self-describing CSV. The export KIND is implied
+        by the column layout, and the physical UNIT is stored as a leading
+        '# units: <unit>' comment line.
 
-        Format (matches the notebook's load_profile_csv):
-            column 0    : 'x_metres'
-            columns 1.. : one per time step, named 't=<seconds>s'
-        A companion '_export_units.json' records the physical unit of each export,
-        so the plotting script can build axis labels.
-
-        Replaces profiles_to_csv (which was hard-coded to c_T2 / y_T2).
+            PROFILE : col 0 'x_metres', then one column per time step 't=<s>s'
+            STATIC  : columns 'x_metres', 'value'
+            SERIES  : columns 't_seconds', 'value'
         """
         if not self.exports:
             warnings.warn(
@@ -239,23 +251,24 @@ class SimulationResults:
             return
 
         output_directory.mkdir(parents=True, exist_ok=True)
-
         times_s = self.times.to("seconds").magnitude
-        col_names = [f"t={t:.1f}s" for t in times_s]
+        x_m = self.x_export.magnitude
 
-        units = {}
-        for name, data in self.exports.items():
-            df = pd.DataFrame(
-                np.column_stack([self.x_export.magnitude, data.magnitude.T]),
-                columns=["x_metres", *col_names],
-            )
-            df.to_csv(
-                output_directory / f"{name}.csv", index=False, float_format="%.6e"
-            )
-            units[name] = f"{data.units:~P}"
+        for name, exp in self.exports.items():
+            if exp.kind == ExportKind.PROFILE:
+                col_names = [f"t={t:.1f}s" for t in times_s]
+                df = pd.DataFrame(
+                    np.column_stack([x_m, exp.data.magnitude.T]),
+                    columns=["x_metres", *col_names],
+                )
+            elif exp.kind == ExportKind.STATIC:
+                df = pd.DataFrame({"x_metres": x_m, "value": exp.data.magnitude})
+            elif exp.kind == ExportKind.SERIES:
+                df = pd.DataFrame({"t_seconds": times_s, "value": exp.data.magnitude})
 
-        with open(output_directory / "_export_units.json", "w") as f:
-            json.dump(units, f, indent=2)
+            with open(output_directory / f"{name}.csv", "w", newline="") as f:
+                f.write(f"# units: {exp.data.units:~P}\n")
+                df.to_csv(f, index=False, float_format="%.6e")
 
     @classmethod
     def deserialize_output(cls, data: dict) -> SimulationResults:
@@ -526,19 +539,41 @@ class Simulation:
         # NOTE currently we don't use x_profile and use another x in the plotting script
         x_profile = coords_profile[profile_sort_coords]
 
-        # ---- EXPORTS: registry of quantities that can be exported by name ----
-        # Every entry is a scalar UFL expression on `mesh`; it is interpolated
-        # into the scalar profile space V_profile and sampled at x_profile.
+        # scalar forms reused by SERIES exports
+        ndot_T2_form = dolfinx.fem.form(
+            u_g * P_g / (const.R * T) * y_T2_n * tank_area * ds(2)
+        )
+        n_T2_salt_form = dolfinx.fem.form(c_T2_n * tank_area * ufl.dx)
+
+        # ---- EXPORTS registry: name -> (kind, units, expr_or_callable) ----
         exportable = {
-            "c_T2": (c_T2, "molT2/m^3"),
-            "y_T2": (y_T2, "dimensionless"),
-            "P_T2": (P_g * y_T2, "Pa"),
-            "aJ_T2": (aJ_T2, "molT2/m^3/s"),
-            "P_g": (P_g, "Pa"),
-            "eps_g": (eps_g, "dimensionless"),
-            "eps_l": (eps_l, "dimensionless"),
-            "a": (a, "1/m"),
-            "u_g": (u_g, "m/s"),
+            # time-varying spatial profiles (UFL expression)
+            "c_T2": (ExportKind.PROFILE, "molT2/m^3", c_T2),
+            "y_T2": (ExportKind.PROFILE, "dimensionless", y_T2),
+            "P_T2": (ExportKind.PROFILE, "Pa", P_g * y_T2),
+            "aJ_T2": (ExportKind.PROFILE, "molT2/m^3/s", aJ_T2),
+            # time-invariant spatial profiles (UFL expression)
+            "P_g": (ExportKind.STATIC, "Pa", P_g),
+            "eps_g": (ExportKind.STATIC, "dimensionless", eps_g),
+            "eps_l": (ExportKind.STATIC, "dimensionless", eps_l),
+            "a": (ExportKind.STATIC, "1/m", a),
+            "u_g": (ExportKind.STATIC, "m/s", u_g),
+            # scalar time series (callable f(t) -> magnitude in `units`)
+            "ndot_T2": (
+                ExportKind.SERIES,
+                "molT2/s",
+                lambda t: dolfinx.fem.assemble_scalar(ndot_T2_form),
+            ),
+            "n_T2_salt": (
+                ExportKind.SERIES,
+                "molT2",
+                lambda t: dolfinx.fem.assemble_scalar(n_T2_salt_form),
+            ),
+            "source_T2": (
+                ExportKind.SERIES,
+                "molT2/s",
+                lambda t: Q_T2 * self.sim_input.signal_irr(t * ureg.s),
+            ),
         }
 
         unknown = [name for name in self.exports if name not in exportable]
@@ -548,18 +583,34 @@ class Simulation:
                 f"Available exports: {sorted(exportable)}"
             )
 
-        export_exprs = {}
-        export_funcs = {}
-        export_units = {}
-        for name in self.exports:
-            expr_ufl, units = exportable[name]
-            export_funcs[name] = dolfinx.fem.Function(V_profile)
-            export_exprs[name] = dolfinx.fem.Expression(
-                expr_ufl, V_profile.element.interpolation_points
-            )
-            export_units[name] = units
+        export_kinds = {n: exportable[n][0] for n in self.exports}
+        export_units = {n: exportable[n][1] for n in self.exports}
 
-        export_data = {name: [] for name in self.exports}
+        # interpolation machinery for PROFILE + STATIC
+        export_funcs, export_exprs = {}, {}
+        for name in self.exports:
+            kind, _, thing = exportable[name]
+            if kind in (ExportKind.PROFILE, ExportKind.STATIC):
+                export_funcs[name] = dolfinx.fem.Function(V_profile)
+                export_exprs[name] = dolfinx.fem.Expression(
+                    thing, V_profile.element.interpolation_points
+                )
+
+        # callables for SERIES
+        export_series_fn = {
+            name: exportable[name][2]
+            for name in self.exports
+            if export_kinds[name] == ExportKind.SERIES
+        }
+
+        # storage: PROFILE and SERIES grow over time; STATIC filled once
+        export_profiles = {
+            n: [] for n in self.exports if export_kinds[n] == ExportKind.PROFILE
+        }
+        export_series = {
+            n: [] for n in self.exports if export_kinds[n] == ExportKind.SERIES
+        }
+        export_static = {}
 
         # NOTE maybe we could take this function out and it would take a SimulationResults object as input + u + other things...
         def post_process(t):
@@ -593,9 +644,13 @@ class Simulation:
             n_T2_salt *= tank_area  # total amount of T2 in [mol]
             n_T2_salt_series.append(n_T2_salt)
             for name in self.exports:
-                export_funcs[name].interpolate(export_exprs[name])
-                vals = export_funcs[name].x.array[profile_dofs][profile_sort_coords]
-                export_data[name].append(vals.copy())
+                kind = export_kinds[name]
+                if kind == ExportKind.PROFILE:
+                    export_funcs[name].interpolate(export_exprs[name])
+                    vals = export_funcs[name].x.array[profile_dofs][profile_sort_coords]
+                    export_profiles[name].append(vals.copy())
+                elif kind == ExportKind.SERIES:
+                    export_series[name].append(export_series_fn[name](t))
 
         t = 0
         times = []
@@ -625,6 +680,14 @@ class Simulation:
 
             post_process(t)
 
+        # STATIC profiles are time-invariant -> sample a single column
+        for name in self.exports:
+            if export_kinds[name] == ExportKind.STATIC:
+                export_funcs[name].interpolate(export_exprs[name])
+                export_static[name] = (
+                    export_funcs[name].x.array[profile_dofs][profile_sort_coords].copy()
+                )
+
         results = SimulationResults(
             times=np.array(times) * ureg("s"),
             c_T2_profiles=np.array(c_T2_profiles) * ureg("molT2/m^3"),
@@ -639,7 +702,17 @@ class Simulation:
             dt=dt * ureg("s"),
             dx=dx * ureg("m"),
             exports={
-                name: np.array(export_data[name]) * ureg(export_units[name])
+                name: Export(
+                    kind=export_kinds[name],
+                    data=np.array(
+                        export_profiles[name]
+                        if export_kinds[name] == ExportKind.PROFILE
+                        else export_series[name]
+                        if export_kinds[name] == ExportKind.SERIES
+                        else export_static[name]
+                    )
+                    * ureg(export_units[name]),
+                )
                 for name in self.exports
             },
             x_export=x_profile * ureg("m"),

@@ -220,6 +220,7 @@ class SimulationInput:
                 )
 
     def to_json(self, path: str):
+        """Export intermediate parameters for inspection"""
         import json
 
         output = {
@@ -231,10 +232,16 @@ class SimulationInput:
 
         output["intermediate parameters"] = {}
         for node in self.graph.nodes:
-            output["intermediate parameters"][node] = {
-                "value": str(self.graph.nodes[node]["value"]),
-                "origin": self.graph.nodes[node]["origin"],
-            }
+            if callable(self.graph.nodes[node]["value"]):
+                output["intermediate parameters"][f"{node}_0"] = {
+                    "value": str(self.graph.nodes[node]["value"](0 * ureg.m)),
+                    "origin": self.graph.nodes[node]["origin"],
+                }
+            else:
+                output["intermediate parameters"][node] = {
+                    "value": str(self.graph.nodes[node]["value"]),
+                    "origin": self.graph.nodes[node]["origin"],
+                }
         with open(path, "w") as f:
             json.dump(
                 output,
