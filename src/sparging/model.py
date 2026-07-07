@@ -23,6 +23,8 @@ from sparging.inputs import SimulationInput
 import pint
 from collections.abc import Callable
 import logging
+from dataclasses import dataclass, field
+import warnings
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +49,15 @@ class SimulationResults:
     dt: pint.Quantity = None
     dx: pint.Quantity = None
     sim_input: SimulationInput = None
+    exports: dict[str, pint.Quantity] = None
+    """name -> 2D Quantity, axis 0: time step, axis 1: position (x_export)"""
+    x_export: np.ndarray[pint.Quantity] = None
 
     keys_to_ignore_results = [
         "sim_input",
         "dt",
         "dx",
+        "exports",  # dict of Quantities: exported via exports_to_csv, not JSON/YAML
     ]
 
     # Backward-compatibility: old field names -> new (axis-named) fields.
@@ -138,7 +144,8 @@ class SimulationResults:
             pickle.dump(output, f)
 
     def profiles_to_csv(self, output_directory: Path):
-        """Save c_T2 and y_T2 profiles at all time steps as CSV files."""
+        """Save c_T2 and y_T2 profiles at all time steps as CSV files.
+        replaced by exports_to_csv, but kept for legacy"""
         times_s = np.array([t.to("seconds").magnitude for t in self.times])
         col_names = [f"t={t:.1f}s" for t in times_s]
 
@@ -214,6 +221,42 @@ class SimulationResults:
         output_directory.mkdir(parents=True, exist_ok=True)
         ds.to_netcdf(output_directory / "profiles.nc")
 
+    def exports_to_csv(self, output_directory: Path):
+        """Write each requested export to its own CSV file (e.g. 'P_g.csv', 'a.csv').
+
+        Format (matches the notebook's load_profile_csv):
+            column 0    : 'x_metres'
+            columns 1.. : one per time step, named 't=<seconds>s'
+        A companion '_export_units.json' records the physical unit of each export,
+        so the plotting script can build axis labels.
+
+        Replaces profiles_to_csv (which was hard-coded to c_T2 / y_T2).
+        """
+        if not self.exports:
+            warnings.warn(
+                "No exports to write. Set `simulation.exports = [...]` before solving."
+            )
+            return
+
+        output_directory.mkdir(parents=True, exist_ok=True)
+
+        times_s = self.times.to("seconds").magnitude
+        col_names = [f"t={t:.1f}s" for t in times_s]
+
+        units = {}
+        for name, data in self.exports.items():
+            df = pd.DataFrame(
+                np.column_stack([self.x_export.magnitude, data.magnitude.T]),
+                columns=["x_metres", *col_names],
+            )
+            df.to_csv(
+                output_directory / f"{name}.csv", index=False, float_format="%.6e"
+            )
+            units[name] = f"{data.units:~P}"
+
+        with open(output_directory / "_export_units.json", "w") as f:
+            json.dump(units, f, indent=2)
+
     @classmethod
     def deserialize_output(cls, data: dict) -> SimulationResults:
         results = data.get("results", {})
@@ -250,6 +293,9 @@ class Simulation:
     t_final: pint.Quantity
     dispersion_on: bool = True
     constant_profiles: bool = False
+    exports: list[str] = field(default_factory=list)
+    """Names of quantities to export (must be keys of the export registry built
+    in `solve`). Each is written to '<name>.csv' by `SimulationResults.exports_to_csv`."""
 
     def normalize_profile(
         self, profile: Callable[[float], float] | None, length: float, mesh, func_space
@@ -368,6 +414,8 @@ class Simulation:
                 c_T2_init_ufl_expr, V.sub(0).element.interpolation_points
             )
         )
+        # make u match u_n at t=0 so interpolated exports are correct at the first step
+        u.x.array[:] = u_n.x.array[:]
 
         c_T2, y_T2 = ufl.split(u)
         c_T2_n, y_T2_n = ufl.split(u_n)
@@ -478,6 +526,41 @@ class Simulation:
         # NOTE currently we don't use x_profile and use another x in the plotting script
         x_profile = coords_profile[profile_sort_coords]
 
+        # ---- EXPORTS: registry of quantities that can be exported by name ----
+        # Every entry is a scalar UFL expression on `mesh`; it is interpolated
+        # into the scalar profile space V_profile and sampled at x_profile.
+        exportable = {
+            "c_T2": (c_T2, "molT2/m^3"),
+            "y_T2": (y_T2, "dimensionless"),
+            "P_T2": (P_g * y_T2, "Pa"),
+            "aJ_T2": (aJ_T2, "molT2/m^3/s"),
+            "P_g": (P_g, "Pa"),
+            "eps_g": (eps_g, "dimensionless"),
+            "eps_l": (eps_l, "dimensionless"),
+            "a": (a, "1/m"),
+            "u_g": (u_g, "m/s"),
+        }
+
+        unknown = [name for name in self.exports if name not in exportable]
+        if unknown:
+            raise ValueError(
+                f"Cannot export unknown quantities {unknown}. "
+                f"Available exports: {sorted(exportable)}"
+            )
+
+        export_exprs = {}
+        export_funcs = {}
+        export_units = {}
+        for name in self.exports:
+            expr_ufl, units = exportable[name]
+            export_funcs[name] = dolfinx.fem.Function(V_profile)
+            export_exprs[name] = dolfinx.fem.Expression(
+                expr_ufl, V_profile.element.interpolation_points
+            )
+            export_units[name] = units
+
+        export_data = {name: [] for name in self.exports}
+
         # NOTE maybe we could take this function out and it would take a SimulationResults object as input + u + other things...
         def post_process(t):
             """
@@ -509,6 +592,10 @@ class Simulation:
             )
             n_T2_salt *= tank_area  # total amount of T2 in [mol]
             n_T2_salt_series.append(n_T2_salt)
+            for name in self.exports:
+                export_funcs[name].interpolate(export_exprs[name])
+                vals = export_funcs[name].x.array[profile_dofs][profile_sort_coords]
+                export_data[name].append(vals.copy())
 
         t = 0
         times = []
@@ -551,5 +638,10 @@ class Simulation:
             sim_input=self.sim_input,
             dt=dt * ureg("s"),
             dx=dx * ureg("m"),
+            exports={
+                name: np.array(export_data[name]) * ureg(export_units[name])
+                for name in self.exports
+            },
+            x_export=x_profile * ureg("m"),
         )
         return results
