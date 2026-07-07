@@ -2,6 +2,24 @@ from pint import UnitRegistry
 import scipy.constants as const
 import logging
 
+"""
+Naming convention (paper symbol <-> code)
+=========================================
+Core rule:  <quantity>_<species>  mirrors the paper symbol, e.g.
+    c_T2   -> c_{T2}      ndot_T2 -> \\dot n_{T2}     P_g/P_l -> P_g/P_l
+
+Collections are named by the AXIS they vary along:
+    _profile   : varies in space z           (1D array)
+    _profiles  : space x time                (2D array, leading axis = time)
+    _series    : varies in time              (1D array)
+
+Fixed suffix vocabulary:
+    Xdot    : time derivative / rate   (\\dot X)   -> ndot_T2, Vdot_g0
+    X_ave   : spatial/quantity average (\\bar X)   -> gen_T2_ave
+    X_0     : tank bottom / gas inlet  
+    X_init  : initial condition (t=0) 
+"""
+
 molar_mass_T2 = 3.016 * 2  # g/mol T2
 specific_activity_tritium = 3.57e14  # Bq/g
 molT2_to_activity = molar_mass_T2 * specific_activity_tritium  # Bq/mol T2
