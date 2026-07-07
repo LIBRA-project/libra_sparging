@@ -37,19 +37,4 @@ def get_git_hash():
         return "no-git"
 
 
-def string_to_ramp(t, start, end):
-    (t, start, end) = to_comparable_magnitude([t, start, end])
-    return np.clip((t - start) / (end - start), 0, 1)
-
-
-def string_to_step(t, start):
-    (t, start) = to_comparable_magnitude([t, start])
-    return np.heaviside(t - start, 1)
-
-
-def to_comparable_magnitude(quantities: list):
-    quantities = [ureg.Quantity(q) for q in quantities]
-    base_units = [q.to_base_units().units for q in quantities]
-    if len(set(base_units)) > 1:
-        raise ValueError(f"Quantities have different base units: {base_units}")
-    return tuple([q.to_base_units().magnitude for q in quantities])
+s
