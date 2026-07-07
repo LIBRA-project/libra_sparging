@@ -462,22 +462,6 @@ def get_v_g0(Eo, Mo, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
     return v_g0
 
 
-def get_eps_g(T, P_g, ndot_g, area, v_g) -> float:
-    gamma = ndot_g * const_R * T / (P_g * area * v_g)
-
-    eps_g = gamma / (1 + gamma)
-
-    if np.max(eps_g) > 1 * ureg("dimensionless") or np.min(eps_g) < 0 * ureg(
-        "dimensionless"
-    ):
-        warnings.warn(f"Warning: unphysical gas fraction: {eps_g}")
-    elif np.max(eps_g) > 0.1 * ureg("dimensionless"):
-        warnings.warn(
-            f"Warning: high gas fraction: {eps_g}, model assumptions may not hold"
-        )
-    return eps_g
-
-
 def get_h_higbie(D_l: float, v_g: float, d_b: float) -> float:
     """
     Higbie penetration model average mass transfer coefficient [m/s]-> suited for large mobile interfaces
@@ -530,19 +514,12 @@ d_b = Profile(
 )
 all_correlations.append(d_b)
 
+
 eps_g = Profile(
     identifier="eps_g",
-    function=lambda temperature, P_g, ndot_g0, area, v_g0: (
-        lambda z: get_eps_g(
-            T=temperature,
-            P_g=P_g(z),
-            ndot_g=ndot_g0,
-            area=area,
-            v_g=v_g0,
-        )
-    ),
+    function=lambda u_g, v_g0: lambda z: u_g(z) / v_g0,
     corr_type=CorrelationType.GAS_VOID_FRACTION,
-    input_units=["kelvin", PROFILE, "mol/s", "m^2", "m/s"],
+    input_units=[PROFILE, "m/s"],
     output_units="dimensionless",
     description="gas void fraction profile (local P and d_b)",
 )

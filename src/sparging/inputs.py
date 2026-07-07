@@ -203,13 +203,6 @@ class SimulationInput:
         """
         return (self.u_g0 * self.height / self.E_g).to("dimensionless")
 
-    def test_eps_g(
-        self,
-    ):  # to see if the two definitions of superficial velocity are consistent -> TODO remove
-        print(
-            f"{self.eps_g0 * self.graph.nodes['v_g0']['value']} vs {self.graph.nodes['Vdot_g0']['value'] / self.area} vs {self.u_g0}"
-        )
-
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error
         for key in self.required_scalars:

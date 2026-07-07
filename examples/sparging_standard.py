@@ -24,7 +24,6 @@ standard_input = get_sim_input_standard()
 print(f"Pi = {standard_input.get_Pi_number():.2f}")
 print(f"steady state c_T2 = {standard_input.get_c_T2_SS():.2e}")
 print(f"Bo = {standard_input.get_Bo():.2e}")
-standard_input.test_eps_g()
 
 standard_input.c_T2_init = 3e-11 * ureg.molT2 / ureg.m**3
 
@@ -46,6 +45,8 @@ if __name__ == "__main__":
         "n_T2_salt",
         "ndot_T2",
         "J_T2",
+        "eps_g",
+        "u_g",
     ]
     output = my_simulation.solve(fast_solve=True)
 
@@ -53,7 +54,7 @@ if __name__ == "__main__":
     output.exports_to_csv(FOLDER)
     output.to_json(
         FOLDER / "summary.json",
-        ["analytical_quantities", "fit_summary"],
+        ["analytical_quantities", "fit_summary", "intermediate_params"],
     )
 
     animation.create_animation(output, show_activity=False)
