@@ -35,6 +35,3 @@ def get_git_hash():
         )
     except subprocess.CalledProcessError:
         return "no-git"
-
-
-s
