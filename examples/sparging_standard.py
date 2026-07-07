@@ -31,20 +31,21 @@ standard_input.signal_sparging = lambda t: 1
 # standard_input.signal_irr = lambda t: 1 if t <= 24 * ureg.hours else 0
 standard_input.signal_irr = lambda t: 1
 # standard_input.profile_source_T = lambda z: 1 - z * ureg.m / standard_input.height
-standard_input.c_T2_0 = 3e-11 * ureg.molT2 / ureg.m**3
+standard_input.c_T2_init = 3e-11 * ureg.molT2 / ureg.m**3
 
 my_simulation = Simulation(
     standard_input,
     t_final=6 * ureg.days,
-    profile_pressure_hydrostatic=True,
     dispersion_on=True,
+    constant_profiles=False,
 )
 
 standard_input.to_json(FOLDER / "intermediate_params.json")
 breakpoint()
 if __name__ == "__main__":
-    # my_simulation.exports = ["pressure", "J_T2"]
+    my_simulation.exports = ["P_g", "a", "aJ_T2"]
     output = my_simulation.solve(fast_solve=True)
+    output.exports_to_csv(FOLDER)
     # save output to file
     output.to_json(FOLDER / "params.json")
 

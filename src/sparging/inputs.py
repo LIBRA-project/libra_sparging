@@ -51,9 +51,9 @@ class BreederMaterial:
 @dataclass
 class OperatingParameters:
     temperature: pint.Quantity
-    flow_g_mol: pint.Quantity
+    ndot_g0: pint.Quantity
     P_top: pint.Quantity
-    flow_g_vol: pint.Quantity | None = None
+    Vdot_g0: pint.Quantity | None = None
     P_bottom: pint.Quantity | Correlation | None = None
     tbr: pint.Quantity | None = None
     n_gen_rate: pint.Quantity | None = None
@@ -67,7 +67,6 @@ class OperatingParameters:
 class SpargingParameters:
     h_l: pint.Quantity | Correlation
     eps_g: pint.Quantity | Correlation | None = None
-    u_g0: pint.Quantity | Correlation | None = None
     d_b: pint.Quantity | Correlation | None = None
     rho_g: pint.Quantity | Correlation | None = None
     E_g: pint.Quantity | Correlation | None = None
@@ -82,14 +81,10 @@ class SpargingParameters:
 class SimulationInput:
     height: pint.Quantity
     area: pint.Quantity
-    u_g0: pint.Quantity
     temperature: pint.Quantity
-    a: pint.Quantity
     h_l: pint.Quantity
     K_s: pint.Quantity
-    P_bottom: pint.Quantity
     rho_l: pint.Quantity
-    eps_g: pint.Quantity
     E_g: pint.Quantity
     E_l: pint.Quantity
     Q_T: pint.Quantity
@@ -99,23 +94,26 @@ class SimulationInput:
     """callable = f:R+ (time) -> [0,1] """
     profile_source_T: Callable[[float], float] | None = None
     """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
-    c_T2_0: pint.Quantity = 0 * ureg("molT2/m**3")
-    profile_c_T2_0: Callable[[float], pint.Quantity] | None = None
+    c_T2_init: pint.Quantity = 0 * ureg("molT2/m**3")
+    profile_c_T2_init: Callable[[float], pint.Quantity] | None = None
     """callable = f:[0,1] -> R+, it takes a dimensionless coordinate: (z / height)"""
     required_keys = (
         "height",
         "area",
-        "u_g0",
         "temperature",
-        "a",
         "h_l",
         "K_s",
-        "P_bottom",
         "rho_l",
-        "eps_g",
         "E_g",
         "E_l",
         "Q_T",
+    )
+    required_profiles = (
+        "P_l",
+        "P_g",
+        "eps_g",
+        "a",
+        "u_g",
     )  # these parameters will be used to solve the model
     graph: nx.Graph | None = None
     """ Stores the intermediate parameters and their relationships that built the SimulationInput. 
@@ -125,14 +123,40 @@ class SimulationInput:
         - origin: "input" | correlation identifier
     e.g use: mySimulationInput.graph.nodes["height"]["value"]
     """
+    # pressure dependant profiles
+    P_l: Callable[[pint.Quantity], pint.Quantity] | None = None
+    P_g: Callable[[pint.Quantity], pint.Quantity] | None = None
+    eps_g: Callable[[pint.Quantity], pint.Quantity] | None = None
+    a: Callable[[pint.Quantity], pint.Quantity] | None = None
+    u_g: Callable[[pint.Quantity], pint.Quantity] | None = None
 
     @property
     def volume(self):
         return self.area * self.height
 
     @property
-    def eps_l(self):
-        return 1 - self.eps_g
+    def a_0(self):
+        return self.a(0 * ureg.m)
+
+    @property
+    def eps_g0(self):
+        return self.eps_g(0 * ureg.m)
+
+    @property
+    def eps_l0(self):
+        return 1 - self.eps_g0
+
+    @property
+    def P_l0(self):
+        return self.P_l(0 * ureg.m)
+
+    @property
+    def P_g0(self):
+        return self.P_g(0 * ureg.m)
+
+    @property
+    def u_g0(self):
+        return self.u_g(0 * ureg.m)
 
     def set_S_T(self, val: pint.Quantity):
         self.Q_T = (val.to("molT/m**3/s") * self.volume).to("molT/s")
@@ -142,10 +166,10 @@ class SimulationInput:
 
     def get_tau(self) -> pint.Quantity:
         """characteristic time of the sparger under the small partial pressure (SPP) approximation"""
-        return (self.eps_l / (self.h_l * self.a)).to("seconds")
+        return (self.eps_l0 / (self.h_l * self.a_0)).to("seconds")
 
     def get_c_T2_SS(self) -> pint.Quantity:
-        return (self.get_S_T() * 1 / (self.h_l * self.a)).to("molT2/m^3")
+        return (self.get_S_T() * 1 / (self.h_l * self.a_0)).to("molT2/m^3")
 
     def get_Pi_number(self) -> pint.Quantity:
         """Partial pressure number,
@@ -157,8 +181,8 @@ class SimulationInput:
             * (const_R * self.temperature)
             * self.height
             * self.h_l
-            * self.a
-            / (self.eps_g * self.u_g0)
+            * self.a_0
+            / (self.eps_g0 * self.graph.nodes["v_g0"]["value"])
         ).to("dimensionless")
 
     def get_dP_dx(self) -> pint.Quantity:
@@ -177,18 +201,13 @@ class SimulationInput:
         returns Bodenstein number = ratio of convective to dispersive transport for the gas phase
         corresponds to Peclet number at the scale of the tank
         """
-        # return (self.eps_g * self.u_g0 * self.height / self.E_g).to("dimensionless")
-        return (
-            (self.graph.nodes["flow_g_vol"]["value"] / self.area)
-            * self.height
-            / self.E_g
-        ).to("dimensionless")
+        return (self.u_g0 * self.height / self.E_g).to("dimensionless")
 
     def test_eps_g(
         self,
     ):  # to see if the two definitions of superficial velocity are consistent -> TODO remove
         print(
-            f"{self.eps_g * self.u_g0} vs {self.graph.nodes['flow_g_vol']['value'] / self.area}"
+            f"{self.eps_g0 * self.graph.nodes['v_g0']['value']} vs {self.graph.nodes['Vdot_g0']['value'] / self.area} vs {self.u_g0}"
         )
 
     def __post_init__(self):
@@ -250,12 +269,15 @@ class SimulationInput:
         ]
         discovered_graph = nx.Graph() if graph is None else graph
 
-        for required_key in cls.required_keys:
+        for required_key in (*cls.required_keys, *cls.required_profiles):
             find_in_graph(required_key, discovered_graph, input_objs=input_objects)
 
         return cls(
             graph=discovered_graph,
-            **{arg: discovered_graph.nodes[arg]["value"] for arg in cls.required_keys},
+            **{
+                arg: discovered_graph.nodes[arg]["value"]
+                for arg in (*cls.required_keys, *cls.required_profiles)
+            },
         )
 
     def __str__(self):
@@ -319,8 +341,8 @@ def find_in_graph(
         )  # also update discovered_graph with the nodes possibly discovered during recursive search
         discovered_graph.nodes[required_node]["value"] = result
 
-    assert isinstance(result, pint.Quantity), (
-        f"Result for required node '{required_node}' is not a pint.Quantity after resolution, got {result} of type {type(result)}"
+    assert isinstance(result, pint.Quantity) or callable(result), (
+        f"Result for required node '{required_node}' is not a pint.Quantity or callable after resolution, got {result} of type {type(result)}"
     )
 
 
@@ -360,7 +382,7 @@ def resolve_correlation(
     input_objs: List[
         SpargingParameters | OperatingParameters | BreederMaterial | ColumnGeometry
     ],
-) -> pint.Quantity:
+) -> pint.Quantity | callable:
     """Recursively resolve a correlation by first resolving its arguments, then applying the correlation function to the resolved arguments.
     - corr: Correlation object to resolve
     - discovered_graph: graph containing already resolved quantities, to avoid redundant calculations and infinite recursion

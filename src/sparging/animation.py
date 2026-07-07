@@ -37,42 +37,42 @@ class ConcentrationAnimator:
             Vertical spacing between subplots
         """
         self.times_hr = results.times.to("hour").magnitude
-        self.c_T2_solutions = results.c_T2_solutions.to("molT2/m^3").magnitude
-        self.y_T2_solutions = results.y_T2_solutions.to("dimensionless").magnitude
+        self.c_T2_profiles = results.c_T2_profiles.to("molT2/m^3").magnitude
+        self.y_T2_profiles = results.y_T2_profiles.to("dimensionless").magnitude
         self.x_ct = results.x_ct.to("m").magnitude
         self.x_y = results.x_y.to("m").magnitude
-        self.inventories_T2_salt = results.inventories_T2_salt.to("molT2").magnitude
-        self.source_T2 = (
+        self.n_T2_salt_series = results.n_T2_salt_series.to("molT2").magnitude
+        self.source_T2_series = (
             None
-            if results.sources_T2 is None
-            else results.sources_T2.to("molT2/s").magnitude
+            if results.sources_T2_series is None
+            else results.sources_T2_series.to("molT2/s").magnitude
         )
-        self.fluxes_T2 = (
+        self.ndot_T2_series = (
             None
-            if results.fluxes_T2 is None
-            else results.fluxes_T2.to("molT2/s").magnitude
+            if results.ndot_T2_series is None
+            else results.ndot_T2_series.to("molT2/s").magnitude
         )
         self.show_activity = show_activity
         self.figsize = figsize
         self.hspace = hspace
 
-        if self.inventories_T2_salt is not None and self.show_activity:
-            self.inventories_T2_salt_display = (
-                np.array(self.inventories_T2_salt) * molT2_to_activity
+        if self.n_T2_salt_series is not None and self.show_activity:
+            self.n_T2_salt_series_display = (
+                np.array(self.n_T2_salt_series) * molT2_to_activity
             )
         else:
-            self.inventories_T2_salt_display = self.inventories_T2_salt
+            self.n_T2_salt_series_display = self.n_T2_salt_series
 
         if (
-            self.source_T2 is not None
-            and self.source_T2.shape[0] != self.times_hr.shape[0]
+            self.source_T2_series is not None
+            and self.source_T2_series.shape[0] != self.times_hr.shape[0]
         ):
-            raise ValueError("source_T2 must have the same length as times")
+            raise ValueError("source_T2_series must have the same length as times")
         if (
-            self.fluxes_T2 is not None
-            and self.fluxes_T2.shape[0] != self.times_hr.shape[0]
+            self.ndot_T2_series is not None
+            and self.ndot_T2_series.shape[0] != self.times_hr.shape[0]
         ):
-            raise ValueError("fluxes_T2 must have the same length as times")
+            raise ValueError("ndot_T2_series must have the same length as times")
 
         # Animation state
         self.is_animating = False
@@ -84,7 +84,7 @@ class ConcentrationAnimator:
 
     def _setup_plot(self):
         """Setup the initial plot with subplots."""
-        nrows = 3 if self.inventories_T2_salt is not None else 2
+        nrows = 3 if self.n_T2_salt_series is not None else 2
         default_figsize = (11, 8) if nrows == 3 else (11, 6.3)
         self.fig = plt.figure(figsize=self.figsize or default_figsize)
         gs = gridspec.GridSpec(nrows, 1, figure=self.fig, hspace=self.hspace)
@@ -93,7 +93,7 @@ class ConcentrationAnimator:
         ax2 = self.fig.add_subplot(gs[1], sharex=ax1)
         self.axs = [ax1, ax2]
 
-        if self.inventories_T2_salt is not None:
+        if self.n_T2_salt_series is not None:
             # Third axis intentionally has an independent x-scale (time).
             ax3 = self.fig.add_subplot(gs[2])
             self.axs.append(ax3)
@@ -103,18 +103,18 @@ class ConcentrationAnimator:
 
         # Create initial plots
         (self.line1,) = self.axs[0].plot(
-            self.x_ct, self.c_T2_solutions[0], "b-", linewidth=2
+            self.x_ct, self.c_T2_profiles[0], "b-", linewidth=2
         )
         (self.line2,) = self.axs[1].plot(
-            self.x_y, self.y_T2_solutions[0], "r-", linewidth=2
+            self.x_y, self.y_T2_profiles[0], "r-", linewidth=2
         )
-        if self.inventories_T2_salt is not None:
+        if self.n_T2_salt_series is not None:
             (self.line3,) = self.axs[2].plot(
-                self.times_hr, self.inventories_T2_salt_display, "g-", linewidth=2
+                self.times_hr, self.n_T2_salt_series_display, "g-", linewidth=2
             )
             (self.time_marker,) = self.axs[2].plot(
                 [self.times_hr[0]],
-                [self.inventories_T2_salt_display[0]],
+                [self.n_T2_salt_series_display[0]],
                 "ko",
                 markersize=6,
             )
@@ -126,19 +126,19 @@ class ConcentrationAnimator:
             self.flux_marker = None
             secondary_lines = []
             secondary_labels = []
-            if self.source_T2 is not None or self.fluxes_T2 is not None:
+            if self.source_T2_series is not None or self.ndot_T2_series is not None:
                 self.ax3_secondary = self.axs[2].twinx()
-                if self.source_T2 is not None:
+                if self.source_T2_series is not None:
                     (self.source_line,) = self.ax3_secondary.plot(
                         self.times_hr,
-                        self.source_T2,
+                        self.source_T2_series,
                         color="tab:orange",
                         linestyle=":",
                         linewidth=1.8,
                     )
                     (self.source_marker,) = self.ax3_secondary.plot(
                         [self.times_hr[0]],
-                        [self.source_T2[0]],
+                        [self.source_T2_series[0]],
                         marker="o",
                         color="tab:orange",
                         markersize=5,
@@ -146,17 +146,17 @@ class ConcentrationAnimator:
                     )
                     secondary_lines.append(self.source_line)
                     secondary_labels.append(r"$S_{T_2}$")
-                if self.fluxes_T2 is not None:
+                if self.ndot_T2_series is not None:
                     (self.flux_line,) = self.ax3_secondary.plot(
                         self.times_hr,
-                        self.fluxes_T2,
+                        self.ndot_T2_series,
                         color="magenta",
                         linestyle="dashdot",
                         linewidth=1.8,
                     )
                     (self.flux_marker,) = self.ax3_secondary.plot(
                         [self.times_hr[0]],
-                        [self.fluxes_T2[0]],
+                        [self.ndot_T2_series[0]],
                         marker="s",
                         color="magenta",
                         markersize=5,
@@ -169,10 +169,10 @@ class ConcentrationAnimator:
                 self.ax3_secondary.grid(False)
 
                 sec_vals = []
-                if self.source_T2 is not None:
-                    sec_vals.append(self.source_T2)
-                if self.fluxes_T2 is not None:
-                    sec_vals.append(self.fluxes_T2)
+                if self.source_T2_series is not None:
+                    sec_vals.append(self.source_T2_series)
+                if self.ndot_T2_series is not None:
+                    sec_vals.append(self.ndot_T2_series)
                 sec_vals = np.concatenate(sec_vals)
                 sec_min = np.min(sec_vals)
                 sec_max = np.max(sec_vals)
@@ -195,8 +195,8 @@ class ConcentrationAnimator:
         )
         self.axs[0].grid(True, alpha=0.3)
         self.axs[0].set_ylim(
-            (self.c_T2_solutions.min() - EPS) * 0.9,
-            (self.c_T2_solutions.max() + EPS) * 1.1,
+            (self.c_T2_profiles.min() - EPS) * 0.9,
+            (self.c_T2_profiles.max() + EPS) * 1.1,
         )
 
         self.axs[1].set_ylabel(r"$y_{T_2} \: [-]$")
@@ -206,11 +206,11 @@ class ConcentrationAnimator:
         )
         self.axs[1].grid(True, alpha=0.3)
         self.axs[1].set_ylim(
-            (self.y_T2_solutions.min() - EPS) * 0.9,
-            (self.y_T2_solutions.max() + EPS) * 1.1,
+            (self.y_T2_profiles.min() - EPS) * 0.9,
+            (self.y_T2_profiles.max() + EPS) * 1.1,
         )
 
-        if self.inventories_T2_salt is not None:
+        if self.n_T2_salt_series is not None:
             if self.show_activity:
                 self.axs[2].set_ylabel(r"$A_{T} \: [Bq]$")
                 self.axs[2].set_title("Total T activity in breeder [Bq]")
@@ -220,8 +220,8 @@ class ConcentrationAnimator:
             self.axs[2].set_xlabel("Time [hours]")
             self.axs[2].grid(True, alpha=0.3)
             self.axs[2].set_ylim(
-                (self.inventories_T2_salt_display.min() - EPS) * 0.9,
-                (self.inventories_T2_salt_display.max() + EPS) * 1.1,
+                (self.n_T2_salt_series_display.min() - EPS) * 0.9,
+                (self.n_T2_salt_series_display.max() + EPS) * 1.1,
             )
 
     def _setup_slider(self):
@@ -250,8 +250,8 @@ class ConcentrationAnimator:
         idx = np.argmin(np.abs(self.times_hr - current_time))
 
         # Update the plots
-        self.line1.set_ydata(self.c_T2_solutions[idx])
-        self.line2.set_ydata(self.y_T2_solutions[idx])
+        self.line1.set_ydata(self.c_T2_profiles[idx])
+        self.line2.set_ydata(self.y_T2_profiles[idx])
 
         # Update titles
         self.axs[0].set_title(
@@ -260,14 +260,18 @@ class ConcentrationAnimator:
         self.axs[1].set_title(
             f"$T_2$ fraction in sparging gas at t={self.times_hr[idx]:.1f} hr"
         )
-        if self.inventories_T2_salt is not None:
+        if self.n_T2_salt_series is not None:
             self.time_marker.set_data(
-                [self.times_hr[idx]], [self.inventories_T2_salt_display[idx]]
+                [self.times_hr[idx]], [self.n_T2_salt_series_display[idx]]
             )
             if self.source_marker is not None:
-                self.source_marker.set_data([self.times_hr[idx]], [self.source_T2[idx]])
+                self.source_marker.set_data(
+                    [self.times_hr[idx]], [self.source_T2_series[idx]]
+                )
             if self.flux_marker is not None:
-                self.flux_marker.set_data([self.times_hr[idx]], [self.fluxes_T2[idx]])
+                self.flux_marker.set_data(
+                    [self.times_hr[idx]], [self.ndot_T2_series[idx]]
+                )
 
         self.fig.canvas.draw_idle()
 

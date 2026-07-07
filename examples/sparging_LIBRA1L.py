@@ -16,7 +16,7 @@ my_input.signal_sparging = lambda t: 0 if t <= t_irr else 1
 my_simulation = Simulation(
     my_input,
     t_final=2 * ureg.days,
-    profile_pressure_hydrostatic=False,
+    constant_profiles=True,
 )
 
 if __name__ == "__main__":

@@ -12,6 +12,8 @@ import warnings
 from dataclasses import dataclass
 import enum
 
+PROFILE = "profile"
+
 
 class CorrelationType(enum.Enum):  # TODO do we really use it ?
     MASS_TRANSFER_COEFF = "h_l"
@@ -26,13 +28,15 @@ class CorrelationType(enum.Enum):  # TODO do we really use it ?
     MORTON_NUMBER = "Mo"
     SCHMIDT_NUMBER = "Sc"
     REYNOLDS_NUMBER = "Re"
-    BUBBLE_VELOCITY = "u_g0"
+    SUPERFICIAL_GAS_VELOCITY = "u_g"
+    BUBBLE_VELOCITY = "v_g0"
     GAS_PHASE_DISPERSION = "E_g"
     LIQUID_PHASE_DISPERSION = "E_l"
-    PRESSURE = "P"
-    FLOW_RATE = "flow_g_mol"
+    FLOW_RATE = "ndot_g0"
     INTERFACIAL_AREA = "a"
     TRITIUM_SOURCE = "source_T"
+    LIQUID_PRESSURE_PROFILE = "P_l"
+    GAS_PRESSURE_PROFILE = "P_g"
 
 
 @dataclass
@@ -45,18 +49,29 @@ class Correlation:
     description: str | None = None
     output_units: str | None = None
 
-    def __call__(self, **kwargs: pint.Quantity) -> pint.Quantity:
-        # check the dimensions are correct
-        for arg_name, expected_dimension in zip(kwargs, self.input_units):
+    def _validate_inputs(self, kwargs: dict[str, pint.Quantity]) -> None:
+        for arg_name, expected in zip(kwargs, self.input_units):
             arg = kwargs[arg_name]
+            if expected == PROFILE:
+                if not callable(arg):
+                    raise ValueError(
+                        f"{self.identifier}: argument '{arg_name}' expected to be a "
+                        f"profile (callable f(z) -> Quantity), got {type(arg)}"
+                    )
+                continue
             if not isinstance(arg, ureg.Quantity):
                 raise ValueError(
-                    f"Invalid input: expected a pint.Quantity with units of {expected_dimension}, got {arg} of type {type(arg)}"
+                    f"Invalid input: expected a pint.Quantity with units of "
+                    f"{expected}, got {arg} of type {type(arg)}"
                 )
-            if not arg.dimensionality == ureg(expected_dimension).dimensionality:
+            if arg.dimensionality != ureg(expected).dimensionality:
                 raise ValueError(
-                    f"Invalid input when resolving for {self.identifier}: expected dimensions of {expected_dimension}, got {arg.dimensionality}"
+                    f"Invalid input when resolving for {self.identifier}: expected "
+                    f"dimensions of {expected}, got {arg.dimensionality}"
                 )
+
+    def __call__(self, **kwargs: pint.Quantity) -> pint.Quantity:
+        self._validate_inputs(kwargs)
         result = self.function(**kwargs)
         if self.output_units is not None:
             return result.to(self.output_units)
@@ -65,6 +80,29 @@ class Correlation:
 
     # TODO add a method that checks the validity of the input parameters based on the range of validity of the correlation, if provided in the description or source. This method could be called before running the simulation to warn the user if they are using a correlation outside of its validated range.
     # TODO add __post_init__ to check that user defined correlation has same number of input_units as the number of arguments in the function, and that the output of the function is a pint.Quantity with the correct units if output_units is provided
+
+
+@dataclass
+class Profile(Correlation):
+    """A closure relation that resolves to a *spatial profile*: a callable
+    f(z) -> pint.Quantity, instead of a scalar pint.Quantity.
+
+    `function(**inputs)` must return a callable mapping a position (length
+    Quantity) to a Quantity expressed in `output_units`.
+    """
+
+    def __call__(self, **kwargs: pint.Quantity):
+        self._validate_inputs(kwargs)
+        profile_func = self.function(**kwargs)
+        if not callable(profile_func):
+            raise ValueError(
+                f"Profile '{self.identifier}' must return a callable, "
+                f"got {type(profile_func)}"
+            )
+        if self.output_units is None:
+            return profile_func
+        # wrap so the profile always yields output_units
+        return lambda z, _f=profile_func: _f(z).to(self.output_units)
 
 
 class CorrelationGroup(list[Correlation]):
@@ -195,26 +233,29 @@ K_s = Correlation(
 )
 all_correlations.append(K_s)
 
-d_b = Correlation(
-    identifier="d_b",
-    function=lambda flow_g_vol, nozzle_diameter, nb_nozzle: get_d_b(
-        flow_g_vol=flow_g_vol, nozzle_diameter=nozzle_diameter, nb_nozzle=nb_nozzle
+d_b0 = Correlation(
+    identifier="d_b0",
+    function=lambda Vdot_g0, nozzle_diameter, nb_nozzle: get_d_b0(
+        Vdot_g0=Vdot_g0, nozzle_diameter=nozzle_diameter, nb_nozzle=nb_nozzle
     ),  # mean bubble diameter, Kanai 2017
     corr_type=CorrelationType.BUBBLE_DIAMETER,
     input_units=["m**3/s", "m", "dimensionless"],
     output_units="m",
+    source="Kanai 2017 (https://doi.org/10.1252/jcej.15we307); report by Evans 2026 (https://doi.org/10.1016/j.nucengdes.2025.114624)",
+    description="Mean bubble diameter, validated for nitrogen sparging in NaNO3 molten salt at 643K and gas flow rates of 3-10 cm3/s. Author suggests it may be applicable to FLiNaK and FLiBe.",
 )
-all_correlations.append(d_b)
+all_correlations.append(d_b0)
 
-E_o = Correlation(
+Eo = Correlation(
     identifier="Eo",
-    function=lambda drho, d_b, sigma_l: (const_g * drho * d_b**2 / sigma_l).to(
+    function=lambda drho, d_b0, sigma_l: (const_g * drho * d_b0**2 / sigma_l).to(
         "dimensionless"
     ),  # Eotvos number
     corr_type=CorrelationType.EOTVOS_NUMBER,
     input_units=["kg/m**3", "m", "N/m"],
+    output_units="dimensionless",
 )
-all_correlations.append(E_o)
+all_correlations.append(Eo)
 
 Mo = Correlation(
     identifier="Mo",
@@ -223,6 +264,7 @@ Mo = Correlation(
     ).to("dimensionless"),  # Morton number
     corr_type=CorrelationType.MORTON_NUMBER,
     input_units=["kg/m**3", "Pa*s", "kg/m**3", "N/m"],
+    output_units="dimensionless",
 )
 all_correlations.append(Mo)
 
@@ -231,23 +273,26 @@ Sc = Correlation(
     function=lambda nu_l, D_l: (nu_l / D_l).to("dimensionless"),  # Schmidt number
     corr_type=CorrelationType.SCHMIDT_NUMBER,
     input_units=["m**2/s", "m**2/s"],
+    output_units="dimensionless",
 )
 all_correlations.append(Sc)
 
+# Bubble Reynolds number
 Re = Correlation(
     identifier="Re",
-    function=lambda rho_l, u_g0, d_b, mu_l: (rho_l * u_g0 * d_b / mu_l).to(
+    function=lambda rho_l, v_g0, d_b0, mu_l: (rho_l * v_g0 * d_b0 / mu_l).to(
         "dimensionless"
-    ),  # Reynolds number
+    ),
     corr_type=CorrelationType.REYNOLDS_NUMBER,
     input_units=["kg/m**3", "m/s", "m", "Pa*s"],
+    output_units="dimensionless",
 )
 all_correlations.append(Re)
 
-u_g0 = Correlation(
-    identifier="u_g0",
-    function=lambda Eo, Mo, mu_l, rho_l, d_b: get_u_g0(
-        Eo=Eo, Mo=Mo, mu_l=mu_l, rho_l=rho_l, d_b=d_b
+v_g0 = Correlation(
+    identifier="v_g0",
+    function=lambda Eo, Mo, mu_l, rho_l, d_b0: get_v_g0(
+        Eo=Eo, Mo=Mo, mu_l=mu_l, rho_l=rho_l, d_b=d_b0
     ),  # initial gas velocity
     corr_type=CorrelationType.BUBBLE_VELOCITY,
     input_units=[
@@ -258,40 +303,16 @@ u_g0 = Correlation(
         "m",
     ],
     output_units="m/s",
+    source="Chavez 2021: https://doi.org/10.1016/j.ijheatfluidflow.2021.108875",
+    description="Clift 1978 correlation for terminal velocity, validated for single He bubble rising in steady FLiNaK. Likely to be applicable to FLiBe (similar surface tensions, density and viscosity).",
 )
-all_correlations.append(u_g0)
+all_correlations.append(v_g0)
 
-eps_g = Correlation(
-    identifier="eps_g",
-    function=lambda temperature, P_bottom, sigma_l, d_b, flow_g_mol, tank_diameter, u_g0: (
-        get_eps_g(
-            T=temperature,
-            P_0=P_bottom,
-            sigma_l=sigma_l,
-            d_b=d_b,
-            flow_g=flow_g_mol,
-            tank_diameter=tank_diameter,
-            u_g0=u_g0,
-        )
-    ),  # gas void fraction
-    corr_type=CorrelationType.GAS_VOID_FRACTION,
-    input_units=[
-        "kelvin",
-        "Pa",
-        "N/m",
-        "m",
-        "mol/s",
-        "m",
-        "m/s",
-    ],
-    output_units="dimensionless",
-)
-all_correlations.append(eps_g)
 
 h_l_higbie = Correlation(
     identifier="h_l_higbie",
-    function=lambda D_l, u_g0, d_b: get_h_higbie(
-        D_l=D_l, u_g=u_g0, d_b=d_b
+    function=lambda D_l, v_g0, d_b0: get_h_higbie(
+        D_l=D_l, v_g=v_g0, d_b=d_b0
     ),  # mass transfer coefficient with Higbie correlation
     corr_type=CorrelationType.MASS_TRANSFER_COEFF,
     source="Higbie 1935",
@@ -301,23 +322,11 @@ h_l_higbie = Correlation(
 )
 all_correlations.append(h_l_higbie)
 
-h_l_malara = Correlation(
-    identifier="h_l_malara",
-    function=lambda D_l, d_b: get_h_malara(
-        D_l=D_l, d_b=d_b
-    ),  # mass transfer coefficient with Malara correlation
-    corr_type=CorrelationType.MASS_TRANSFER_COEFF,
-    source="Malara 1995",
-    description="mass transfer coefficient for tritium in liquid FLiBe using Malara 1995 correlation (used for inert gas stripping from breeder droplets, may not be valid here)",
-    input_units=["m**2/s", "m"],
-    output_units="m/s",
-)
-all_correlations.append(h_l_malara)
 
 h_l_briggs = Correlation(
     identifier="h_l_briggs",
-    function=lambda Re, Sc, D_l, d_b: get_h_briggs(
-        Re=Re, Sc=Sc, D_l=D_l, d_b=d_b
+    function=lambda Re, Sc, D_l, d_b0: get_h_briggs(
+        Re=Re, Sc=Sc, D_l=D_l, d_b=d_b0
     ),  # mass transfer coefficient with Briggs correlation
     corr_type=CorrelationType.MASS_TRANSFER_COEFF,
     source="Briggs 1970",
@@ -327,28 +336,31 @@ h_l_briggs = Correlation(
 )
 all_correlations.append(h_l_briggs)
 
+# liquid phase axial dispersion coefficient
 E_l = Correlation(
     identifier="E_l",
-    function=lambda tank_diameter, u_g0: ureg.Quantity(
-        0.678 * tank_diameter.magnitude**1.4 * u_g0.magnitude**0.3, "m**2/s"
-    ),  # liquid phase axial dispersion coefficient
+    function=lambda tank_diameter, u_g: ureg.Quantity(
+        0.678 * tank_diameter.magnitude**1.4 * u_g(0 * ureg.m).magnitude ** 0.3,
+        "m**2/s",
+    ),
     corr_type=CorrelationType.LIQUID_PHASE_DISPERSION,
     source="Deckwer 1974",
     description="liquid phase axial dispersion coefficient, assumed equal to diffusivity of tritium in liquid FLiBe",
-    input_units=["m", "m/s"],
+    input_units=["m", PROFILE],
     output_units="m**2/s",
 )
 all_correlations.append(E_l)
 
+# gas phase axial dispersion coefficient
 E_g = Correlation(
     identifier="E_g",
-    function=lambda tank_diameter, u_g0: (
-        0.2 * ureg("1/m") * tank_diameter**2 * u_g0
+    function=lambda tank_diameter, u_g: (
+        0.2 * ureg("1/m") * tank_diameter**2 * u_g(0 * ureg.m)
     ),  # gas phase axial dispersion coefficient
     corr_type=CorrelationType.GAS_PHASE_DISPERSION,
     source="Malara 1995",
-    description="gas phase axial dispersion coefficient [m2/s], Malara 1995 correlation models dispersion of the gas velocity distribution around the mean bubble velocity",
-    input_units=["m", "m/s"],
+    description="gas phase axial dispersion coefficient [m2/s], Malara 1995",
+    input_units=["m", PROFILE],
     output_units="m**2/s",
 )
 all_correlations.append(E_g)
@@ -367,51 +379,30 @@ all_correlations.append(drho)
 he_molar_mass = ureg("4.003e-3 kg/mol")
 rho_g = Correlation(
     identifier="rho_g",
-    function=lambda temperature, P_bottom: ureg.Quantity(
-        (P_bottom * he_molar_mass / (const_R * temperature.to("kelvin"))).to("kg/m**3")
+    function=lambda temperature, P_l: ureg.Quantity(
+        (P_l(0 * ureg.m) * he_molar_mass / (const_R * temperature.to("kelvin"))).to(
+            "kg/m**3"
+        )
     ),  # ideal gas law for density of gas phase
     corr_type=CorrelationType.DENSITY,
     description="density of gas phase calculated using ideal gas law",
-    input_units=["kelvin", "Pa"],
+    input_units=["kelvin", PROFILE],
 )
 all_correlations.append(rho_g)
 
-P_bottom = Correlation(
-    identifier="P_bottom",
-    function=lambda P_top, rho_l, height: (
-        P_top + rho_l * const_g * height
-    ),  # convert pressure to Pascals
-    corr_type=CorrelationType.PRESSURE,
-    description="pressure at the bottom of the system",
-    input_units=["Pa", "kg/m**3", "m"],
-    output_units="Pa",
-)
-all_correlations.append(P_bottom)
 
-flow_g_vol = Correlation(
-    identifier="flow_g_vol",
-    function=lambda flow_g_mol, temperature, P_bottom: (
-        flow_g_mol * const_R * temperature / P_bottom
+Vdot_g0 = Correlation(
+    identifier="Vdot_g0",
+    function=lambda ndot_g0, temperature, P_l: (
+        ndot_g0 * const_R * temperature / P_l(0 * ureg.m)
     ),  # convert molar flow rate to volumetric flow rate using ideal gas law
     corr_type=CorrelationType.FLOW_RATE,
     description="volumetric flow rate of gas phase calculated from molar flow rate using ideal gas law",
-    input_units=["mol/s", "kelvin", "Pa"],
+    input_units=["mol/s", "kelvin", PROFILE],
     output_units="m**3/s",
 )
-all_correlations.append(flow_g_vol)
+all_correlations.append(Vdot_g0)
 
-
-specific_interfacial_area = Correlation(
-    identifier="a",
-    function=lambda d_b, eps_g: (
-        6 * eps_g / d_b
-    ),  # specific interfacial area for spherical bubbles
-    corr_type=CorrelationType.INTERFACIAL_AREA,
-    description="specific interfacial area calculated from bubble diameter and gas void fraction, assuming spherical bubbles",
-    input_units=["m", "dimensionless"],
-    output_units="1/m",
-)
-all_correlations.append(specific_interfacial_area)
 
 source_T_integral = Correlation(
     identifier="Q_T",
@@ -424,25 +415,14 @@ source_T_integral = Correlation(
 )
 all_correlations.append(source_T_integral)
 
-# P_hydrostatic = Profile(
-#     identifier="P_l",
-#     function=lambda P_bottom, rho_l: (
-#         lambda z: P_bottom - rho_l * const_g * z
-#     ),  # source term for tritium generation calculated from TBR and neutron generation rate
-#     corr_type=CorrelationType.TRITIUM_SOURCE,
-#     input_units=["triton/neutron", "neutron/s"],
-#     output_units="molT/s",
-# )
-# all_correlations.append(source_T_integral)
 
-
-def get_d_b(
-    flow_g_vol: pint.Quantity, nozzle_diameter: pint.Quantity, nb_nozzle: pint.Quantity
+def get_d_b0(
+    Vdot_g0: pint.Quantity, nozzle_diameter: pint.Quantity, nb_nozzle: pint.Quantity
 ) -> float:
     """
     mean bubble diameter [m], Kanai 2017 (reported by Evans 2026)
     """
-    nozzle_flow = flow_g_vol / nb_nozzle  # volumetric flow per nozzle [m3/s]
+    nozzle_flow = Vdot_g0 / nb_nozzle  # volumetric flow per nozzle [m3/s]
     if nozzle_flow < ureg("3 cm**3/s") or nozzle_flow > ureg("10 cm**3/s"):
         warnings.warn(
             f"nozzle flow {nozzle_flow.to('cm**3/s')} is out of the validated range for the Kanai 2017 correlation (3-10 cm3/s)"
@@ -458,7 +438,7 @@ def get_d_b(
     )
 
 
-def get_u_g0(Eo, Mo, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
+def get_v_g0(Eo, Mo, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
     """
     bubble initial velocity [m/s], correlation for terminal velocity from Clift 1978
     """
@@ -473,49 +453,119 @@ def get_u_g0(Eo, Mo, mu_l, rho_l, d_b) -> float:  # TODO move inside class ?
         raise ValueError(
             f"Clift correlation is not valid for H = {H}, which is calculated based on the input parameters. Check the input parameters and the validity of the correlation for the given range of parameters."
         )
-    u_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
-    if u_g0 > ureg("1 m/s") or u_g0 < ureg("0.1 m/s"):
-        warnings.warn(f"Warning: bubble velocity {u_g0} is out of the typical range")
-
-    return u_g0
-
-
-def get_eps_g(T, P_0, sigma_l, d_b, flow_g, tank_diameter, u_g0) -> float:
-    eps_g = (
-        const_R
-        * T
-        / (P_0 + 4 * sigma_l / d_b)
-        * flow_g
-        / (np.pi * (tank_diameter / 2) ** 2 * u_g0)
-    )
-    if eps_g > 1 * ureg("dimensionless") or eps_g < 0 * ureg("dimensionless"):
-        warnings.warn(f"Warning: unphysical gas fraction: {eps_g}")
-    elif eps_g > 0.1 * ureg("dimensionless"):
+    v_g0 = mu_l / (rho_l * d_b) * Mo**-0.149 * (J - 0.857)
+    if v_g0 > ureg("1 m/s") or v_g0 < ureg("0.1 m/s"):
         warnings.warn(
-            f"Warning: high gas fraction: {eps_g}, models assumptions may not hold"
+            f"Warning: bubble terminal velocity {v_g0} is out of the typical range"
+        )
+
+    return v_g0
+
+
+def get_eps_g(T, P_g, ndot_g, area, v_g) -> float:
+    gamma = ndot_g * const_R * T / (P_g * area * v_g)
+
+    eps_g = gamma / (1 + gamma)
+
+    if np.max(eps_g) > 1 * ureg("dimensionless") or np.min(eps_g) < 0 * ureg(
+        "dimensionless"
+    ):
+        warnings.warn(f"Warning: unphysical gas fraction: {eps_g}")
+    elif np.max(eps_g) > 0.1 * ureg("dimensionless"):
+        warnings.warn(
+            f"Warning: high gas fraction: {eps_g}, model assumptions may not hold"
         )
     return eps_g
 
 
-def get_h_higbie(D_l: float, u_g: float, d_b: float) -> float:
-    """mass transfer coefficient [m/s] for tritium in liquid FLiBe using Higbie penetration model"""
-    h_l = (
-        (D_l * u_g) / (const.pi * d_b)
-    ) ** 0.5  # mass transport coefficient Higbie penetration model
-    return h_l
-
-
-def get_h_malara(D_l: float, d_b: float) -> float:
+def get_h_higbie(D_l: float, v_g: float, d_b: float) -> float:
     """
-    mass transfer coefficient [m/s] for tritium in liquid FLiBe using Malara 1995 correlation
-    (used for inert gas stripping from breeder droplets, may not be valid here)
+    Higbie penetration model average mass transfer coefficient [m/s]-> suited for large mobile interfaces
     """
-    h_l = 2 * np.pi**2 * D_l / (3 * d_b)
+    h_l = 2 * ((D_l * v_g) / (const.pi * d_b)) ** 0.5
     return h_l
 
 
 def get_h_briggs(Re: float, Sc: float, D_l: float, d_b: float) -> float:
-    """mass transfer coefficient [m/s] for tritium in liquid FLiBe using Briggs 1970 correlation"""
+    """
+    Sherwood based mass transfer coefficient [m/s] for tritium in liquid FLiBe (Briggs 1970 correlation) -> suited for small rigid interfaces
+    """
     Sh = 0.089 * Re**0.69 * Sc**0.33  # Sherwood number
     h_l = Sh * D_l / d_b
     return h_l
+
+
+# hydrostatic pressure profile along tank height
+P_l = Profile(
+    identifier="P_l",
+    function=lambda P_top, rho_l, height: (
+        lambda z: P_top + rho_l * const_g * (height - z)
+    ),
+    corr_type=CorrelationType.LIQUID_PRESSURE_PROFILE,
+    input_units=["Pa", "kg/m^3", "m"],
+    output_units="Pa",
+    description="hydrostatic pressure profile along tank height",
+)
+all_correlations.append(P_l)
+
+
+P_g = Profile(
+    identifier="P_g",
+    function=lambda P_l, d_b, sigma_l: lambda z: P_l(z) + 4 * sigma_l / d_b(z),
+    corr_type=CorrelationType.GAS_PRESSURE_PROFILE,
+    input_units=[PROFILE, PROFILE, "N/m"],
+    output_units="Pa",
+    description="pressure in a mechanically stable bubble immerged in a liquid",
+)
+all_correlations.append(P_g)
+
+
+d_b = Profile(
+    identifier="d_b",
+    function=lambda d_b0, P_l: lambda z: d_b0 * (P_l(0 * ureg.m) / P_l(z)) ** (1 / 3),
+    corr_type=CorrelationType.BUBBLE_DIAMETER,
+    input_units=["m", PROFILE],
+    output_units="m",
+    description="Bubble diameter profile from hydrostatic expansion",
+)
+all_correlations.append(d_b)
+
+eps_g = Profile(
+    identifier="eps_g",
+    function=lambda temperature, P_g, ndot_g0, area, v_g0: (
+        lambda z: get_eps_g(
+            T=temperature,
+            P_g=P_g(z),
+            ndot_g=ndot_g0,
+            area=area,
+            v_g=v_g0,
+        )
+    ),
+    corr_type=CorrelationType.GAS_VOID_FRACTION,
+    input_units=["kelvin", PROFILE, "mol/s", "m^2", "m/s"],
+    output_units="dimensionless",
+    description="gas void fraction profile (local P and d_b)",
+)
+all_correlations.append(eps_g)
+
+a = Profile(
+    identifier="a",
+    function=lambda eps_g, d_b: lambda z: 6 * eps_g(z) / d_b(z),
+    corr_type=CorrelationType.INTERFACIAL_AREA,
+    input_units=[PROFILE, PROFILE],
+    output_units="1/m",
+    description="specific interfacial area profile",
+)
+all_correlations.append(a)
+
+u_g = Profile(
+    identifier="u_g",
+    function=lambda Vdot_g0, area, P_g: (
+        lambda z: (Vdot_g0 / area).to("m/s") * (P_g(0 * ureg.m) / P_g(z))
+    ),
+    corr_type=CorrelationType.SUPERFICIAL_GAS_VELOCITY,
+    input_units=["m^3/s", "m^2", PROFILE],
+    output_units="m/s",
+    description="superficial gas velocity profile",
+)
+all_correlations.append(u_g)

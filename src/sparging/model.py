@@ -23,6 +23,8 @@ from sparging.inputs import SimulationInput
 import pint
 from collections.abc import Callable
 import logging
+from dataclasses import dataclass, field
+import warnings
 
 logger = logging.getLogger(__name__)
 
@@ -34,62 +36,61 @@ EPS = 1e-26
 @dataclass
 class SimulationResults:
     times: np.ndarray[pint.Quantity]
-    c_T2_solutions: np.ndarray[pint.Quantity]
-    """ line : time step, column : spatial coordinate """
-    y_T2_solutions: np.ndarray[pint.Quantity]
-    aJ_T2_solutions: np.ndarray[pint.Quantity]
+    c_T2_profiles: np.ndarray[pint.Quantity]
+    """profiles c_T2(z) stacked over time. axis 0: time step, axis 1: position z"""
+    y_T2_profiles: np.ndarray[pint.Quantity]
+    aJ_T2_profiles: np.ndarray[pint.Quantity]
     x_ct: np.ndarray[pint.Quantity]
     x_y: np.ndarray[pint.Quantity]
-    inventories_T2_salt: np.ndarray[pint.Quantity]
-    sources_T2: np.ndarray[pint.Quantity]
-    fluxes_T2: np.ndarray[pint.Quantity]
+    n_T2_salt_series: np.ndarray[pint.Quantity]
+    """liquid tritium inventory n_T2(t) [molT2] over time"""
+    sources_T2_series: np.ndarray[pint.Quantity]
+    ndot_T2_series: np.ndarray[pint.Quantity]
     dt: pint.Quantity = None
     dx: pint.Quantity = None
     sim_input: SimulationInput = None
+    exports: dict[str, pint.Quantity] = None
+    """name -> 2D Quantity, axis 0: time step, axis 1: position (x_export)"""
+    x_export: np.ndarray[pint.Quantity] = None
 
-    keys_to_ignore_results = [  # TODO do it the other way: keys_to_include_results
-        # "c_T2_solutions",
-        # "y_T2_solutions",
-        # "J_T2_solutions",
-        # "x_ct",
-        # "x_y",
-        # "inventories_T2_salt",
-        # "times",
-        # "sources_T2",
-        # "fluxes_T2",
+    keys_to_ignore_results = [
         "sim_input",
         "dt",
         "dx",
+        "exports",  # dict of Quantities: exported via exports_to_csv, not JSON/YAML
     ]
+
+    # Backward-compatibility: old field names -> new (axis-named) fields.
+    # Applied when deserializing legacy JSON/pickle files.
+    _legacy_key_map = {
+        "c_T2_solutions": "c_T2_profiles",
+        "y_T2_solutions": "y_T2_profiles",
+        "aJ_T2_solutions": "aJ_T2_profiles",
+        "inventories_T2_salt": "n_T2_salt_series",
+        "sources_T2": "sources_T2_series",
+        "ndot_T2": "ndot_T2_series",
+    }
 
     def to_yaml(self, output_path: Path):
         sim_dict = self.sim_input.__dict__.copy()
         helpers.setup_yaml()
-
-        # structure the output
         output = {
             "metadata": {
                 "git_commit": helpers.get_git_hash(),
                 "date": datetime.now().isoformat(),
             },
         }
-
         output["simulation parameters"] = {}
         for key, value in sim_dict.items():
             output["simulation parameters"][key] = str(value)
-
         output["results"] = self.__dict__.copy()
-        # remove c_T2_solutions and y_T2_solutions from results to avoid dumping large arrays in yaml, they can be saved separately if needed
         for key in self.keys_to_ignore_results:
             output["results"].pop(key, None)
-
         with open(output_path, "w") as f:
             yaml.dump(output, f, sort_keys=False)
 
     def serialize_output(self):
         sim_dict = self.sim_input.__dict__.copy()
-
-        # structure the output
         output = {
             "metadata": {
                 "git_commit": helpers.get_git_hash(),
@@ -100,20 +101,16 @@ class SimulationResults:
         for key, value in sim_dict.items():
             output["simulation parameters"][key] = str(value)
         output["results"] = self.__dict__.copy()
-
-        # remove objects incompatible with serialization
         for key in self.keys_to_ignore_results:
             output["results"].pop(key, None)
 
         for key, value in output.items():
             if isinstance(value, np.ndarray):
-                # convert numpy arrays to lists for JSON serialization
                 output[key] = value.tolist()
                 logger.verbose(
                     "found list in results, converting to list for JSON serialization"
                 )
             if isinstance(value, pint.Quantity):
-                # convert pint.Quantity to string for JSON serialization
                 output[key] = value.to_base_units().magnitude
                 logger.verbose(
                     "found pint.Quantity in results, converting to magnitude for JSON serialization"
@@ -127,18 +124,15 @@ class SimulationResults:
             if isinstance(v, pint.Quantity):
                 units = str(v.units)
                 output["results"][k] = {"value": v.magnitude, "units": units}
-
                 if isinstance(v.magnitude, np.ndarray):
                     logger.verbose(
                         f"found pint.Quantity with numpy array magnitude in results[{k}], converting to list for JSON serialization"
                     )
                     output["results"][k]["value"] = v.magnitude.tolist()
-
         return output
 
     def to_json(self, output_path: Path):
         output = self.serialize_output()
-
         with open(output_path, "w") as f:
             json.dump(output, f, indent=3)
 
@@ -146,27 +140,25 @@ class SimulationResults:
         import pickle
 
         output = self.serialize_output()
-
         with open(output_path, "wb") as f:
             pickle.dump(output, f)
 
     def profiles_to_csv(self, output_directory: Path):
-        """Save c_T2 and y_T2 profiles at all time steps as CSV files."""
+        """Save c_T2 and y_T2 profiles at all time steps as CSV files.
+        replaced by exports_to_csv, but kept for legacy"""
         times_s = np.array([t.to("seconds").magnitude for t in self.times])
-
         col_names = [f"t={t:.1f}s" for t in times_s]
 
         df_c_T2 = pd.DataFrame(
-            np.column_stack([self.x_ct.magnitude, self.c_T2_solutions.magnitude.T]),
+            np.column_stack([self.x_ct.magnitude, self.c_T2_profiles.magnitude.T]),
             columns=["x_metres", *col_names],
         )
         df_y_T2 = pd.DataFrame(
-            np.column_stack([self.x_y.magnitude, self.y_T2_solutions.magnitude.T]),
+            np.column_stack([self.x_y.magnitude, self.y_T2_profiles.magnitude.T]),
             columns=["x_metres", *col_names],
         )
-
         df_aJ_T2 = pd.DataFrame(
-            np.column_stack([self.x_y.magnitude, self.aJ_T2_solutions.magnitude.T]),
+            np.column_stack([self.x_y.magnitude, self.aJ_T2_profiles.magnitude.T]),
             columns=["x_metres", *col_names],
         )
 
@@ -180,23 +172,18 @@ class SimulationResults:
         """Export profiles to a self-describing NetCDF file, preserving units."""
         import xarray as xr
 
-        # --- Helper: split a pint Quantity (scalar or array) into (magnitude, unit_str)
         def split(q, target_unit=None):
             if target_unit is not None:
                 q = q.to(target_unit)
-            return np.asarray(
-                q.magnitude
-            ), f"{q.units:~P}"  # "~" → short symbol, e.g. "mol/m³" -> "mol / m ** 3"
+            return np.asarray(q.magnitude), f"{q.units:~P}"
 
-        # --- Coordinates ---
         t_mag, t_unit = split(self.times, "s")
         x_ct_mag, x_ct_unit = split(self.x_ct, "m")
         x_y_mag, x_y_unit = split(self.x_y, "m")
 
-        # --- Data variables (note: c_T2_solutions is a 2D pint Quantity, shape (n_t, n_x)) ---
-        aJ_T2_mag, aJ_T2_unit = split(self.aJ_T2_solutions, "molT2/m^3/s")
-        c_mag, c_unit = split(self.c_T2_solutions, "molT2/m^3")
-        y_mag, y_unit = split(self.y_T2_solutions)  # dimensionless → keep native
+        aJ_T2_mag, aJ_T2_unit = split(self.aJ_T2_profiles, "molT2/m^3/s")
+        c_mag, c_unit = split(self.c_T2_profiles, "molT2/m^3")
+        y_mag, y_unit = split(self.y_T2_profiles)
 
         ds = xr.Dataset(
             data_vars={
@@ -234,11 +221,51 @@ class SimulationResults:
         output_directory.mkdir(parents=True, exist_ok=True)
         ds.to_netcdf(output_directory / "profiles.nc")
 
+    def exports_to_csv(self, output_directory: Path):
+        """Write each requested export to its own CSV file (e.g. 'P_g.csv', 'a.csv').
+
+        Format (matches the notebook's load_profile_csv):
+            column 0    : 'x_metres'
+            columns 1.. : one per time step, named 't=<seconds>s'
+        A companion '_export_units.json' records the physical unit of each export,
+        so the plotting script can build axis labels.
+
+        Replaces profiles_to_csv (which was hard-coded to c_T2 / y_T2).
+        """
+        if not self.exports:
+            warnings.warn(
+                "No exports to write. Set `simulation.exports = [...]` before solving."
+            )
+            return
+
+        output_directory.mkdir(parents=True, exist_ok=True)
+
+        times_s = self.times.to("seconds").magnitude
+        col_names = [f"t={t:.1f}s" for t in times_s]
+
+        units = {}
+        for name, data in self.exports.items():
+            df = pd.DataFrame(
+                np.column_stack([self.x_export.magnitude, data.magnitude.T]),
+                columns=["x_metres", *col_names],
+            )
+            df.to_csv(
+                output_directory / f"{name}.csv", index=False, float_format="%.6e"
+            )
+            units[name] = f"{data.units:~P}"
+
+        with open(output_directory / "_export_units.json", "w") as f:
+            json.dump(units, f, indent=2)
+
     @classmethod
     def deserialize_output(cls, data: dict) -> SimulationResults:
-        # only read the "results" key
-        # for each key in results, if the dict have "value" and "units" keys, convert it back to pint.Quantity
         results = data.get("results", {})
+
+        # backward compatibility: remap legacy field names to axis-named fields
+        for old_key, new_key in cls._legacy_key_map.items():
+            if old_key in results and new_key not in results:
+                results[new_key] = results.pop(old_key)
+
         for k, v in results.items():
             if isinstance(v, dict) and "value" in v and "units" in v:
                 results[k] = ureg.Quantity(v["value"], v["units"])
@@ -249,7 +276,6 @@ class SimulationResults:
     def from_json(cls, input_path: Path) -> SimulationResults:
         with open(input_path, "r") as f:
             data = json.load(f)
-
         return cls.deserialize_output(data)
 
     @classmethod
@@ -258,7 +284,6 @@ class SimulationResults:
 
         with open(input_path, "rb") as f:
             data = pickle.load(f)
-
         return cls.deserialize_output(data)
 
 
@@ -266,16 +291,11 @@ class SimulationResults:
 class Simulation:
     sim_input: SimulationInput
     t_final: pint.Quantity
-    profile_pressure_hydrostatic: bool = True
     dispersion_on: bool = True
-
-    def hydrostatic_pressure(
-        self, z: pint.Quantity
-    ) -> pint.Quantity:  # TODO should be in correlations
-        """returns the hydrostatic pressure at a given height z in the tank given P_bottom"""
-        rho = self.sim_input.rho_l
-        g = const_g
-        return (self.sim_input.P_bottom - rho * g * z).to("Pa")
+    constant_profiles: bool = False
+    exports: list[str] = field(default_factory=list)
+    """Names of quantities to export (must be keys of the export registry built
+    in `solve`). Each is written to '<name>.csv' by `SimulationResults.exports_to_csv`."""
 
     def normalize_profile(
         self, profile: Callable[[float], float] | None, length: float, mesh, func_space
@@ -310,15 +330,11 @@ class Simulation:
         tank_height = self.sim_input.height.to("m").magnitude
         tank_area = self.sim_input.area.to("m**2").magnitude
         tank_volume = self.sim_input.volume.to("m**3").magnitude
-        a = self.sim_input.a.to("1/m").magnitude
         h_l = self.sim_input.h_l.to("m/s").magnitude
         K_s = self.sim_input.K_s.to("mol/m**3/Pa").magnitude  # convert to molT2 ?
-        P_0 = self.sim_input.P_bottom.to("Pa").magnitude
         T = self.sim_input.temperature.to("K").magnitude
-        eps_g = self.sim_input.eps_g.to("dimensionless").magnitude
         E_g = self.sim_input.E_g.to("m**2/s").magnitude
         E_l = self.sim_input.E_l.to("m**2/s").magnitude
-        u_g0 = self.sim_input.u_g0.to("m/s").magnitude
         Q_T2 = self.sim_input.Q_T.to("molT2/s").magnitude
 
         dt = (
@@ -331,7 +347,7 @@ class Simulation:
             if dx is not None
             else (tank_height / 1000 if not fast_solve else tank_height / 50)
         )
-        eps_l = 1 - eps_g
+        # eps_l = 1 - eps_g
 
         # MESH AND FUNCTION SPACES
         mesh = dolfinx.mesh.create_interval(
@@ -348,23 +364,61 @@ class Simulation:
         u_n = dolfinx.fem.Function(V)
         v_c, v_y = ufl.TestFunctions(V)
 
+        # define spatially varying profiles
+        if not self.constant_profiles:
+            eps_g = dolfinx.fem.Function(V_profile)
+            eps_l = dolfinx.fem.Function(V_profile)
+            a = dolfinx.fem.Function(V_profile)
+            P_g = dolfinx.fem.Function(V_profile)
+            u_g = dolfinx.fem.Function(V_profile)
+
+            eps_g.interpolate(
+                lambda x: (
+                    self.sim_input.eps_g(x[0] * ureg.m).to("dimensionless").magnitude
+                )
+            )
+            eps_l.interpolate(
+                lambda x: (
+                    1.0
+                    - self.sim_input.eps_g(x[0] * ureg.m).to("dimensionless").magnitude
+                )
+            )
+            a.interpolate(lambda x: self.sim_input.a(x[0] * ureg.m).to("1/m").magnitude)
+            P_g.interpolate(
+                lambda x: self.sim_input.P_g(x[0] * ureg.m).to("Pa").magnitude
+            )
+            u_g.interpolate(
+                lambda x: self.sim_input.u_g(x[0] * ureg.m).to("m/s").magnitude
+            )
+        else:
+            # use values at z=0 for constant profiles
+            eps_g0 = self.sim_input.eps_g0.to("dimensionless").magnitude
+            a_0 = self.sim_input.a_0.to("1/m").magnitude
+            P_g0 = self.sim_input.P_g0.to("Pa").magnitude
+            u_g0 = self.sim_input.u_g0.to("m/s").magnitude
+
+            eps_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(eps_g0))
+            eps_l = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1 - eps_g0))
+            a = dolfinx.fem.Constant(mesh, PETSc.ScalarType(a_0))
+            P_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(P_g0))
+            u_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(u_g0))
+
         # set initial concentration
-        c_T2_0_ufl_expr = dolfinx.fem.Constant(
-            mesh, self.sim_input.c_T2_0.to("molT2/m**3").magnitude
+        c_T2_init_ufl_expr = dolfinx.fem.Constant(
+            mesh, self.sim_input.c_T2_init.to("molT2/m**3").magnitude
         ) * self.normalize_profile(
-            self.sim_input.profile_c_T2_0, tank_height, mesh, V_profile
+            self.sim_input.profile_c_T2_init, tank_height, mesh, V_profile
         )
         u_n.sub(0).interpolate(
             dolfinx.fem.Expression(
-                c_T2_0_ufl_expr, V.sub(0).element.interpolation_points
+                c_T2_init_ufl_expr, V.sub(0).element.interpolation_points
             )
         )
+        # make u match u_n at t=0 so interpolated exports are correct at the first step
+        u.x.array[:] = u_n.x.array[:]
 
         c_T2, y_T2 = ufl.split(u)
         c_T2_n, y_T2_n = ufl.split(u_n)
-
-        vel_x = u_g0  # TODO velocity should vary with hydrostatic pressure
-        vel = dolfinx.fem.Constant(mesh, PETSc.ScalarType([vel_x]))
 
         h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
 
@@ -376,26 +430,16 @@ class Simulation:
             self.sim_input.profile_source_T, tank_height, mesh, V_profile
         )
 
-        P_prof = dolfinx.fem.Function(V_profile)
-        if self.profile_pressure_hydrostatic:
-            P_prof.interpolate(
-                lambda x: self.hydrostatic_pressure(x[0] * ureg.m).magnitude
-            )
-        else:
-            P_prof.interpolate(lambda x: x[0] * 0 + P_0)
-
-        P = P_prof
-
         # VARIATIONAL FORMULATION
 
         # mass transfer rate
-        aJ_T2 = a * h_l_const * (c_T2 - K_s * (P * y_T2 + EPS))
+        aJ_T2 = a * h_l_const * (c_T2 - K_s * (P_g * y_T2 + EPS))
 
         F = 0  # variational formulation
 
         # transient terms: implicit (backward) euler scheme: [u_n+1 - u_n)] / dt = f(u_n+1) -> new state appears in both derivative and function it is equal to
         F += eps_l * ((c_T2 - c_T2_n) / dt) * v_c * ufl.dx
-        F += eps_g * 1 / (const.R * T) * (P * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
+        F += eps_g * 1 / (const.R * T) * (P_g * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
 
         # dispersive terms
         if self.dispersion_on is True:
@@ -405,7 +449,7 @@ class Simulation:
                 * E_g
                 * 1
                 / (const.R * T)
-                * ufl.dot(ufl.grad(P * y_T2), ufl.grad(v_y))
+                * ufl.dot(ufl.grad(P_g * y_T2), ufl.grad(v_y))
                 * ufl.dx
             )
 
@@ -416,12 +460,7 @@ class Simulation:
         F += -gen_T2 * v_c * ufl.dx
 
         # advection of gas
-        F += (
-            1
-            / (const.R * T)
-            * ufl.inner(ufl.dot(ufl.grad(eps_g * P * y_T2), vel), v_y)
-            * ufl.dx
-        )
+        F += 1 / (const.R * T) * ufl.grad(u_g * P_g * y_T2)[0] * v_y * ufl.dx
 
         # BOUNDARY CONDITIONS
         gas_inlet_facets = dolfinx.mesh.locate_entities_boundary(
@@ -430,11 +469,11 @@ class Simulation:
         gas_outlet_facets = dolfinx.mesh.locate_entities_boundary(
             mesh, fdim, lambda x: np.isclose(x[0], tank_height)
         )
-        bc1 = dolfinx.fem.dirichletbc(
-            dolfinx.fem.Constant(mesh, 0.0),
-            dolfinx.fem.locate_dofs_topological(V.sub(1), fdim, gas_inlet_facets),
-            V.sub(1),
-        )  # Dirichlet BC y_T2 = 0 at gas inlet
+        # bc1 = dolfinx.fem.dirichletbc(
+        #     dolfinx.fem.Constant(mesh, 0.0),
+        #     dolfinx.fem.locate_dofs_topological(V.sub(1), fdim, gas_inlet_facets),
+        #     V.sub(1),
+        # )  # Dirichlet BC y_T2 = 0 at gas inlet
 
         # Custom measure
         all_facets = np.concatenate((gas_inlet_facets, gas_outlet_facets))
@@ -446,14 +485,9 @@ class Simulation:
 
         # Danckwert BC at gas inlet
         P_T2_inlet = 0
-        F += (
-            1
-            / (const.R * T)
-            * eps_g
-            * u_g0
-            * ufl.inner((P * y_T2 - P_T2_inlet), v_y)
-            * ds(1)
-        )
+        F += 1 / (const.R * T) * u_g * ufl.inner((P_g * y_T2 - P_T2_inlet), v_y) * ds(1)
+
+        # n = ufl.FacetNormal(mesh)
 
         # set up problem
         problem = NonlinearProblem(
@@ -492,6 +526,41 @@ class Simulation:
         # NOTE currently we don't use x_profile and use another x in the plotting script
         x_profile = coords_profile[profile_sort_coords]
 
+        # ---- EXPORTS: registry of quantities that can be exported by name ----
+        # Every entry is a scalar UFL expression on `mesh`; it is interpolated
+        # into the scalar profile space V_profile and sampled at x_profile.
+        exportable = {
+            "c_T2": (c_T2, "molT2/m^3"),
+            "y_T2": (y_T2, "dimensionless"),
+            "P_T2": (P_g * y_T2, "Pa"),
+            "aJ_T2": (aJ_T2, "molT2/m^3/s"),
+            "P_g": (P_g, "Pa"),
+            "eps_g": (eps_g, "dimensionless"),
+            "eps_l": (eps_l, "dimensionless"),
+            "a": (a, "1/m"),
+            "u_g": (u_g, "m/s"),
+        }
+
+        unknown = [name for name in self.exports if name not in exportable]
+        if unknown:
+            raise ValueError(
+                f"Cannot export unknown quantities {unknown}. "
+                f"Available exports: {sorted(exportable)}"
+            )
+
+        export_exprs = {}
+        export_funcs = {}
+        export_units = {}
+        for name in self.exports:
+            expr_ufl, units = exportable[name]
+            export_funcs[name] = dolfinx.fem.Function(V_profile)
+            export_exprs[name] = dolfinx.fem.Expression(
+                expr_ufl, V_profile.element.interpolation_points
+            )
+            export_units[name] = units
+
+        export_data = {name: [] for name in self.exports}
+
         # NOTE maybe we could take this function out and it would take a SimulationResults object as input + u + other things...
         def post_process(t):
             """
@@ -504,53 +573,38 @@ class Simulation:
             y_T2_vals = u_n.x.array[y_dofs][y_sort_coords]
             aJ_T2_func.interpolate(aJ_T2_expr)
             aJ_T2_vals = aJ_T2_func.x.array[profile_dofs][ct_sort_coords]
+
             times.append(t)
-            c_T2_solutions.append(c_T2_vals.copy())
-            y_T2_solutions.append(y_T2_vals.copy())
-            aJ_T2_solutions.append(aJ_T2_vals.copy())
-            sources_T2.append(
-                Q_T2 * self.sim_input.signal_irr(t * ureg.s)
-            )  # total T generation rate in the tank [mol/s] TODO useless: signal_irr is already given
+            c_T2_profiles.append(c_T2_vals.copy())
+            y_T2_profiles.append(y_T2_vals.copy())
+            aJ_T2_profiles.append(aJ_T2_vals.copy())
+            sources_T2_series.append(Q_T2 * self.sim_input.signal_irr(t * ureg.s))
 
-            n = ufl.FacetNormal(mesh)
-
-            flux_T2 = dolfinx.fem.assemble_scalar(
+            ndot_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
-                    eps_g * vel_x * P / (const.R * T) * y_T2_post * tank_area * ds(2)
+                    u_g * P_g / (const.R * T) * y_T2_post * tank_area * ds(2)
                 )
             )
-            flux_T2_2 = dolfinx.fem.assemble_scalar(
-                dolfinx.fem.form(tank_area * aJ_T2_func * ufl.dx)
-            )  # other expression: integral of J over volume
+            ndot_T2_series.append(ndot_T2)
 
-            flux_T2_inlet = dolfinx.fem.assemble_scalar(
-                dolfinx.fem.form(
-                    -eps_g * E_g * ufl.inner(ufl.grad(P * y_T2_post), n) * ds(1)
-                )
-            )  # total T dispersive flux at the inlet [Pa T2 /s/m2]
-            flux_T2_inlet *= 1 / (const.R * T)  # mol T2/s/m2
-            flux_T2_inlet *= tank_area  # convert to molT2/s
-
-            flux_T2_3 = flux_T2_inlet + flux_T2
-
-            # fluxes_T2.append(flux_T2 + flux_T2_inlet)
-            # fluxes_T2.append(flux_T2)
-            fluxes_T2.append(flux_T2)
-
-            inventory_T2_salt = dolfinx.fem.assemble_scalar(
+            n_T2_salt = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(c_T2_post * ufl.dx)
             )
-            inventory_T2_salt *= tank_area  # get total amount of T2 in [mol]
-            inventories_T2_salt.append(inventory_T2_salt)
+            n_T2_salt *= tank_area  # total amount of T2 in [mol]
+            n_T2_salt_series.append(n_T2_salt)
+            for name in self.exports:
+                export_funcs[name].interpolate(export_exprs[name])
+                vals = export_funcs[name].x.array[profile_dofs][profile_sort_coords]
+                export_data[name].append(vals.copy())
 
         t = 0
         times = []
-        c_T2_solutions = []
-        y_T2_solutions = []
-        aJ_T2_solutions = []
-        sources_T2 = []
-        fluxes_T2 = []
-        inventories_T2_salt = []
+        c_T2_profiles = []
+        y_T2_profiles = []
+        aJ_T2_profiles = []
+        sources_T2_series = []
+        ndot_T2_series = []
+        n_T2_salt_series = []
         # initialize (t=0)
         post_process(t)
 
@@ -573,16 +627,21 @@ class Simulation:
 
         results = SimulationResults(
             times=np.array(times) * ureg("s"),
-            c_T2_solutions=np.array(c_T2_solutions) * ureg("molT2/m^3"),
-            y_T2_solutions=np.array(y_T2_solutions) * ureg("dimensionless"),
-            aJ_T2_solutions=np.array(aJ_T2_solutions) * ureg("molT2/m^3/s"),
+            c_T2_profiles=np.array(c_T2_profiles) * ureg("molT2/m^3"),
+            y_T2_profiles=np.array(y_T2_profiles) * ureg("dimensionless"),
+            aJ_T2_profiles=np.array(aJ_T2_profiles) * ureg("molT2/m^3/s"),
             x_ct=x_ct * ureg("m"),
             x_y=x_y * ureg("m"),
-            inventories_T2_salt=np.array(inventories_T2_salt) * ureg("molT2"),
-            sources_T2=np.array(sources_T2) * ureg("molT2/s"),
-            fluxes_T2=np.array(fluxes_T2) * ureg("molT2/s"),
+            n_T2_salt_series=np.array(n_T2_salt_series) * ureg("molT2"),
+            sources_T2_series=np.array(sources_T2_series) * ureg("molT2/s"),
+            ndot_T2_series=np.array(ndot_T2_series) * ureg("molT2/s"),
             sim_input=self.sim_input,
             dt=dt * ureg("s"),
             dx=dx * ureg("m"),
+            exports={
+                name: np.array(export_data[name]) * ureg(export_units[name])
+                for name in self.exports
+            },
+            x_export=x_profile * ureg("m"),
         )
         return results
