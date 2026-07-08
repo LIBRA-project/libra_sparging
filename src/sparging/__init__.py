@@ -20,6 +20,7 @@ from .correlations import (
     CorrelationType,
 )
 from .input_examples import (
+    get_sim_input_LIBRA_Pi,
     get_sim_input_LIBRA1L,
     get_sim_input_standard,
     get_sim_input_malara,
