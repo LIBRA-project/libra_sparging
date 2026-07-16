@@ -192,6 +192,63 @@ class SimulationResults:
                 out[name] = {"error": str(e)}
         return out
 
+    @property
+    def n_cells(self) -> int:
+        """number of mesh cells (P1 interval mesh: cells = nodes - 1)."""
+        return int(len(self.x_ct) - 1)
+
+    @property
+    def n_steps(self) -> int:
+        """number of time steps taken (post_process is called once before the
+        loop and once per step, so steps = samples - 1)."""
+        return int(len(self.times) - 1)
+
+    def convergence_record(self, **kwargs) -> dict:
+        """Compact, self-describing summary of a single run for a mesh/time-step
+        convergence study. Deliberately excludes the (large) spatial profiles:
+        it keeps only the discretisation (dt, dx, n_cells, n_steps), the derived
+        scalar of interest (fitted tau) with its fit-quality diagnostics, and the
+        governing dimensionless groups (Pi, Bo) needed to interpret the point.
+
+        Reuses `postprocess.summarize_decay` for the exponential fit. Extra
+        kwargs (e.g. t_0, t_end) are forwarded to it.
+        """
+        from sparging.postprocess import summarize_decay
+
+        fit = summarize_decay(self, t_0=kwargs.get("t_0"), t_end=kwargs.get("t_end"))
+        si = self.sim_input
+
+        def _si(q, unit):  # magnitude in a fixed SI unit -> easy to tabulate
+            return None if q is None else float(q.to(unit).magnitude)
+
+        def _try(getter):
+            try:
+                return float(getter().to("dimensionless").magnitude)
+            except Exception:
+                return None
+
+        return {
+            # discretisation
+            "dt_s": _si(self.dt, "s"),
+            "dx_m": _si(self.dx, "m"),
+            "n_cells": self.n_cells,
+            "n_steps": self.n_steps,
+            # derived scalar of interest + fit diagnostics
+            "tau_fitted_s": _si(fit["tau_fitted"], "s"),
+            "tau_fitted_std_s": _si(fit["tau_fitted_std"], "s"),
+            "tau_real_1e_s": _si(fit["tau_real_1e"], "s"),
+            "tau_predicted_s": _si(fit["tau_predicted"], "s"),
+            "n0_fitted_mol": _si(fit["n0_fitted"], "molT2"),
+            "residual_fraction": float(fit["residual_fraction"].magnitude),
+            # governing groups (interpretation)
+            "Pi": _try(si.get_Pi_number),
+            "Bo": _try(si.get_Bo),
+            "K_s_mol_m3_Pa": _si(si.K_s, "mol/m**3/Pa"),
+        }
+
+    def _section_convergence(self, **kwargs) -> dict:
+        return self.convergence_record(**kwargs)
+
     def to_json(self, output_path: Path, sections: list[str], **kwargs):
         """Write a SCALAR summary of the run.
 
@@ -199,6 +256,8 @@ class SimulationResults:
             "intermediate_params"    -> resolved closure-relation values (from graph)
             "fit_summary"            -> exponential decay fit of n_T2_salt vs get_tau()
             "analytical_quantities"  -> Pi, predicted tau, c_T2 steady state, Bo, ...
+            "convergence"            -> compact (dt, dx, fitted tau, Pi, Bo) record
+                                        for mesh/time-step convergence studies
 
         Extra kwargs (e.g. t_0, t_end) are forwarded to the section builders.
         """
@@ -208,6 +267,7 @@ class SimulationResults:
             "intermediate_params": self._section_intermediate_params,
             "fit_summary": self._section_fit_summary,
             "analytical_quantities": self._section_analytical_quantities,
+            "convergence": self._section_convergence,
         }
         unknown = [s for s in sections if s not in builders]
         if unknown:
@@ -318,9 +378,9 @@ class SimulationResults:
         by the column layout, and the physical UNIT is stored as a leading
         '# units: <unit>' comment line.
 
-            PROFILE : col 0 'x_metres', then one column per time step 't=<s>s'
-            STATIC  : columns 'x_metres', 'value'
-            SERIES  : columns 't_seconds', 'value'
+            PROFILE : time-varying profile -> col 0 'x_metres', then one column per time step 't=<s>s'
+            STATIC  : time-invariant profile -> columns 'x_metres', 'value'
+            SERIES  : time-varying scalar -> columns 't_seconds', 'value'
         """
         if not self.exports:
             warnings.warn(
