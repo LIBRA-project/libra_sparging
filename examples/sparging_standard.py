@@ -1,5 +1,6 @@
 from sparging import (
     get_sim_input_standard,
+    get_sim_input_LIBRA_Pi,
     SimulationInput,
     ureg,
     Simulation,
@@ -15,21 +16,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.WARNING)
 
-FOLDER = Path("paper/runs/standard")
+FOLDER = Path("paper/runs/reference")
 FOLDER.mkdir(exist_ok=True, parents=True)
 
 
-standard_input = get_sim_input_standard()
+# standard_input = get_sim_input_standard()
+my_input = get_sim_input_LIBRA_Pi()
 
-print(f"Pi = {standard_input.get_Pi_number():.2f}")
-print(f"steady state c_T2 = {standard_input.get_c_T2_SS():.2e}")
-print(f"Bo = {standard_input.get_Bo():.2e}")
 
-standard_input.c_T2_init = 3e-11 * ureg.molT2 / ureg.m**3
+print(f"Pi = {my_input.get_Pi_number():.2f}")
+print(f"steady state c_T2 = {my_input.get_c_T2_SS():.2e}")
+print(f"Bo = {my_input.get_Bo():.2e}")
+
+my_input.c_T2_init = 3e-11 * ureg.molT2 / ureg.m**3
+
 
 my_simulation = Simulation(
-    standard_input,
-    t_final=6 * ureg.days,
+    my_input,
+    t_final=3 * ureg.days,
     dispersion_on=True,
     constant_profiles=False,
 )
@@ -48,7 +52,13 @@ if __name__ == "__main__":
         "eps_g",
         "u_g",
     ]
-    output = my_simulation.solve(fast_solve=True)
+
+    tau_pred = my_input.get_tau()
+    dt = (tau_pred / 200).to("s")
+    dx = (2 * my_input.height / (my_input.get_Bo())).to("m")
+
+    print(f"dx={dx:~.2e}, dt={dt:~.2e}")
+    output = my_simulation.solve(dt=dt, dx=dx)
 
     # save output to file
     output.exports_to_csv(FOLDER)
