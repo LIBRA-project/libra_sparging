@@ -207,6 +207,12 @@ class SimulationInput:
         """
         return (self.u_g0 * self.height / self.E_g).to("dimensionless")
 
+    def dx_from_Pe(self, Pe: float) -> pint.Quantity:
+        """
+        returns the spatial step dx corresponding to a given mesh Peclet number
+        """
+        return (self.E_g * Pe / self.u_g0).to("m")
+
     def __post_init__(self):
         # make sure there are only pint.Quantity or callables in the input, otherwise raise an error
         for key in self.required_scalars:

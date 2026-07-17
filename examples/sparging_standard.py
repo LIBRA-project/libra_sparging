@@ -7,6 +7,7 @@ from sparging import (
     animation,
 )
 import logging
+import time
 from typing import TYPE_CHECKING
 from pathlib import Path
 
@@ -55,11 +56,14 @@ if __name__ == "__main__":
     ]
 
     tau_pred = my_input.get_tau()
-    dt = (tau_pred / 50).to("s")
-    dx = (2 * my_input.height / (my_input.get_Bo())).to("m")  # grid Pe = 2
+    dt = (tau_pred * 0.02).to("s")  # gives 1% error on tau compared to fine mesh
+    dx = my_input.dx_from_Pe(2)  # grid Pe = 2
 
     print(f"dx={dx:~.2e}, dt={dt:~.2e}")
-    output = my_simulation.solve(dt=dt, dx=dx)
+    t_start = time.perf_counter()
+    output = my_simulation.solve(dt=dt, dx=dx, verbose=True)
+    elapsed = time.perf_counter() - t_start
+    print(f"solve() took {elapsed:.1f} s")
 
     # save output to file
     output.exports_to_csv(FOLDER)
