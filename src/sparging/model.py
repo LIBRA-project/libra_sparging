@@ -481,7 +481,6 @@ class Simulation:
         tank_height = self.sim_input.height.to("m").magnitude
         tank_area = self.sim_input.area.to("m**2").magnitude
         tank_volume = self.sim_input.volume.to("m**3").magnitude
-        h_l = self.sim_input.h_l.to("m/s").magnitude
         K_s = self.sim_input.K_s.to("mol/m**3/Pa").magnitude  # convert to molT2 ?
         T = self.sim_input.temperature.to("K").magnitude
         E_g = self.sim_input.E_g.to("m**2/s").magnitude
@@ -522,6 +521,7 @@ class Simulation:
             a = dolfinx.fem.Function(V_profile)
             P_g = dolfinx.fem.Function(V_profile)
             u_g = dolfinx.fem.Function(V_profile)
+            h_l_profile = dolfinx.fem.Function(V_profile)
 
             eps_g.interpolate(
                 lambda x: (
@@ -541,18 +541,23 @@ class Simulation:
             u_g.interpolate(
                 lambda x: self.sim_input.u_g(x[0] * ureg.m).to("m/s").magnitude
             )
+            h_l_profile.interpolate(
+                lambda x: self.sim_input.h_l(x[0] * ureg.m).to("m/s").magnitude
+            )
         else:
             # use values at z=0 for constant profiles
             eps_g0 = self.sim_input.eps_g0.to("dimensionless").magnitude
             a_0 = self.sim_input.a_0.to("1/m").magnitude
             P_g0 = self.sim_input.P_g0.to("Pa").magnitude
             u_g0 = self.sim_input.u_g0.to("m/s").magnitude
+            h_l0 = self.sim_input.h_l0.to("m/s").magnitude
 
             eps_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(eps_g0))
             eps_l = dolfinx.fem.Constant(mesh, PETSc.ScalarType(1 - eps_g0))
             a = dolfinx.fem.Constant(mesh, PETSc.ScalarType(a_0))
             P_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(P_g0))
             u_g = dolfinx.fem.Constant(mesh, PETSc.ScalarType(u_g0))
+            h_l_profile = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l0))
 
         # set initial concentration
         c_T2_init_ufl_expr = dolfinx.fem.Constant(
@@ -571,7 +576,13 @@ class Simulation:
         c_T2, y_T2 = ufl.split(u)
         c_T2_n, y_T2_n = ufl.split(u_n)
 
-        h_l_const = dolfinx.fem.Constant(mesh, PETSc.ScalarType(h_l))
+        # scalar on/off multiplier for the h_l profile: sparging is "shut down" by
+        # driving this signal to 0, which makes the effective h_l field zero
+        # everywhere without discarding the underlying h_l(z) profile, so sparging
+        # can be turned back on by returning the signal to 1
+        h_l_signal = dolfinx.fem.Constant(
+            mesh, PETSc.ScalarType(self.sim_input.signal_sparging(0 * ureg.s))
+        )
 
         gen_T2_ave = dolfinx.fem.Constant(
             mesh, Q_T2 / tank_volume * self.sim_input.signal_irr(0 * ureg.s)
@@ -584,7 +595,7 @@ class Simulation:
         # VARIATIONAL FORMULATION
 
         # mass transfer rate
-        aJ_T2 = a * h_l_const * (c_T2 - K_s * (P_g * y_T2 + EPS))
+        aJ_T2 = a * h_l_profile * h_l_signal * (c_T2 - K_s * (P_g * y_T2 + EPS))
 
         F = 0  # variational formulation
 
@@ -693,6 +704,7 @@ class Simulation:
             "J_T2": (ExportKind.PROFILE, "molT2/m^2/s", aJ_T2 / a),
             # time-invariant spatial profiles (UFL expression)
             "P_g": (ExportKind.STATIC, "Pa", P_g),
+            "h_l": (ExportKind.STATIC, "m/s", h_l_profile),
             "eps_g": (ExportKind.STATIC, "dimensionless", eps_g),
             "eps_l": (ExportKind.STATIC, "dimensionless", eps_l),
             "a": (ExportKind.STATIC, "1/m", a),
@@ -810,7 +822,7 @@ class Simulation:
             gen_T2_ave.value = (
                 Q_T2 / tank_volume * self.sim_input.signal_irr(t * ureg.s)
             )
-            h_l_const.value = h_l * self.sim_input.signal_sparging(t * ureg.s)
+            h_l_signal.value = self.sim_input.signal_sparging(t * ureg.s)
 
             problem.solve()  # solves for u (equivalent to u_n+1)
 

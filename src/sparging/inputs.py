@@ -82,7 +82,6 @@ class SimulationInput:
     height: pint.Quantity
     area: pint.Quantity
     temperature: pint.Quantity
-    h_l: pint.Quantity
     K_s: pint.Quantity
     rho_l: pint.Quantity
     E_g: pint.Quantity
@@ -101,7 +100,6 @@ class SimulationInput:
         "height",
         "area",
         "temperature",
-        "h_l",
         "K_s",
         "rho_l",
         "E_g",
@@ -114,6 +112,7 @@ class SimulationInput:
         "eps_g",
         "a",
         "u_g",
+        "h_l",
     )  # these parameters will be used to solve the model
     graph: nx.Graph | None = None
     """ Stores the intermediate parameters and their relationships that built the SimulationInput. 
@@ -129,6 +128,7 @@ class SimulationInput:
     eps_g: Callable[[pint.Quantity], pint.Quantity] | None = None
     a: Callable[[pint.Quantity], pint.Quantity] | None = None
     u_g: Callable[[pint.Quantity], pint.Quantity] | None = None
+    h_l: Callable[[pint.Quantity], pint.Quantity] | None = None
 
     @property
     def volume(self):
@@ -158,6 +158,10 @@ class SimulationInput:
     def u_g0(self):
         return self.u_g(0 * ureg.m)
 
+    @property
+    def h_l0(self):
+        return self.h_l(0 * ureg.m)
+
     def set_S_T(self, val: pint.Quantity):
         self.Q_T = (val.to("molT/m**3/s") * self.volume).to("molT/s")
 
@@ -166,10 +170,10 @@ class SimulationInput:
 
     def get_tau(self) -> pint.Quantity:
         """characteristic time of the sparger under the small partial pressure (SPP) approximation"""
-        return (self.eps_l0 / (self.h_l * self.a_0)).to("seconds")
+        return (self.eps_l0 / (self.h_l0 * self.a_0)).to("seconds")
 
     def get_c_T2_SS(self) -> pint.Quantity:
-        return (self.get_S_T() * 1 / (self.h_l * self.a_0)).to("molT2/m^3")
+        return (self.get_S_T() * 1 / (self.h_l0 * self.a_0)).to("molT2/m^3")
 
     def get_Pi_number(self) -> pint.Quantity:
         """Partial pressure number,
@@ -180,7 +184,7 @@ class SimulationInput:
             self.K_s
             * (const_R * self.temperature)
             * self.height
-            * self.h_l
+            * self.h_l0
             * self.a_0
             / (self.eps_g0 * self.graph.nodes["v_g0"]["value"])
         ).to("dimensionless")
@@ -192,7 +196,7 @@ class SimulationInput:
         return (
             6
             * (const_R * self.temperature)
-            * self.h_l
+            * self.h_l0
             / (self.graph.nodes["d_b"]["value"](0 * ureg.m) * self.u_g0)
         ).to("Pa/(mol/m^3)/m")
 

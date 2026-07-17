@@ -309,29 +309,34 @@ v_g0 = Correlation(
 all_correlations.append(v_g0)
 
 
-h_l_higbie = Correlation(
+h_l_higbie = Profile(
     identifier="h_l_higbie",
-    function=lambda D_l, v_g0, d_b0: get_h_higbie(
-        D_l=D_l, v_g=v_g0, d_b=d_b0
-    ),  # mass transfer coefficient with Higbie correlation
+    function=lambda D_l, v_g0, d_b: (
+        lambda z: get_h_higbie(D_l=D_l, v_g=v_g0, d_b=d_b(z))
+    ),  # mass transfer coefficient profile with Higbie correlation
     corr_type=CorrelationType.MASS_TRANSFER_COEFF,
     source="Higbie 1935",
-    description="mass transfer coefficient for tritium in liquid FLiBe using Higbie penetration model",
-    input_units=["m**2/s", "m/s", "m"],
+    description="mass transfer coefficient profile for tritium in liquid FLiBe using Higbie penetration model; varies with height through the bubble diameter profile d_b(z)",
+    input_units=["m**2/s", "m/s", PROFILE],
     output_units="m/s",
 )
 all_correlations.append(h_l_higbie)
 
 
-h_l_briggs = Correlation(
+h_l_briggs = Profile(
     identifier="h_l_briggs",
-    function=lambda Re, Sc, D_l, d_b0: get_h_briggs(
-        Re=Re, Sc=Sc, D_l=D_l, d_b=d_b0
-    ),  # mass transfer coefficient with Briggs correlation
+    function=lambda rho_l, v_g0, mu_l, Sc, D_l, d_b: (
+        lambda z: get_h_briggs(
+            Re=(rho_l * v_g0 * d_b(z) / mu_l).to("dimensionless"),
+            Sc=Sc,
+            D_l=D_l,
+            d_b=d_b(z),
+        )
+    ),  # mass transfer coefficient profile with Briggs correlation
     corr_type=CorrelationType.MASS_TRANSFER_COEFF,
     source="Briggs 1970",
-    description="mass transfer coefficient for tritium in liquid FLiBe using Briggs 1970 correlation",
-    input_units=["dimensionless", "dimensionless", "m**2/s", "m"],
+    description="mass transfer coefficient profile for tritium in liquid FLiBe using Briggs 1970 correlation; varies with height through the bubble diameter profile d_b(z) (Re is recomputed locally from d_b(z))",
+    input_units=["kg/m**3", "m/s", "Pa*s", "dimensionless", "m**2/s", PROFILE],
     output_units="m/s",
 )
 all_correlations.append(h_l_briggs)

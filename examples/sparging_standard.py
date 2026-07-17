@@ -51,11 +51,12 @@ if __name__ == "__main__":
         "J_T2",
         "eps_g",
         "u_g",
+        "h_l",
     ]
 
     tau_pred = my_input.get_tau()
-    dt = (tau_pred / 200).to("s")
-    dx = (2 * my_input.height / (my_input.get_Bo())).to("m")
+    dt = (tau_pred / 50).to("s")
+    dx = (2 * my_input.height / (my_input.get_Bo())).to("m")  # grid Pe = 2
 
     print(f"dx={dx:~.2e}, dt={dt:~.2e}")
     output = my_simulation.solve(dt=dt, dx=dx)

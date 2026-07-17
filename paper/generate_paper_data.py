@@ -62,8 +62,11 @@ CASES = {
 
 T_FINAL_IN_TAU = 4  # simulate 4 SPP-tau (enough decay for a clean exp fit)
 
-# temporal sweep: refine dt (= t_final / n_steps) at a fixed fine mesh
-N_STEPS_SWEEP = [50, 100, 200, 400, 800, 1600]  # ratio r = 2
+# temporal sweep: refine dt (= t_final / n_steps) at a fixed fine mesh.
+# The 4 coarsest entries (few steps -> large dt) probe the coarse-timestep regime
+# useful for fast parametric sweeps; the finest 3 (400/800/1600) keep ratio r=2
+# for Richardson extrapolation.
+N_STEPS_SWEEP = [3, 6, 12, 25, 50, 100, 200, 400, 800, 1600]  # ratio r ~ 2
 N_CELLS_FIXED = 160  # fine mesh held during the temporal sweep
 
 # spatial sweep: refine dx (= H / n_cells) at a fixed fine time step
