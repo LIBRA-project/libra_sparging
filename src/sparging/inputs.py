@@ -172,6 +172,24 @@ class SimulationInput:
         """characteristic time of the sparger under the small partial pressure (SPP) approximation"""
         return (self.eps_l0 / (self.h_l0 * self.a_0)).to("seconds")
 
+    def get_tau_ave(self) -> pint.Quantity:
+        """characteristic time computed from a, h_l and eps_l profiles integrated
+        over the tank height, instead of evaluated at the bottom (z=0)."""
+        from scipy.integrate import quad
+
+        def eps_l_integrand(z_m: float) -> float:
+            return (1 - self.eps_g(z_m * ureg.m)).to("dimensionless").magnitude
+
+        def a_h_l_integrand(z_m: float) -> float:
+            z = z_m * ureg.m
+            return (self.a(z) * self.h_l(z)).to("1/s").magnitude
+
+        height_m = self.height.to("m").magnitude
+        int_eps_l = quad(eps_l_integrand, 0, height_m)[0] * ureg.m
+        int_a_h_l = quad(a_h_l_integrand, 0, height_m)[0] * ureg("m/s")
+
+        return (int_eps_l / int_a_h_l).to("seconds")
+
     def get_c_T2_SS(self) -> pint.Quantity:
         return (self.get_S_T() * 1 / (self.h_l0 * self.a_0)).to("molT2/m^3")
 

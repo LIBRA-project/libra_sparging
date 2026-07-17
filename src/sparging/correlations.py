@@ -350,7 +350,7 @@ E_l = Correlation(
     ),
     corr_type=CorrelationType.LIQUID_PHASE_DISPERSION,
     source="Deckwer 1974",
-    description="liquid phase axial dispersion coefficient, assumed equal to diffusivity of tritium in liquid FLiBe",
+    description="liquid phase axial dispersion coefficient",
     input_units=["m", PROFILE],
     output_units="m**2/s",
 )

@@ -179,6 +179,7 @@ class SimulationResults:
         # each entry wrapped so one failing property doesn't kill the whole export
         candidates = {
             "tau_predicted": si.get_tau,
+            "tau_predicted_ave": si.get_tau_ave,
             "c_T2_steady_state": si.get_c_T2_SS,
             "Pi_number": si.get_Pi_number,
             "Bodenstein_number": si.get_Bo,

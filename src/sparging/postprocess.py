@@ -152,8 +152,10 @@ def summarize_decay(
     (tau_fit, n0_fit), (tau_std, n0_std) = fit_exp(inv, times, t_0, t_end, "decay")
     tau_real = get_tau_real(inv, times, t_0)
     tau_pred = results.sim_input.get_tau()
+    tau_pred_ave = results.sim_input.get_tau_ave()
     residual = get_residual_fraction(inv, times, t_0, t_end)
     rel_error = ((tau_fit - tau_pred) / tau_pred).to("dimensionless")
+    ave_rel_error = ((tau_fit - tau_pred_ave) / tau_pred_ave).to("dimensionless")
 
     logger.info(
         f"tau_fitted={tau_fit.to('hour'):.3f}, tau_predicted={tau_pred.to('hour'):.3f}, "
@@ -164,10 +166,12 @@ def summarize_decay(
         "tau_fitted": tau_fit,
         "tau_fitted_std": tau_std,
         "tau_predicted": tau_pred,
+        "tau_predicted_ave": tau_pred_ave,
         "tau_real_1e": tau_real,
         "n0_fitted": n0_fit,
         "n0_fitted_std": n0_std,
         "residual_fraction": residual,
         "tau_rel_error": rel_error,
+        "tau_ave_rel_error": ave_rel_error,
         "fit_window": (t_0, t_end),
     }

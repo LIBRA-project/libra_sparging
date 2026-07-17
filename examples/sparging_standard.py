@@ -56,9 +56,11 @@ if __name__ == "__main__":
     ]
 
     tau_pred = my_input.get_tau()
-    dt = (tau_pred * 0.02).to("s")  # gives 1% error on tau compared to fine mesh
+    dt = (tau_pred * 0.02).to(
+        "s"
+    )  # 2% of tau_pred gives 1% error on tau compared to fine mesh
     dx = my_input.dx_from_Pe(2)  # grid Pe = 2
-
+    my_input.K_s *= 1e-2
     print(f"dx={dx:~.2e}, dt={dt:~.2e}")
     t_start = time.perf_counter()
     output = my_simulation.solve(dt=dt, dx=dx, verbose=True)
