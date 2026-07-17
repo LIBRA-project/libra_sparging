@@ -26,6 +26,7 @@ import logging
 from dataclasses import dataclass, field
 import warnings
 from enum import Enum
+# from dolfinx import log
 
 logger = logging.getLogger(__name__)
 
@@ -470,11 +471,13 @@ class Simulation:
         dt: pint.Quantity | None = None,
         dx: pint.Quantity | None = None,
         fast_solve: bool = False,
+        verbose: bool = False,
     ) -> SimulationResults:
         """Input:
         - dt: time step, 1000 equal time steps by default
         - dx: spatial step, 1000 equal spatial steps by default
         - fast_solve: if True, use only 50 equal time and spatial steps
+        - verbose: if True, print the Newton (SNES) iterations of the nonlinear solver at each time step
         """
         # unpack pint.Quantities
         t_final = self.t_final.to("seconds").magnitude
@@ -657,7 +660,7 @@ class Simulation:
             u,
             # bcs=[bc1],  # Neumann BCs on c_T2 at inlet and outlet are naturally enforced
             petsc_options_prefix="librasparge",
-            # petsc_options={"snes_monitor": None},
+            petsc_options={"snes_monitor": None} if verbose else None,
         )
 
         # initialise post processing
