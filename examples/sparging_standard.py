@@ -23,18 +23,23 @@ FOLDER.mkdir(exist_ok=True, parents=True)
 
 # standard_input = get_sim_input_standard()
 my_input = get_sim_input_LIBRA_Pi()
+# my_func = my_input.h_l
+# my_input.h_l = lambda z: my_func(z) * 9.4
 
 
 print(f"Pi = {my_input.get_Pi_number():.2f}")
 print(f"steady state c_T2 = {my_input.get_c_T2_SS():.2e}")
 print(f"Bo = {my_input.get_Bo():.2e}")
 
+tau_ave = my_input.get_tau_ave()
+print(f"tau_ave = {tau_ave:~.2e}")
+
 my_input.c_T2_init = 3e-11 * ureg.molT2 / ureg.m**3
 
 
 my_simulation = Simulation(
     my_input,
-    t_final=3 * ureg.days,
+    t_final=5 * tau_ave,
     dispersion_on=True,
     constant_profiles=False,
 )
@@ -55,15 +60,15 @@ if __name__ == "__main__":
         "h_l",
     ]
 
-    tau_pred = my_input.get_tau()
-    dt = (tau_pred * 0.02).to(
+    tau_pred = my_input.get_tau_ave()
+    dt = (tau_pred * 0.005).to(
         "s"
     )  # 2% of tau_pred gives 1% error on tau compared to fine mesh
-    dx = my_input.dx_from_Pe(2)  # grid Pe = 2
-    my_input.K_s *= 1e-2
+    dx = my_input.dx_from_Pe(0.1)  # grid Pe = 2
+    my_input.K_s *= 0.36
     print(f"dx={dx:~.2e}, dt={dt:~.2e}")
     t_start = time.perf_counter()
-    output = my_simulation.solve(dt=dt, dx=dx, verbose=True)
+    output = my_simulation.solve(dt=dt, dx=dx, verbose=False)
     elapsed = time.perf_counter() - t_start
     print(f"solve() took {elapsed:.1f} s")
 

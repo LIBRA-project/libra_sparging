@@ -61,6 +61,7 @@ def fit_exp(
     t_0: pint.Quantity,
     t_end: pint.Quantity,
     phase: str,
+    tau_guess: pint.Quantity = 10000 * ureg.s,
 ) -> tuple[tuple[pint.Quantity, pint.Quantity], tuple[pint.Quantity, pint.Quantity]]:
     """
     Input:
@@ -69,6 +70,10 @@ def fit_exp(
     - t_0: initial fit time
     - t_end: final fit time
     - phase = 'decay' or 'rampup'
+    - tau_guess: initial guess for tau passed to curve_fit. The default (10000 s)
+      is a historical arbitrary value; pass the analytical tau_pred when the
+      true timescale may be far from that (curve_fit can otherwise fail to
+      converge, especially when the fit window only spans a couple of tau).
     ---
     Returns: (tau, n0), (tau_std, n0_std)
     """
@@ -89,7 +94,6 @@ def fit_exp(
     logger.info(
         f"Fitting from t={t_0.to('hour')} to t={t_end.to('hour')} (indices {idx_0} to {idx_end})"
     )
-    tau_guess = 10000 * ureg.s
     n0_guess = vec[idx_0] if phase == "decay" else vec[idx_end]
 
     # wrapped_fitting_func = ureg.wraps(vec.units, (None, vec.units, "s"))(fitting_func)
@@ -113,6 +117,26 @@ def fit_exp(
         tau_std * ureg.s,
         n0_std * vec.units,
     )
+
+
+def get_exp_fit_rmse(
+    vec: np.ndarray[pint.Quantities],
+    times: np.ndarray[pint.Quantities],
+    t_0: pint.Quantity,
+    t_end: pint.Quantity,
+    tau: pint.Quantity,
+    n0: pint.Quantity,
+) -> pint.Quantity:
+    """Normalized RMSE (RMSE / n0) of an exponential-decay fit (tau, n0) against
+    vec over [t_0, t_end]. Fit-quality diagnostic: large values indicate the
+    decay is not well described by a single exponential."""
+    idx_0 = idx_from_t(times, t_0)
+    idx_end = idx_from_t(times, t_end)
+    t = (times[idx_0 : idx_end + 1] - times[idx_0]).to("s")
+    fitted = n0 * np.exp(-t / tau.to("s"))
+    actual = vec[idx_0 : idx_end + 1]
+    rmse = np.sqrt(np.mean((actual - fitted) ** 2))
+    return (rmse / n0).to("dimensionless")
 
 
 def get_tau_real(

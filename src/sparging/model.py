@@ -251,6 +251,87 @@ class SimulationResults:
     def _section_convergence(self, **kwargs) -> dict:
         return self.convergence_record(**kwargs)
 
+    def validity_record(self, sample: dict | None = None, **kwargs) -> dict:
+        """Compact per-sample summary for the 0D-approximation validity study
+        (see paper/generate_paper_data.py:generate_validity_data).
+
+        tau_fitted is the exponential-fit decay time (postprocess.fit_exp),
+        not the model-free e-folding time: the e-folding time is clipped
+        whenever a sample doesn't reach 1/e within the simulated window, and
+        it is quantized to multiples of dt (itself tied to a tau_pred), which
+        introduces discretisation artifacts. The exponential fit degrades
+        gracefully instead; fit_rmse_norm flags samples where it is a poor
+        description of the decay.
+
+        - sample: optional dict of sample-generation metadata (e.g. height,
+          multiplier, which factor it was applied to) merged into the record.
+        - kwargs: t_0, t_end (default to the first/last simulated time --
+          decay starts at t=0 for this study, there is no irradiation phase).
+        """
+        from sparging.postprocess import fit_exp, get_exp_fit_rmse
+
+        t_0 = kwargs.get("t_0")
+        t_0 = t_0 if t_0 is not None else self.times[0]
+        t_end = kwargs.get("t_end")
+        t_end = t_end if t_end is not None else self.times[-1]
+        si = self.sim_input
+
+        tau_pred_bot = si.get_tau()
+        tau_pred_ave = si.get_tau_ave()
+
+        (tau_fitted, n0_fitted), _ = fit_exp(
+            self.n_T2_salt_series, self.times, t_0, t_end, "decay", tau_guess=tau_pred_ave
+        )
+        rmse_norm = get_exp_fit_rmse(
+            self.n_T2_salt_series, self.times, t_0, t_end, tau_fitted, n0_fitted
+        )
+
+        e_bot = ((tau_fitted - tau_pred_bot) / tau_pred_bot).to("dimensionless")
+        e_ave = ((tau_fitted - tau_pred_ave) / tau_pred_ave).to("dimensionless")
+        G_mix_actual = ((si.height**2 / si.E_l) / tau_fitted).to("dimensionless")
+
+        def _si(q, unit):
+            return float(q.to(unit).magnitude)
+
+        record = {
+            # discretisation
+            "dt_s": _si(self.dt, "s"),
+            "dx_m": _si(self.dx, "m"),
+            "n_cells": self.n_cells,
+            "n_steps": self.n_steps,
+            # fitted decay time + fit quality
+            "tau_fitted_s": _si(tau_fitted, "s"),
+            "fit_rmse_norm": _si(rmse_norm, "dimensionless"),
+            # analytical predictions and signed relative errors
+            "tau_pred_bot_s": _si(tau_pred_bot, "s"),
+            "tau_pred_ave_s": _si(tau_pred_ave, "s"),
+            "e_bot": _si(e_bot, "dimensionless"),
+            "e_ave": _si(e_ave, "dimensionless"),
+            # governing dimensionless groups
+            "Pi": _si(si.get_Pi_ave(), "dimensionless"),
+            "Pi_bot": _si(si.get_Pi_number(), "dimensionless"),
+            "G_mix_pred": _si(si.get_G_mix_pred(), "dimensionless"),
+            "G_mix": _si(G_mix_actual, "dimensionless"),
+            "G_P": _si(si.get_G_P(), "dimensionless"),
+            # inputs and (post-multiplier) closure-relation outputs
+            "height_m": _si(si.height, "m"),
+            "area_m2": _si(si.area, "m**2"),
+            "temperature_C": _si(si.temperature, "degC"),
+            "K_s_mol_m3_Pa": _si(si.K_s, "mol/m**3/Pa"),
+            "h_l0_m_s": _si(si.h_l0, "m/s"),
+            "a_0_1_m": _si(si.a_0, "1/m"),
+            "eps_g0": _si(si.eps_g0, "dimensionless"),
+            "u_g0_m_s": _si(si.u_g0, "m/s"),
+            "E_l_m2_s": _si(si.E_l, "m**2/s"),
+            "E_g_m2_s": _si(si.E_g, "m**2/s"),
+        }
+        if sample:
+            record.update(sample)
+        return record
+
+    def _section_validity(self, **kwargs) -> dict:
+        return self.validity_record(**kwargs)
+
     def to_json(self, output_path: Path, sections: list[str], **kwargs):
         """Write a SCALAR summary of the run.
 
@@ -260,6 +341,9 @@ class SimulationResults:
             "analytical_quantities"  -> Pi, predicted tau, c_T2 steady state, Bo, ...
             "convergence"            -> compact (dt, dx, fitted tau, Pi, Bo) record
                                         for mesh/time-step convergence studies
+            "validity"               -> compact (tau_fitted, tau_pred_bot/ave, Pi,
+                                        G_mix, G_P) record for the 0D-approximation
+                                        validity study
 
         Extra kwargs (e.g. t_0, t_end) are forwarded to the section builders.
         """
@@ -270,6 +354,7 @@ class SimulationResults:
             "fit_summary": self._section_fit_summary,
             "analytical_quantities": self._section_analytical_quantities,
             "convergence": self._section_convergence,
+            "validity": self._section_validity,
         }
         unknown = [s for s in sections if s not in builders]
         if unknown:

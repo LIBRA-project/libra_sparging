@@ -172,22 +172,23 @@ class SimulationInput:
         """characteristic time of the sparger under the small partial pressure (SPP) approximation"""
         return (self.eps_l0 / (self.h_l0 * self.a_0)).to("seconds")
 
+    def _height_integral(
+        self, profile: Callable[[pint.Quantity], pint.Quantity], unit: str
+    ) -> pint.Quantity:
+        """integral of a z-dependent profile (evaluated in `unit`) over [0, height]."""
+        from scipy.integrate import quad
+
+        def integrand(z_m: float) -> float:
+            return profile(z_m * ureg.m).to(unit).magnitude
+
+        height_m = self.height.to("m").magnitude
+        return quad(integrand, 0, height_m)[0] * ureg(unit) * ureg.m
+
     def get_tau_ave(self) -> pint.Quantity:
         """characteristic time computed from a, h_l and eps_l profiles integrated
         over the tank height, instead of evaluated at the bottom (z=0)."""
-        from scipy.integrate import quad
-
-        def eps_l_integrand(z_m: float) -> float:
-            return (1 - self.eps_g(z_m * ureg.m)).to("dimensionless").magnitude
-
-        def a_h_l_integrand(z_m: float) -> float:
-            z = z_m * ureg.m
-            return (self.a(z) * self.h_l(z)).to("1/s").magnitude
-
-        height_m = self.height.to("m").magnitude
-        int_eps_l = quad(eps_l_integrand, 0, height_m)[0] * ureg.m
-        int_a_h_l = quad(a_h_l_integrand, 0, height_m)[0] * ureg("m/s")
-
+        int_eps_l = self._height_integral(lambda z: 1 - self.eps_g(z), "dimensionless")
+        int_a_h_l = self._height_integral(lambda z: self.a(z) * self.h_l(z), "1/s")
         return (int_eps_l / int_a_h_l).to("seconds")
 
     def get_c_T2_SS(self) -> pint.Quantity:
@@ -206,6 +207,36 @@ class SimulationInput:
             * self.a_0
             / (self.eps_g0 * self.graph.nodes["v_g0"]["value"])
         ).to("dimensionless")
+
+    def get_Pi_ave(self) -> pint.Quantity:
+        """Partial pressure number computed from a, h_l and u_g profiles integrated
+        over the tank height, instead of evaluated at the bottom (z=0). Consistent
+        with get_tau_ave() (same height-averaged a*h_l)."""
+        int_a_h_l = self._height_integral(lambda z: self.a(z) * self.h_l(z), "1/s")
+        int_u_g = self._height_integral(self.u_g, "m/s")
+        a_h_l_ave = int_a_h_l / self.height
+        u_g_ave = int_u_g / self.height
+        return (
+            self.K_s
+            * (const_R * self.temperature)
+            * self.height
+            * a_h_l_ave
+            / u_g_ave
+        ).to("dimensionless")
+
+    def get_G_mix_pred(self) -> pint.Quantity:
+        """Predicted mixing number: ratio of the liquid dispersive mixing time
+        scale (H^2/E_l) to the height-averaged extraction time tau_pred_ave.
+        Governs the "perfectly mixed liquid" assumption. "Predicted" since it
+        uses the analytical tau_pred_ave rather than a simulated/fitted tau."""
+        return ((self.height**2 / self.E_l) / self.get_tau_ave()).to("dimensionless")
+
+    def get_G_P(self) -> pint.Quantity:
+        """Relative hydrostatic pressure variation along the tank height
+        (P_bottom - P_top) / P_top. Governs the "constant hydrodynamic
+        parameters along z" assumption."""
+        P_top = self.P_l(self.height)
+        return ((self.P_l0 - P_top) / P_top).to("dimensionless")
 
     def get_dP_dx(self) -> pint.Quantity:
         """

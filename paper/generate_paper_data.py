@@ -21,23 +21,29 @@ per-run record from ``SimulationResults.convergence_record`` is stored (no
 spatial profiles), plus, for a manual post-run sanity check, the inventory decay
 series of the finest temporal run of each regime.
 
+Also exposes `generate_validity_data`, which produces the data for the 0D
+approximation validity study (see its docstring below).
+
 Run with::
 
     python paper/generate_paper_data.py
 
-Output is written to ``paper/runs/convergence_study/``.
+Output is written to ``paper/runs/convergence_study/`` and
+``paper/runs/0D_validity_study/``.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import multiprocessing as mp
 import time
 import warnings
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from sparging import get_sim_input_LIBRA_Pi, Simulation, ureg
 from sparging import helpers
@@ -229,6 +235,162 @@ def convergence_study(out_dir: Path = OUT_DIR) -> Path:
         "convergence study done in %.1f s -> %s", time.time() - t_start, out_path
     )
     return out_path
+
+
+# ---------------------------------------------------------------------------
+# 0D approximation validity study
+# ---------------------------------------------------------------------------
+"""
+Quantifies when the 0D analytical approximation of the extraction time
+(SimulationInput.get_tau / get_tau_ave) is valid, by comparing it against the
+full 1D ARD model over a sampled space, and correlating the disagreement with
+the dimensionless groups governing each simplifying assumption: Pi (negligible
+interfacial partial pressure / solubility), G_mix_pred (perfectly mixed
+liquid) and G_P (constant hydrodynamic parameters along z).
+
+Two things are varied, log-uniformly over +-DECADES around nominal LIBRA-Pi
+values: the product h_l*K_s (via a multiplier applied to a coin-flip choice of
+h_l or K_s -- Pi depends on the product, tau_pred depends only on h_l, so
+comparing the two populations tells apart Pi-controlled behaviour from a pure
+h_l effect), and the tank height H (area held fixed). This is a numerical-
+validity study, not a LIBRA-Pi operating study: sampled values may be
+unphysical for the real experiment, that is fine and intended.
+
+Run with::
+
+    python -c "from paper.generate_paper_data import generate_validity_data; generate_validity_data()"
+
+Output is written to ``paper/runs/0D_validity_study/``.
+"""
+
+OUT_DIR_VALIDITY = Path("paper/runs/0D_validity_study")
+
+N_SAMPLES = 300
+SEED = 42
+DECADES = 2.0  # log-uniform sampling range (+-) for both the h_l*K_s multiplier and H
+T_FINAL_IN_TAU = 2  # simulate 2x tau_pred_ave -- enough to see the decay
+DT_FRACTION_OF_TAU = 0.01  # dt = tau_pred_ave * this
+MESH_PE = 2  # mesh Peclet number for dx (matches examples/sparging_standard.py)
+MIN_CELLS = 20  # floor on n_cells: dx_from_Pe(MESH_PE) does not scale with H, so
+# small-H samples would otherwise plan for very few mesh cells
+OTHER_GROUP_THRESHOLD = 0.1  # "other groups < 0.1" highlighting rule used in the plots
+RMSE_FLAG_THRESHOLD = 1e-5  # normalized-RMSE above this -> non-exponential decay
+
+
+def _make_validity_input(height: "ureg.Quantity", factor: str, multiplier: float):
+    """LIBRA-Pi-like input with height `height` (area fixed at the nominal
+    value) and h_l or K_s scaled by `multiplier`. Both the profile (h_l) and
+    scalar (K_s) overrides are read fresh by every downstream getter and by
+    Simulation.solve(), so the change is automatically consistent everywhere
+    (ARD coefficients, tau_pred, Pi, ...)."""
+    from sparging import (
+        SimulationInput,
+        LIBRA_PI_GEOM,
+        LIBRA_PI_MAT,
+        LIBRA_PI_OPERATING_PARAMS,
+        LIBRA_PI_SPARGING_PARAMS,
+    )
+
+    geom = LIBRA_PI_GEOM.copy()
+    geom.height = height
+    inp = SimulationInput.from_parameters(
+        geom,
+        LIBRA_PI_MAT.copy(),
+        LIBRA_PI_OPERATING_PARAMS.copy(),
+        LIBRA_PI_SPARGING_PARAMS.copy(),
+    )
+    inp.c_T2_init = C_T2_INIT
+    if factor == "h_l":
+        base_h_l = inp.h_l
+        inp.h_l = lambda z, _f=base_h_l, _m=multiplier: _f(z) * _m
+    else:
+        inp.K_s = inp.K_s * multiplier
+    return inp
+
+
+def _draw_sample_specs(n_samples: int, seed: int) -> list[dict]:
+    """Draw the (multiplier, factor, height) sample space. Plain-dict specs
+    (only picklable primitives) so they can be sent to a worker process."""
+    rng = np.random.default_rng(seed)
+    H_nominal = get_sim_input_LIBRA_Pi().height.to("m").magnitude
+    return [
+        {
+            "sample_id": i,
+            "multiplier": float(10 ** rng.uniform(-DECADES, DECADES)),
+            "factor": str(rng.choice(["h_l", "K_s"])),
+            "height_m": float(H_nominal * 10 ** rng.uniform(-DECADES, DECADES)),
+        }
+        for i in range(n_samples)
+    ]
+
+
+def _run_one_sample(spec: dict) -> dict:
+    """Build the input from `spec` (not a pre-built SimulationInput: profile
+    closures aren't picklable, so a spawned worker process must rebuild the
+    input itself), run the 1D ARD model once, and return one row of the
+    validity dataset (see SimulationResults.validity_record)."""
+    warnings.filterwarnings("ignore")  # silence curve_fit / pint fit warnings
+
+    inp = _make_validity_input(
+        spec["height_m"] * ureg.m, spec["factor"], spec["multiplier"]
+    )
+
+    tau_pred_ave = inp.get_tau_ave()
+    dt = (tau_pred_ave * DT_FRACTION_OF_TAU).to("s")
+    t_final = (T_FINAL_IN_TAU * tau_pred_ave).to("s")
+    n_cells = max(
+        int(round((inp.height / inp.dx_from_Pe(MESH_PE)).to("dimensionless").magnitude)),
+        MIN_CELLS,
+    )
+    dx = (inp.height / n_cells).to("m")
+
+    sim = Simulation(inp, t_final=t_final, dispersion_on=True, constant_profiles=False)
+    out = sim.solve(dt=dt, dx=dx)
+    return out.validity_record(sample=spec, t_0=0 * ureg.s, t_end=t_final)
+
+
+def generate_validity_data(
+    n_samples: int = N_SAMPLES,
+    seed: int = SEED,
+    n_workers: int = 4,
+    out_dir: Path = OUT_DIR_VALIDITY,
+) -> Path:
+    """Run the 0D-approximation validity study: one 1D ARD solve per sampled
+    (h_l*K_s multiplier, height) point, in parallel, and write the results to
+    a single CSV. Spawn-based multiprocessing: each worker rebuilds its own
+    SimulationInput from a picklable spec, which sidesteps both the
+    unpicklable profile closures and dolfinx/mpi4py process-fork hazards.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    specs = _draw_sample_specs(n_samples, seed)
+
+    t_start = time.time()
+    with mp.get_context("spawn").Pool(n_workers) as pool:
+        rows = list(pool.imap_unordered(_run_one_sample, specs))
+    elapsed = time.time() - t_start
+    logger.info("0D validity study: %d samples in %.1f s", len(rows), elapsed)
+
+    df = pd.DataFrame(rows).sort_values("sample_id").reset_index(drop=True)
+    csv_path = out_dir / "validity_data.csv"
+    df.to_csv(csv_path, index=False)
+
+    with open(out_dir / "metadata.json", "w") as f:
+        json.dump(
+            {
+                "git_commit": helpers.get_git_hash(),
+                "date": datetime.now().isoformat(),
+                "n_samples": len(df),
+                "decades": DECADES,
+                "t_final_in_tau": T_FINAL_IN_TAU,
+                "dt_fraction_of_tau": DT_FRACTION_OF_TAU,
+                "mesh_Pe": MESH_PE,
+                "other_group_threshold": OTHER_GROUP_THRESHOLD,
+                "rmse_flag_threshold": RMSE_FLAG_THRESHOLD,
+            },
+            f,
+            indent=2,
+        )
+    return csv_path
 
 
 if __name__ == "__main__":
