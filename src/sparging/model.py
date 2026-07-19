@@ -681,25 +681,37 @@ class Simulation:
             self.sim_input.profile_source_T, tank_height, mesh, V_profile
         )
 
+        # Per-run scalar coefficients enter the weak form as dolfinx Constants
+        # rather than Python-float literals, so the form's symbolic structure --
+        # and hence its compiled FFCx kernel -- is identical from one solve() to
+        # the next whatever their values. The (expensive) JIT compilation is then
+        # cached and reused across a parametric sweep instead of recompiling every
+        # run. RT_c bundles the R*T product that always appears together.
+        dt_c = dolfinx.fem.Constant(mesh, PETSc.ScalarType(dt))
+        K_s_c = dolfinx.fem.Constant(mesh, PETSc.ScalarType(K_s))
+        RT_c = dolfinx.fem.Constant(mesh, PETSc.ScalarType(const.R * T))
+        E_l_c = dolfinx.fem.Constant(mesh, PETSc.ScalarType(E_l))
+        E_g_c = dolfinx.fem.Constant(mesh, PETSc.ScalarType(E_g))
+
         # VARIATIONAL FORMULATION
 
         # mass transfer rate
-        aJ_T2 = a * h_l_profile * h_l_signal * (c_T2 - K_s * (P_g * y_T2 + EPS))
+        aJ_T2 = a * h_l_profile * h_l_signal * (c_T2 - K_s_c * (P_g * y_T2 + EPS))
 
         F = 0  # variational formulation
 
         # transient terms: implicit (backward) euler scheme: [u_n+1 - u_n)] / dt = f(u_n+1) -> new state appears in both derivative and function it is equal to
-        F += eps_l * ((c_T2 - c_T2_n) / dt) * v_c * ufl.dx
-        F += eps_g * 1 / (const.R * T) * (P_g * (y_T2 - y_T2_n) / dt) * v_y * ufl.dx
+        F += eps_l * ((c_T2 - c_T2_n) / dt_c) * v_c * ufl.dx
+        F += eps_g * 1 / RT_c * (P_g * (y_T2 - y_T2_n) / dt_c) * v_y * ufl.dx
 
         # dispersive terms
         if self.dispersion_on is True:
-            F += eps_l * E_l * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
+            F += eps_l * E_l_c * ufl.dot(ufl.grad(c_T2), ufl.grad(v_c)) * ufl.dx
             F += (
                 eps_g
-                * E_g
+                * E_g_c
                 * 1
-                / (const.R * T)
+                / RT_c
                 * ufl.dot(ufl.grad(P_g * y_T2), ufl.grad(v_y))
                 * ufl.dx
             )
@@ -711,7 +723,7 @@ class Simulation:
         F += -gen_T2 * v_c * ufl.dx
 
         # advection of gas
-        F += 1 / (const.R * T) * ufl.grad(u_g * P_g * y_T2)[0] * v_y * ufl.dx
+        F += 1 / RT_c * ufl.grad(u_g * P_g * y_T2)[0] * v_y * ufl.dx
 
         # BOUNDARY CONDITIONS
         gas_inlet_facets = dolfinx.mesh.locate_entities_boundary(
@@ -736,7 +748,7 @@ class Simulation:
 
         # Danckwert BC at gas inlet
         P_T2_inlet = 0
-        F += 1 / (const.R * T) * u_g * ufl.inner((P_g * y_T2 - P_T2_inlet), v_y) * ds(1)
+        F += 1 / RT_c * u_g * ufl.inner((P_g * y_T2 - P_T2_inlet), v_y) * ds(1)
 
         # n = ufl.FacetNormal(mesh)
 
@@ -779,7 +791,7 @@ class Simulation:
 
         # scalar forms reused by SERIES exports
         ndot_T2_form = dolfinx.fem.form(
-            u_g * P_g / (const.R * T) * y_T2_n * tank_area * ds(2)
+            u_g * P_g / RT_c * y_T2_n * tank_area * ds(2)
         )
         n_T2_salt_form = dolfinx.fem.form(c_T2_n * tank_area * ufl.dx)
 
@@ -873,7 +885,7 @@ class Simulation:
 
             ndot_T2 = dolfinx.fem.assemble_scalar(
                 dolfinx.fem.form(
-                    u_g * P_g / (const.R * T) * y_T2_post * tank_area * ds(2)
+                    u_g * P_g / RT_c * y_T2_post * tank_area * ds(2)
                 )
             )
             ndot_T2_series.append(ndot_T2)
