@@ -50,7 +50,10 @@ def test_model_solve_successfull(tmp_path, standard_simulation):
     from pathlib import Path
 
     output.to_yaml(Path(tmp_path).joinpath("dummy.yaml"))
-    output.to_json(Path(tmp_path).joinpath("dummy.json"))
+    output.to_json(
+        Path(tmp_path).joinpath("dummy.json"),
+        ["analytical_quantities", "intermediate_params"],
+    )
     output.profiles_to_csv(Path(tmp_path))
 
 

@@ -8,6 +8,7 @@ from sparging import (
     Simulation,
     SimulationResults,
 )
+import json
 import numpy as np
 from pathlib import Path
 
@@ -29,31 +30,17 @@ def test_simulation_results_serialization(tmp_path):
     res = my_sim.solve(fast_solve=True)
 
     # RUN
-    # serialization
-    path_json = Path(tmp_path).joinpath("results.json")
+    # Full serialization round-trips through pickle; to_json now writes a scalar
+    # SUMMARY (selected sections), not the full profiles -- see to_json docstring.
+    path_json = Path(tmp_path).joinpath("summary.json")
     path_pkl = Path(tmp_path).joinpath("results.pkl")
-    res.to_json(path_json)
     res.to_pickle(path_pkl)
+    res.to_json(path_json, ["analytical_quantities", "intermediate_params"])
 
-    # deserialization
-    new_res_json = SimulationResults.from_json(path_json)
     new_res_pickle = SimulationResults.from_pickle(path_pkl)
 
     # TEST
-    assert len(res.times) == len(new_res_json.times), (
-        "JSON Times arrays have different lengths"
-    )
-    assert len(res.c_T2_profiles) == len(new_res_json.c_T2_profiles), (
-        "JSON c_T2_profiles arrays have different lengths"
-    )
-
-    assert np.allclose(res.times, new_res_json.times, atol=0), (
-        "JSON Times arrays are not close"
-    )
-    assert np.allclose(res.c_T2_profiles, new_res_json.c_T2_profiles, atol=0), (
-        "JSON c_T2_profiles arrays are not close"
-    )
-
+    # pickle: full round-trip of the arrays
     assert len(res.times) == len(new_res_pickle.times), (
         "Pickle Times arrays have different lengths"
     )
@@ -65,4 +52,11 @@ def test_simulation_results_serialization(tmp_path):
     )
     assert np.allclose(res.c_T2_profiles, new_res_pickle.c_T2_profiles, atol=0), (
         "Pickle c_T2_profiles arrays are not close"
+    )
+
+    # json: a valid scalar summary containing the requested sections
+    with open(path_json) as f:
+        summary = json.load(f)
+    assert "analytical_quantities" in summary and "intermediate_params" in summary, (
+        "JSON summary is missing the requested sections"
     )
