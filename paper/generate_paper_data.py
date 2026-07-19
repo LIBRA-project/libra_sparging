@@ -34,6 +34,19 @@ Output is written to ``paper/runs/convergence_study/`` and
 
 from __future__ import annotations
 
+import os
+
+# Cap BLAS/OpenMP to one thread BEFORE numpy/dolfinx are imported. The studies
+# below fan out one (small, 1-D) solve per process with multiprocessing; without
+# this each worker's numpy/PETSc would spawn as many threads as there are cores,
+# oversubscribing the CPU (observed ~8x slowdown). setdefault -> an explicit user
+# setting still wins. Applies in spawned workers too (they re-import this module).
+for _v in (
+    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS",
+):
+    os.environ.setdefault(_v, "1")
+
 import json
 import logging
 import multiprocessing as mp
@@ -277,6 +290,38 @@ OTHER_GROUP_THRESHOLD = 0.1  # "other groups < 0.1" highlighting rule used in th
 RMSE_FLAG_THRESHOLD = 1e-5  # normalized-RMSE above this -> non-exponential decay
 
 
+def _solve_and_record(
+    inp,
+    sample: dict,
+    *,
+    dt_fraction: float,
+    t_final_in_tau: float,
+    mesh_pe: float,
+    min_cells: int,
+) -> dict:
+    """Discretise adaptively from the sample's own analytical time scale and mesh
+    Peclet number, run the 1D ARD model once, and return one `validity_record`
+    row. Shared by the 0D-validity and Sobol studies.
+
+    - dt       = dt_fraction * tau_pred_ave
+    - t_final  = t_final_in_tau * tau_pred_ave
+    - dx       = dx_from_Pe(mesh_pe), floored at `min_cells` cells (dx_from_Pe
+                 does not scale with H, so small-H samples need a cell floor)
+    """
+    tau_ave = inp.get_tau_ave()
+    dt = (tau_ave * dt_fraction).to("s")
+    t_final = (t_final_in_tau * tau_ave).to("s")
+    n_cells = max(
+        int(round((inp.height / inp.dx_from_Pe(mesh_pe)).to("dimensionless").magnitude)),
+        min_cells,
+    )
+    dx = (inp.height / n_cells).to("m")
+
+    sim = Simulation(inp, t_final=t_final, dispersion_on=True, constant_profiles=False)
+    out = sim.solve(dt=dt, dx=dx)
+    return out.validity_record(sample=sample, t_0=0 * ureg.s, t_end=t_final)
+
+
 def _make_validity_input(height: "ureg.Quantity", factor: str, multiplier: float):
     """LIBRA-Pi-like input with height `height` (area fixed at the nominal
     value) and h_l or K_s scaled by `multiplier`. Both the profile (h_l) and
@@ -334,19 +379,14 @@ def _run_one_sample(spec: dict) -> dict:
     inp = _make_validity_input(
         spec["height_m"] * ureg.m, spec["factor"], spec["multiplier"]
     )
-
-    tau_pred_ave = inp.get_tau_ave()
-    dt = (tau_pred_ave * DT_FRACTION_OF_TAU).to("s")
-    t_final = (T_FINAL_IN_TAU * tau_pred_ave).to("s")
-    n_cells = max(
-        int(round((inp.height / inp.dx_from_Pe(MESH_PE)).to("dimensionless").magnitude)),
-        MIN_CELLS,
+    return _solve_and_record(
+        inp,
+        spec,
+        dt_fraction=DT_FRACTION_OF_TAU,
+        t_final_in_tau=T_FINAL_IN_TAU,
+        mesh_pe=MESH_PE,
+        min_cells=MIN_CELLS,
     )
-    dx = (inp.height / n_cells).to("m")
-
-    sim = Simulation(inp, t_final=t_final, dispersion_on=True, constant_profiles=False)
-    out = sim.solve(dt=dt, dx=dx)
-    return out.validity_record(sample=spec, t_0=0 * ureg.s, t_end=t_final)
 
 
 def generate_validity_data(
@@ -390,6 +430,254 @@ def generate_validity_data(
             f,
             indent=2,
         )
+    return csv_path
+
+
+# ---------------------------------------------------------------------------
+# Sobol sensitivity study (operating / design inputs -> fitted tau)
+# ---------------------------------------------------------------------------
+"""
+Global (variance-based) sensitivity of the fitted extraction time tau_fitted to
+the four controllable inputs -- temperature, gas flow rate, top pressure and
+sparger nozzle diameter -- over the LIBRA-Pi design envelope. Total-order Sobol
+indices are estimated with the Saltelli scheme via scipy.stats.sobol_indices.
+
+Design/evaluate/estimate are split: this module only generates the Saltelli
+design and evaluates the 1D ARD model at every design point (in parallel),
+writing one CSV row per run (same schema as the 0D-validity study, so the two
+datasets are interchangeable and reusable, e.g. to train a surrogate). The
+indices themselves are computed downstream in paper_plots.ipynb by feeding the
+precomputed outputs back to sobol_indices -- which also enables restarting a
+crashed batch and the n = 64/128/256/512 convergence check, both from the CSV.
+
+Height and base area are held at their nominal LIBRA-Pi values; every other
+closure parameter (K_s, h_l, a, eps_g, u_g, E_g, E_l, ...) follows from the four
+sampled inputs through the correlation graph.
+
+Run with::
+
+    python -c "from paper.generate_paper_data import sobol_study; sobol_study()"
+
+Output is written to ``paper/runs/sobol_input_params/``.
+"""
+
+OUT_DIR_SOBOL = Path("paper/runs/sobol_input_params")
+
+SOBOL_N_BASE = 512  # base samples N (power of 2); total runs = N * (d + 2)
+SOBOL_SEED = 2024
+SOBOL_DT_FRACTION = 0.02  # dt = tau_pred_ave * this
+SOBOL_T_FINAL_IN_TAU = 2  # simulate 2x tau_pred_ave
+# prefix sizes for the convergence check (post-processing only -- any power-of-2
+# prefix of the N=512 design; the small ones are deliberately included to show the
+# estimator is noisy at low N and settles as N grows)
+SOBOL_CONV_SUBSETS = [8, 16, 32, 64, 128, 256, 512]
+
+# The four sampled inputs, in Sobol-column order. Each is transformed from a
+# unit-hypercube coordinate u in [0, 1] by _transform below. Ranges span the
+# LIBRA-Pi design envelope; temperature is sampled uniformly in KELVIN.
+PARAM_SPACE = [
+    {"name": "temperature", "csv": "temperature_K", "unit": "K",
+     "min": 723.15, "max": 923.15, "scale": "uniform"},      # 450-650 degC
+    {"name": "gas_flow", "csv": "gas_flow_sccm", "unit": "sccm",
+     "min": 50.0, "max": 1000.0, "scale": "log"},
+    {"name": "top_pressure", "csv": "top_pressure_atm", "unit": "atm",
+     "min": 1.0, "max": 2.0, "scale": "uniform"},
+    {"name": "nozzle_diameter", "csv": "nozzle_diameter_mm", "unit": "mm",
+     "min": 0.5, "max": 5.0, "scale": "log"},
+]
+
+
+def _transform(u: float, spec: dict) -> float:
+    """Map a unit-hypercube coordinate u in [0, 1] to a physical value, either
+    uniformly or log-uniformly between spec['min'] and spec['max']."""
+    lo, hi = spec["min"], spec["max"]
+    if spec["scale"] == "log":
+        return float(10 ** (np.log10(lo) + u * (np.log10(hi) - np.log10(lo))))
+    return float(lo + u * (hi - lo))
+
+
+def param_space_with(**overrides) -> list[dict]:
+    """Copy PARAM_SPACE, updating fields of the named parameters -- a compact way
+    to define a study variant. e.g. to sample gas flow uniformly over 300-1000:
+        param_space_with(gas_flow=dict(min=300, max=1000, scale="uniform"))
+    """
+    out = []
+    for sp in PARAM_SPACE:
+        sp = dict(sp)
+        if sp["name"] in overrides:
+            sp.update(overrides[sp["name"]])
+        out.append(sp)
+    return out
+
+
+def _saltelli_design(n_base: int, seed: int, param_space: list[dict]) -> list[dict]:
+    """Build the Saltelli sample: matrices A and B from one 2d-dimensional
+    scrambled Sobol sequence, plus d hybrid matrices AB_i (A with column i taken
+    from B). Returns one picklable spec dict per model evaluation, tagged with
+    its role so the outputs can be regrouped into f_A / f_B / f_AB downstream.
+    """
+    from scipy.stats import qmc
+
+    d = len(param_space)
+    pts = qmc.Sobol(d=2 * d, scramble=True, seed=seed).random(n_base)
+    A, B = pts[:, :d], pts[:, d:]
+
+    specs = []
+
+    def _spec(role: str, base_j: int, var_i: int, u_row) -> None:
+        params = {sp["csv"]: _transform(u_row[k], sp) for k, sp in enumerate(param_space)}
+        specs.append({
+            "sample_id": len(specs),
+            "design_role": role,   # "A", "B" or "AB"
+            "base_index": base_j,  # which base sample j (for A/B/AB_i pairing)
+            "var_index": var_i,    # AB: column swapped from B; A/B: -1
+            **params,
+        })
+
+    for j in range(n_base):
+        _spec("A", j, -1, A[j])
+    for j in range(n_base):
+        _spec("B", j, -1, B[j])
+    for i in range(d):
+        for j in range(n_base):
+            u = A[j].copy()
+            u[i] = B[j, i]
+            _spec("AB", j, i, u)
+    return specs
+
+
+def _make_sobol_input(spec: dict):
+    """LIBRA-Pi-like input with the four sampled inputs applied (height and area
+    stay nominal). Rebuilt inside the worker from picklable primitives."""
+    from sparging import (
+        SimulationInput,
+        LIBRA_PI_GEOM,
+        LIBRA_PI_MAT,
+        LIBRA_PI_OPERATING_PARAMS,
+        LIBRA_PI_SPARGING_PARAMS,
+    )
+
+    geom = LIBRA_PI_GEOM.copy()
+    geom.nozzle_diameter = spec["nozzle_diameter_mm"] * ureg.mm
+    op = LIBRA_PI_OPERATING_PARAMS.copy()
+    op.temperature = spec["temperature_K"] * ureg.K
+    op.ndot_g0 = spec["gas_flow_sccm"] * ureg.sccm
+    op.P_top = spec["top_pressure_atm"] * ureg.atm
+
+    inp = SimulationInput.from_parameters(
+        geom, LIBRA_PI_MAT.copy(), op, LIBRA_PI_SPARGING_PARAMS.copy()
+    )
+    inp.c_T2_init = C_T2_INIT
+    return inp
+
+
+def _run_one_sample_sobol(spec: dict) -> dict:
+    """Rebuild the input from `spec`, solve once, and return one CSV row
+    (validity_record schema + design tags + per-sample solve time)."""
+    warnings.filterwarnings("ignore")  # silence curve_fit / pint fit warnings
+    t0 = time.time()
+    inp = _make_sobol_input(spec)
+    rec = _solve_and_record(
+        inp,
+        spec,
+        dt_fraction=SOBOL_DT_FRACTION,
+        t_final_in_tau=SOBOL_T_FINAL_IN_TAU,
+        mesh_pe=MESH_PE,
+        min_cells=MIN_CELLS,
+    )
+    rec["solve_time_s"] = time.time() - t0
+    return rec
+
+
+def sobol_study(
+    n_base: int = SOBOL_N_BASE,
+    seed: int = SOBOL_SEED,
+    n_workers: int = 8,
+    out_dir: Path = OUT_DIR_SOBOL,
+    param_space: list[dict] = PARAM_SPACE,
+) -> Path:
+    """Generate the Saltelli design and evaluate the 1D ARD model at every point
+    in parallel, writing sobol_data.csv + metadata.json. Prints each sample's
+    solve time and a running estimate of the total time.
+
+    Pass a `param_space` (e.g. from `param_space_with(...)`) and a distinct
+    `out_dir` to run a sampling-space variant without overwriting a previous run.
+    """
+    import scipy
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    specs = _saltelli_design(n_base, seed, param_space)
+    n_total = len(specs)
+    d = len(param_space)
+    # convergence prefixes are post-processing only; keep those that fit in N
+    conv_subsets = [s for s in SOBOL_CONV_SUBSETS if s <= n_base]
+    logger.info(
+        "Sobol study: d=%d inputs, N_base=%d -> %d runs on %d workers",
+        d, n_base, n_total, n_workers,
+    )
+
+    rows, times = [], []
+    t_start = time.time()
+    with mp.get_context("spawn").Pool(n_workers) as pool:
+        for k, rec in enumerate(pool.imap_unordered(_run_one_sample_sobol, specs), 1):
+            rows.append(rec)
+            times.append(rec["solve_time_s"])
+            avg = float(np.mean(times))
+            eta_min = (n_total - k) * avg / n_workers / 60
+            logger.info(
+                "[%4d/%d] id=%4d %-2s var=%+d : %5.1fs  (avg %.1fs, ETA %.0f min)",
+                k, n_total, rec["sample_id"], rec["design_role"],
+                rec["var_index"], rec["solve_time_s"], avg, eta_min,
+            )
+    elapsed = time.time() - t_start
+    logger.info("Sobol study: %d runs in %.0f s (%.1f min)", n_total, elapsed, elapsed / 60)
+
+    df = pd.DataFrame(rows).sort_values("sample_id").reset_index(drop=True)
+    csv_path = out_dir / "sobol_data.csv"
+    df.to_csv(csv_path, index=False)
+
+    from sparging import LIBRA_PI_GEOM
+
+    base = get_sim_input_LIBRA_Pi()
+    with open(out_dir / "metadata.json", "w") as f:
+        json.dump(
+            {
+                "git_commit": helpers.get_git_hash(),
+                "date": datetime.now().isoformat(),
+                "description": (
+                    "Total-order Sobol sensitivity of tau_fitted to 4 operating/"
+                    "design inputs; Saltelli design, scipy.stats.sobol_indices."
+                ),
+                "qoi": "tau_fitted_s",
+                "estimator": "scipy.stats.sobol_indices (saltelli_2010)",
+                "scipy_version": scipy.__version__,
+                "n_base_samples": n_base,
+                "d": d,
+                "n_total_runs": n_total,
+                "seed": seed,
+                "convergence_subsets": conv_subsets,
+                "param_space": [{**sp, "sobol_column": i} for i, sp in enumerate(param_space)],
+                "fixed_params": {
+                    "height_m": float(base.height.to("m").magnitude),
+                    "area_m2": float(base.area.to("m**2").magnitude),
+                    "nb_nozzle": float(LIBRA_PI_GEOM.nb_nozzle.magnitude),
+                },
+                "discretization": {
+                    "dt_fraction_of_tau": SOBOL_DT_FRACTION,
+                    "t_final_in_tau": SOBOL_T_FINAL_IN_TAU,
+                    "mesh_Pe": MESH_PE,
+                    "min_cells": MIN_CELLS,
+                },
+                "design_note": (
+                    "rows tagged design_role in {A,B,AB} + base_index + var_index; "
+                    "f_AB[i] = A with column i replaced by B's column i"
+                ),
+                "elapsed_s": elapsed,
+            },
+            f,
+            indent=2,
+        )
+    logger.info("wrote %s and metadata.json", csv_path)
     return csv_path
 
 
