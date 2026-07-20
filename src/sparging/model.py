@@ -201,26 +201,19 @@ class SimulationResults:
 
     @property
     def n_steps(self) -> int:
-        """number of time steps taken (post_process is called once before the
-        loop and once per step, so steps = samples - 1)."""
+        """number of time steps taken (= samples - 1)."""
         return int(len(self.times) - 1)
 
     def convergence_record(self, **kwargs) -> dict:
-        """Compact, self-describing summary of a single run for a mesh/time-step
-        convergence study. Deliberately excludes the (large) spatial profiles:
-        it keeps only the discretisation (dt, dx, n_cells, n_steps), the derived
-        scalar of interest (fitted tau) with its fit-quality diagnostics, and the
-        governing dimensionless groups (Pi, Bo) needed to interpret the point.
-
-        Reuses `postprocess.summarize_decay` for the exponential fit. Extra
-        kwargs (e.g. t_0, t_end) are forwarded to it.
-        """
+        """Scalar summary of one run for the convergence study: discretisation,
+        fitted tau + fit diagnostics, and the groups Pi/Bo. kwargs (t_0, t_end)
+        forward to summarize_decay."""
         from sparging.postprocess import summarize_decay
 
         fit = summarize_decay(self, t_0=kwargs.get("t_0"), t_end=kwargs.get("t_end"))
         si = self.sim_input
 
-        def _si(q, unit):  # magnitude in a fixed SI unit -> easy to tabulate
+        def _si(q, unit):  # SI magnitude
             return None if q is None else float(q.to(unit).magnitude)
 
         def _try(getter):
@@ -252,22 +245,10 @@ class SimulationResults:
         return self.convergence_record(**kwargs)
 
     def validity_record(self, sample: dict | None = None, **kwargs) -> dict:
-        """Compact per-sample summary for the 0D-approximation validity study
-        (see paper/generate_paper_data.py:generate_validity_data).
-
-        tau_fitted is the exponential-fit decay time (postprocess.fit_exp),
-        not the model-free e-folding time: the e-folding time is clipped
-        whenever a sample doesn't reach 1/e within the simulated window, and
-        it is quantized to multiples of dt (itself tied to a tau_pred), which
-        introduces discretisation artifacts. The exponential fit degrades
-        gracefully instead; fit_rmse_norm flags samples where it is a poor
-        description of the decay.
-
-        - sample: optional dict of sample-generation metadata (e.g. height,
-          multiplier, which factor it was applied to) merged into the record.
-        - kwargs: t_0, t_end (default to the first/last simulated time --
-          decay starts at t=0 for this study, there is no irradiation phase).
-        """
+        """Per-sample summary row for the 0D-validity / Sobol studies: tau_fitted
+        (exponential fit) + fit RMSE, analytical predictions, dimensionless groups
+        and bottom closure values. `sample` dict is merged in; kwargs t_0/t_end
+        default to the first/last simulated time."""
         from sparging.postprocess import fit_exp, get_exp_fit_rmse
 
         t_0 = kwargs.get("t_0")
@@ -681,12 +662,8 @@ class Simulation:
             self.sim_input.profile_source_T, tank_height, mesh, V_profile
         )
 
-        # Per-run scalar coefficients enter the weak form as dolfinx Constants
-        # rather than Python-float literals, so the form's symbolic structure --
-        # and hence its compiled FFCx kernel -- is identical from one solve() to
-        # the next whatever their values. The (expensive) JIT compilation is then
-        # cached and reused across a parametric sweep instead of recompiling every
-        # run. RT_c bundles the R*T product that always appears together.
+        # per-run scalars as dolfinx Constants (not float literals) so the compiled
+        # FFCx form is reused across solve() calls instead of recompiling each run
         dt_c = dolfinx.fem.Constant(mesh, PETSc.ScalarType(dt))
         K_s_c = dolfinx.fem.Constant(mesh, PETSc.ScalarType(K_s))
         RT_c = dolfinx.fem.Constant(mesh, PETSc.ScalarType(const.R * T))

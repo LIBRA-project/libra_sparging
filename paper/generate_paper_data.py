@@ -1,46 +1,17 @@
 """Generate the data underlying the paper's figures.
 
-Currently exposes `convergence_study`, which produces the mesh / time-step
-convergence data used by the "Numerical convergence" section. It starts from a
-LIBRA-Pi-like input (same geometry, initial condition and *non-constant* closure
-profiles as ``examples/sparging_standard.py``) and varies **only the solubility
-K_s** to sweep the partial-pressure number Pi through three regimes:
-
-    - low  Pi (<< 0.1) : small-partial-pressure (SPP) regime
-    - mid  Pi (~ 0.2)  : the nominal LIBRA-Pi operating point
-    - high Pi (>> 0.1) : partial-pressure-limited (PPL) regime
-
-For each regime two decoupled 1-D refinement studies are run:
-
-    - a **temporal** sweep: refine dt at a fixed, fine mesh
-    - a **spatial**  sweep: refine dx at a fixed, fine time step
-
-The derived scalar tracked for convergence is the fitted inventory decay time
-``tau_fitted`` (see ``postprocess.summarize_decay``). Only the compact
-per-run record from ``SimulationResults.convergence_record`` is stored (no
-spatial profiles), plus, for a manual post-run sanity check, the inventory decay
-series of the finest temporal run of each regime.
-
-Also exposes `generate_validity_data`, which produces the data for the 0D
-approximation validity study (see its docstring below).
-
-Run with::
-
-    python paper/generate_paper_data.py
-
-Output is written to ``paper/runs/convergence_study/`` and
-``paper/runs/0D_validity_study/``.
+Exposes `convergence_study` (mesh/time-step convergence), `generate_validity_data`
+(0D-approximation validity) and `sobol_study` (input sensitivity). Outputs go to
+subfolders of ``paper/runs/``. Run the convergence study with
+``python paper/generate_paper_data.py``; the others via their functions.
 """
 
 from __future__ import annotations
 
 import os
 
-# Cap BLAS/OpenMP to one thread BEFORE numpy/dolfinx are imported. The studies
-# below fan out one (small, 1-D) solve per process with multiprocessing; without
-# this each worker's numpy/PETSc would spawn as many threads as there are cores,
-# oversubscribing the CPU (observed ~8x slowdown). setdefault -> an explicit user
-# setting still wins. Applies in spawned workers too (they re-import this module).
+# single-thread BLAS/OpenMP (set before numpy import) to avoid oversubscription
+# when the studies fan out one solve per process
 for _v in (
     "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
     "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS",
@@ -68,35 +39,28 @@ OUT_DIR = Path("paper/runs/convergence_study")
 # ---------------------------------------------------------------------------
 # study configuration
 # ---------------------------------------------------------------------------
-C_T2_INIT = 3e-11 * ureg.molT2 / ureg.m**3  # same IC as sparging_standard.py
+C_T2_INIT = 3e-11 * ureg.molT2 / ureg.m**3  # initial concentration
 
-# Pi is linear in K_s (see SimulationInput.get_Pi_number); K_s enters neither
-# get_tau nor get_Bo nor the fluid-dynamic closures, so scaling it isolates the
-# partial-pressure effect without perturbing the discretisation-relevant scales.
-CASES = {
-    "low": 0.1,   # Pi ~ 0.02   (SPP)
-    "mid": 1.0,   # Pi ~ 0.23   (nominal LIBRA-Pi)
-    "high": 10.0,  # Pi ~ 2.3    (PPL)
-}
+# Pi is linear in K_s; scaling K_s alone moves Pi without changing tau, Bo or the
+# fluid-dynamic closures. Multipliers -> Pi regimes {SPP, nominal, PPL}.
+CASES = {"low": 0.1, "mid": 1.0, "high": 10.0}
 
-T_FINAL_IN_TAU = 4  # simulate 4 SPP-tau (enough decay for a clean exp fit)
+T_FINAL_IN_TAU = 4  # simulated duration in units of the SPP tau
 
-# temporal sweep: refine dt (= t_final / n_steps) at a fixed fine mesh.
-# The 4 coarsest entries (few steps -> large dt) probe the coarse-timestep regime
-# useful for fast parametric sweeps; the finest 3 (400/800/1600) keep ratio r=2
-# for Richardson extrapolation.
-N_STEPS_SWEEP = [3, 6, 12, 25, 50, 100, 200, 400, 800, 1600]  # ratio r ~ 2
-N_CELLS_FIXED = 160  # fine mesh held during the temporal sweep
+# temporal sweep dt = t_final / n_steps at a fixed fine mesh; the finest 3 keep
+# ratio r=2 for Richardson extrapolation
+N_STEPS_SWEEP = [3, 6, 12, 25, 50, 100, 200, 400, 800, 1600]
+N_CELLS_FIXED = 160
 
-# spatial sweep: refine dx (= H / n_cells) at a fixed fine time step
-N_CELLS_SWEEP = [14, 28, 56, 112, 224, 448]  # ratio r = 2
-N_STEPS_FIXED = 800  # fine time step held during the spatial sweep
+# spatial sweep dx = H / n_cells at a fixed fine time step
+N_CELLS_SWEEP = [14, 28, 56, 112, 224, 448]
+N_STEPS_FIXED = 800
 
-REFINEMENT_RATIO = 2.0  # geometric ratio r, used later for Richardson/GCI
+REFINEMENT_RATIO = 2.0
 
 
 def _make_input(k_s_scale: float):
-    """LIBRA-Pi input with K_s scaled to move Pi (everything else untouched)."""
+    """LIBRA-Pi input with K_s scaled by `k_s_scale`."""
     inp = get_sim_input_LIBRA_Pi()
     inp.c_T2_init = C_T2_INIT
     inp.K_s = inp.K_s * k_s_scale
@@ -104,10 +68,9 @@ def _make_input(k_s_scale: float):
 
 
 def _run(sim: Simulation, dt: "ureg.Quantity", dx: "ureg.Quantity") -> dict:
-    """Solve once and return the compact convergence record."""
+    """Solve once; return the convergence record plus the raw inventory series."""
     out = sim.solve(dt=dt, dx=dx)
-    rec = out.convergence_record()  # t_0 defaults to the inventory peak
-    # keep the raw inventory series of this run around for the caller (sanity)
+    rec = out.convergence_record()
     rec["_times_s"] = out.times.to("s").magnitude.tolist()
     rec["_inv_mol"] = out.n_T2_salt_series.to("molT2").magnitude.tolist()
     return rec
@@ -254,20 +217,11 @@ def convergence_study(out_dir: Path = OUT_DIR) -> Path:
 # 0D approximation validity study
 # ---------------------------------------------------------------------------
 """
-Quantifies when the 0D analytical approximation of the extraction time
-(SimulationInput.get_tau / get_tau_ave) is valid, by comparing it against the
-full 1D ARD model over a sampled space, and correlating the disagreement with
-the dimensionless groups governing each simplifying assumption: Pi (negligible
-interfacial partial pressure / solubility), G_mix_pred (perfectly mixed
-liquid) and G_P (constant hydrodynamic parameters along z).
-
-Two things are varied, log-uniformly over +-DECADES around nominal LIBRA-Pi
-values: the product h_l*K_s (via a multiplier applied to a coin-flip choice of
-h_l or K_s -- Pi depends on the product, tau_pred depends only on h_l, so
-comparing the two populations tells apart Pi-controlled behaviour from a pure
-h_l effect), and the tank height H (area held fixed). This is a numerical-
-validity study, not a LIBRA-Pi operating study: sampled values may be
-unphysical for the real experiment, that is fine and intended.
+Validity of the 0D analytical extraction time (get_tau / get_tau_ave) against the
+full 1D ARD model over a sampled space, correlated with the dimensionless groups
+of each simplifying assumption (Pi, G_mix_pred, G_P). Samples vary the product
+h_l*K_s and the tank height H log-uniformly over +-DECADES around nominal; sampled
+values may be unphysical (numerical-validity, not operating, study).
 
 Run with::
 
@@ -280,14 +234,13 @@ OUT_DIR_VALIDITY = Path("paper/runs/0D_validity_study")
 
 N_SAMPLES = 300
 SEED = 42
-DECADES = 2.0  # log-uniform sampling range (+-) for both the h_l*K_s multiplier and H
-T_FINAL_IN_TAU = 2  # simulate 2x tau_pred_ave -- enough to see the decay
+DECADES = 2.0  # +- log-uniform sampling range for the h_l*K_s multiplier and H
+T_FINAL_IN_TAU = 2  # simulated duration in units of tau_pred_ave
 DT_FRACTION_OF_TAU = 0.01  # dt = tau_pred_ave * this
-MESH_PE = 2  # mesh Peclet number for dx (matches examples/sparging_standard.py)
-MIN_CELLS = 20  # floor on n_cells: dx_from_Pe(MESH_PE) does not scale with H, so
-# small-H samples would otherwise plan for very few mesh cells
-OTHER_GROUP_THRESHOLD = 0.1  # "other groups < 0.1" highlighting rule used in the plots
-RMSE_FLAG_THRESHOLD = 1e-5  # normalized-RMSE above this -> non-exponential decay
+MESH_PE = 2  # mesh Peclet number setting dx
+MIN_CELLS = 20  # floor on n_cells
+OTHER_GROUP_THRESHOLD = 0.1  # plot highlighting rule: other groups < this
+RMSE_FLAG_THRESHOLD = 1e-5  # normalized-RMSE above this flags non-exponential decay
 
 
 def _solve_and_record(
@@ -299,15 +252,9 @@ def _solve_and_record(
     mesh_pe: float,
     min_cells: int,
 ) -> dict:
-    """Discretise adaptively from the sample's own analytical time scale and mesh
-    Peclet number, run the 1D ARD model once, and return one `validity_record`
-    row. Shared by the 0D-validity and Sobol studies.
-
-    - dt       = dt_fraction * tau_pred_ave
-    - t_final  = t_final_in_tau * tau_pred_ave
-    - dx       = dx_from_Pe(mesh_pe), floored at `min_cells` cells (dx_from_Pe
-                 does not scale with H, so small-H samples need a cell floor)
-    """
+    """Solve once with dt = dt_fraction*tau_ave, t_final = t_final_in_tau*tau_ave
+    and dx from mesh Peclet `mesh_pe` (>= `min_cells` cells); return one
+    validity_record row. Shared by the 0D-validity and Sobol studies."""
     tau_ave = inp.get_tau_ave()
     dt = (tau_ave * dt_fraction).to("s")
     t_final = (t_final_in_tau * tau_ave).to("s")
@@ -323,11 +270,8 @@ def _solve_and_record(
 
 
 def _make_validity_input(height: "ureg.Quantity", factor: str, multiplier: float):
-    """LIBRA-Pi-like input with height `height` (area fixed at the nominal
-    value) and h_l or K_s scaled by `multiplier`. Both the profile (h_l) and
-    scalar (K_s) overrides are read fresh by every downstream getter and by
-    Simulation.solve(), so the change is automatically consistent everywhere
-    (ARD coefficients, tau_pred, Pi, ...)."""
+    """LIBRA-Pi input with tank height `height` and h_l or K_s scaled by
+    `multiplier` (area fixed)."""
     from sparging import (
         SimulationInput,
         LIBRA_PI_GEOM,
@@ -354,8 +298,7 @@ def _make_validity_input(height: "ureg.Quantity", factor: str, multiplier: float
 
 
 def _draw_sample_specs(n_samples: int, seed: int) -> list[dict]:
-    """Draw the (multiplier, factor, height) sample space. Plain-dict specs
-    (only picklable primitives) so they can be sent to a worker process."""
+    """Draw the (multiplier, factor, height) samples as picklable dict specs."""
     rng = np.random.default_rng(seed)
     H_nominal = get_sim_input_LIBRA_Pi().height.to("m").magnitude
     return [
@@ -370,11 +313,9 @@ def _draw_sample_specs(n_samples: int, seed: int) -> list[dict]:
 
 
 def _run_one_sample(spec: dict) -> dict:
-    """Build the input from `spec` (not a pre-built SimulationInput: profile
-    closures aren't picklable, so a spawned worker process must rebuild the
-    input itself), run the 1D ARD model once, and return one row of the
-    validity dataset (see SimulationResults.validity_record)."""
-    warnings.filterwarnings("ignore")  # silence curve_fit / pint fit warnings
+    """Rebuild the input from `spec` and solve once; return one validity row.
+    (Spawned workers rebuild the input because profile closures aren't picklable.)"""
+    warnings.filterwarnings("ignore")
 
     inp = _make_validity_input(
         spec["height_m"] * ureg.m, spec["factor"], spec["multiplier"]
@@ -395,12 +336,8 @@ def generate_validity_data(
     n_workers: int = 4,
     out_dir: Path = OUT_DIR_VALIDITY,
 ) -> Path:
-    """Run the 0D-approximation validity study: one 1D ARD solve per sampled
-    (h_l*K_s multiplier, height) point, in parallel, and write the results to
-    a single CSV. Spawn-based multiprocessing: each worker rebuilds its own
-    SimulationInput from a picklable spec, which sidesteps both the
-    unpicklable profile closures and dolfinx/mpi4py process-fork hazards.
-    """
+    """Run the 0D-validity study (one 1D ARD solve per sample, spawn-parallel) and
+    write validity_data.csv + metadata.json."""
     out_dir.mkdir(parents=True, exist_ok=True)
     specs = _draw_sample_specs(n_samples, seed)
 
@@ -437,21 +374,12 @@ def generate_validity_data(
 # Sobol sensitivity study (operating / design inputs -> fitted tau)
 # ---------------------------------------------------------------------------
 """
-Global (variance-based) sensitivity of the fitted extraction time tau_fitted to
-the four controllable inputs -- temperature, gas flow rate, top pressure and
-sparger nozzle diameter -- over the LIBRA-Pi design envelope. Total-order Sobol
-indices are estimated with the Saltelli scheme via scipy.stats.sobol_indices.
-
-Design/evaluate/estimate are split: this module only generates the Saltelli
-design and evaluates the 1D ARD model at every design point (in parallel),
-writing one CSV row per run (same schema as the 0D-validity study, so the two
-datasets are interchangeable and reusable, e.g. to train a surrogate). The
-indices themselves are computed downstream in paper_plots.ipynb by feeding the
-precomputed outputs back to sobol_indices -- which also enables restarting a
-crashed batch and the n = 64/128/256/512 convergence check, both from the CSV.
-
-Height and base area are held at their nominal LIBRA-Pi values; every other
-closure parameter (K_s, h_l, a, eps_g, u_g, E_g, E_l, ...) follows from the four
+Total-order Sobol sensitivity of tau_fitted to the four controllable inputs
+(temperature, gas flow, top pressure, nozzle diameter) over the LIBRA-Pi design
+envelope, via the Saltelli scheme (scipy.stats.sobol_indices). This module only
+generates the design and evaluates the 1D ARD model (spawn-parallel), writing one
+CSV row per run (validity_record schema + design tags); the indices are computed
+downstream in paper_plots.ipynb. Height/area fixed; the rest follows from the
 sampled inputs through the correlation graph.
 
 Run with::
@@ -466,18 +394,14 @@ OUT_DIR_SOBOL = Path("paper/runs/sobol_input_params")
 SOBOL_N_BASE = 512  # base samples N (power of 2); total runs = N * (d + 2)
 SOBOL_SEED = 2024
 SOBOL_DT_FRACTION = 0.02  # dt = tau_pred_ave * this
-SOBOL_T_FINAL_IN_TAU = 2  # simulate 2x tau_pred_ave
-# prefix sizes for the convergence check (post-processing only -- any power-of-2
-# prefix of the N=512 design; the small ones are deliberately included to show the
-# estimator is noisy at low N and settles as N grows)
-SOBOL_CONV_SUBSETS = [8, 16, 32, 64, 128, 256, 512]
+SOBOL_T_FINAL_IN_TAU = 2  # simulated duration in units of tau_pred_ave
+SOBOL_CONV_SUBSETS = [8, 16, 32, 64, 128, 256, 512]  # prefix sizes for the convergence check
 
-# The four sampled inputs, in Sobol-column order. Each is transformed from a
-# unit-hypercube coordinate u in [0, 1] by _transform below. Ranges span the
-# LIBRA-Pi design envelope; temperature is sampled uniformly in KELVIN.
+# sampled inputs in Sobol-column order; each mapped from u in [0,1] by _transform.
+# temperature sampled uniformly in KELVIN (723.15-923.15 = 450-650 degC)
 PARAM_SPACE = [
     {"name": "temperature", "csv": "temperature_K", "unit": "K",
-     "min": 723.15, "max": 923.15, "scale": "uniform"},      # 450-650 degC
+     "min": 723.15, "max": 923.15, "scale": "uniform"},
     {"name": "gas_flow", "csv": "gas_flow_sccm", "unit": "sccm",
      "min": 50.0, "max": 1000.0, "scale": "log"},
     {"name": "top_pressure", "csv": "top_pressure_atm", "unit": "atm",
@@ -488,8 +412,7 @@ PARAM_SPACE = [
 
 
 def _transform(u: float, spec: dict) -> float:
-    """Map a unit-hypercube coordinate u in [0, 1] to a physical value, either
-    uniformly or log-uniformly between spec['min'] and spec['max']."""
+    """Map u in [0,1] to a physical value, uniform or log-uniform over [min, max]."""
     lo, hi = spec["min"], spec["max"]
     if spec["scale"] == "log":
         return float(10 ** (np.log10(lo) + u * (np.log10(hi) - np.log10(lo))))
@@ -497,10 +420,8 @@ def _transform(u: float, spec: dict) -> float:
 
 
 def param_space_with(**overrides) -> list[dict]:
-    """Copy PARAM_SPACE, updating fields of the named parameters -- a compact way
-    to define a study variant. e.g. to sample gas flow uniformly over 300-1000:
-        param_space_with(gas_flow=dict(min=300, max=1000, scale="uniform"))
-    """
+    """Copy PARAM_SPACE, updating fields of named parameters. e.g.
+    param_space_with(gas_flow=dict(min=300, max=1000, scale="uniform"))."""
     out = []
     for sp in PARAM_SPACE:
         sp = dict(sp)
@@ -511,11 +432,8 @@ def param_space_with(**overrides) -> list[dict]:
 
 
 def _saltelli_design(n_base: int, seed: int, param_space: list[dict]) -> list[dict]:
-    """Build the Saltelli sample: matrices A and B from one 2d-dimensional
-    scrambled Sobol sequence, plus d hybrid matrices AB_i (A with column i taken
-    from B). Returns one picklable spec dict per model evaluation, tagged with
-    its role so the outputs can be regrouped into f_A / f_B / f_AB downstream.
-    """
+    """Build the Saltelli sample (matrices A, B and the d hybrids AB_i) from a
+    scrambled Sobol sequence. Returns one picklable, role-tagged spec per run."""
     from scipy.stats import qmc
 
     d = len(param_space)
@@ -547,8 +465,7 @@ def _saltelli_design(n_base: int, seed: int, param_space: list[dict]) -> list[di
 
 
 def _make_sobol_input(spec: dict):
-    """LIBRA-Pi-like input with the four sampled inputs applied (height and area
-    stay nominal). Rebuilt inside the worker from picklable primitives."""
+    """LIBRA-Pi input with the four sampled inputs from `spec` applied."""
     from sparging import (
         SimulationInput,
         LIBRA_PI_GEOM,
@@ -572,9 +489,9 @@ def _make_sobol_input(spec: dict):
 
 
 def _run_one_sample_sobol(spec: dict) -> dict:
-    """Rebuild the input from `spec`, solve once, and return one CSV row
-    (validity_record schema + design tags + per-sample solve time)."""
-    warnings.filterwarnings("ignore")  # silence curve_fit / pint fit warnings
+    """Rebuild the input from `spec`, solve once; return one CSV row
+    (validity_record + design tags + solve time)."""
+    warnings.filterwarnings("ignore")
     t0 = time.time()
     inp = _make_sobol_input(spec)
     rec = _solve_and_record(
@@ -597,19 +514,15 @@ def sobol_study(
     param_space: list[dict] = PARAM_SPACE,
 ) -> Path:
     """Generate the Saltelli design and evaluate the 1D ARD model at every point
-    in parallel, writing sobol_data.csv + metadata.json. Prints each sample's
-    solve time and a running estimate of the total time.
-
-    Pass a `param_space` (e.g. from `param_space_with(...)`) and a distinct
-    `out_dir` to run a sampling-space variant without overwriting a previous run.
-    """
+    (spawn-parallel), writing sobol_data.csv + metadata.json and logging per-sample
+    time + ETA. Pass a `param_space` (see `param_space_with`) and a distinct
+    `out_dir` for a sampling-space variant."""
     import scipy
 
     out_dir.mkdir(parents=True, exist_ok=True)
     specs = _saltelli_design(n_base, seed, param_space)
     n_total = len(specs)
     d = len(param_space)
-    # convergence prefixes are post-processing only; keep those that fit in N
     conv_subsets = [s for s in SOBOL_CONV_SUBSETS if s <= n_base]
     logger.info(
         "Sobol study: d=%d inputs, N_base=%d -> %d runs on %d workers",
