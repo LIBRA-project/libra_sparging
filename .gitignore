@@ -222,3 +222,4 @@ figures/
 *.nc
 *.pdf
 *.md
+!paper_plots.ipynb
