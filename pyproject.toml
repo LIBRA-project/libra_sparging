@@ -28,6 +28,7 @@ dependencies = [
     "scipy",
     "pandas",
     "pint",
+    networkx,
 ]
 
 [project.optional-dependencies]
