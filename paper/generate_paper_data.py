@@ -87,7 +87,7 @@ def convergence_study(out_dir: Path = OUT_DIR) -> Path:
 
     # tau and Bo are K_s-independent -> take them from the nominal input
     base = get_sim_input_LIBRA_Pi()
-    tau_spp = base.get_tau()
+    tau_spp = base.get_tau_SPP()
     Bo = base.get_Bo()
     H = base.height
     t_final = T_FINAL_IN_TAU * tau_spp
@@ -135,7 +135,7 @@ def convergence_study(out_dir: Path = OUT_DIR) -> Path:
     t_start = time.time()
     for label, scale in CASES.items():
         inp = _make_input(scale)
-        Pi = inp.get_Pi_number()
+        Pi = inp.get_Pi_ave()
         logger.info("=== case %s: K_s x %g -> Pi=%.3f ===", label, scale, Pi.magnitude)
 
         sim = Simulation(
@@ -217,7 +217,7 @@ def convergence_study(out_dir: Path = OUT_DIR) -> Path:
 # 0D approximation validity study
 # ---------------------------------------------------------------------------
 """
-Validity of the 0D analytical extraction time (get_tau / get_tau_ave) against the
+Validity of the 0D analytical extraction time (get_tau / get_tau_SPP / get_tau0) against the
 full 1D ARD model over a sampled space, correlated with the dimensionless groups
 of each simplifying assumption (Pi, G_mix_pred, G_P). Samples vary the product
 h_l*K_s and the tank height H log-uniformly over +-DECADES around nominal; sampled
@@ -235,8 +235,8 @@ OUT_DIR_VALIDITY = Path("paper/runs/0D_validity_study")
 N_SAMPLES = 300
 SEED = 42
 DECADES = 2.0  # +- log-uniform sampling range for the h_l*K_s multiplier and H
-T_FINAL_IN_TAU = 2  # simulated duration in units of tau_pred_ave
-DT_FRACTION_OF_TAU = 0.01  # dt = tau_pred_ave * this
+T_FINAL_IN_TAU = 2  # simulated duration in units of tau_pred
+DT_FRACTION_OF_TAU = 0.01  # dt = tau_pred * this
 MESH_PE = 2  # mesh Peclet number setting dx
 MIN_CELLS = 20  # floor on n_cells
 OTHER_GROUP_THRESHOLD = 0.1  # plot highlighting rule: other groups < this
@@ -252,12 +252,12 @@ def _solve_and_record(
     mesh_pe: float,
     min_cells: int,
 ) -> dict:
-    """Solve once with dt = dt_fraction*tau_ave, t_final = t_final_in_tau*tau_ave
+    """Solve once with dt = dt_fraction*tau, t_final = t_final_in_tau*tau
     and dx from mesh Peclet `mesh_pe` (>= `min_cells` cells); return one
     validity_record row. Shared by the 0D-validity and Sobol studies."""
-    tau_ave = inp.get_tau_ave()
-    dt = (tau_ave * dt_fraction).to("s")
-    t_final = (t_final_in_tau * tau_ave).to("s")
+    tau = inp.get_tau()
+    dt = (tau * dt_fraction).to("s")
+    t_final = (t_final_in_tau * tau).to("s")
     n_cells = max(
         int(round((inp.height / inp.dx_from_Pe(mesh_pe)).to("dimensionless").magnitude)),
         min_cells,
@@ -393,8 +393,8 @@ OUT_DIR_SOBOL = Path("paper/runs/sobol_input_params")
 
 SOBOL_N_BASE = 512  # base samples N (power of 2); total runs = N * (d + 2)
 SOBOL_SEED = 2024
-SOBOL_DT_FRACTION = 0.02  # dt = tau_pred_ave * this
-SOBOL_T_FINAL_IN_TAU = 2  # simulated duration in units of tau_pred_ave
+SOBOL_DT_FRACTION = 0.02  # dt = tau_pred * this
+SOBOL_T_FINAL_IN_TAU = 2  # simulated duration in units of tau_pred
 SOBOL_CONV_SUBSETS = [8, 16, 32, 64, 128, 256, 512]  # prefix sizes for the convergence check
 
 # sampled inputs in Sobol-column order; each mapped from u in [0,1] by _transform.

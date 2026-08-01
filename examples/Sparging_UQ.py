@@ -61,7 +61,7 @@ def forward(count, x: dict) -> list:
     # )  # for debugging and postprocessing
 
     # for post processing
-    Pi = sim_input.get_Pi_number().to("dimensionless").magnitude
+    Pi = sim_input.get_Pi_ave().to("dimensionless").magnitude
     return [
         Pi,
         tau.to("s").magnitude,

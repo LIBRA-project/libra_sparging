@@ -69,7 +69,7 @@ class SpargingProblem(Simulator):
         self.counter += 1
 
         # for post processing
-        Pi = sim_input.get_Pi_number().to("dimensionless").magnitude
+        Pi = sim_input.get_Pi_ave().to("dimensionless").magnitude
         PP_numbers.append(
             [
                 Pi,

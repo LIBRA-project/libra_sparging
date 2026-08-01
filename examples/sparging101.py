@@ -24,7 +24,7 @@ print(
 )
 tau = my_input.get_tau().to("seconds")
 print(f"tau = {tau.to('hours')}")
-print(f"Partial pressure number PP = {my_input.get_Pi_number()}")
+print(f"Partial pressure number PP = {my_input.get_Pi_ave()}")
 
 
 def profile_source_T(z: pint.Quantity | list[float], height: pint.Quantity = None):

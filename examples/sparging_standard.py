@@ -25,19 +25,19 @@ my_input = get_sim_input_LIBRA_Pi()
 # my_input.h_l = lambda z: my_func(z) * 9.4
 
 
-print(f"Pi = {my_input.get_Pi_number():.2f}")
+print(f"Pi = {my_input.get_Pi_ave():.2f}")
 print(f"steady state c_T2 = {my_input.get_c_T2_SS():.2e}")
 print(f"Bo = {my_input.get_Bo():.2e}")
 
-tau_ave = my_input.get_tau_ave()
-print(f"tau_ave = {tau_ave:~.2e}")
+tau = my_input.get_tau()
+print(f"tau = {tau:~.2e}")
 
 my_input.c_T2_init = 3e-11 * ureg.molT2 / ureg.m**3
 
 
 my_simulation = Simulation(
     my_input,
-    t_final=5 * tau_ave,
+    t_final=5 * tau,
     dispersion_on=True,
     constant_profiles=False,
 )
@@ -58,7 +58,7 @@ if __name__ == "__main__":
         "h_l",
     ]
 
-    tau_pred = my_input.get_tau_ave()
+    tau_pred = my_input.get_tau()
     dt = (tau_pred * 0.005).to(
         "s"
     )  # 2% of tau_pred gives 1% error on tau compared to fine mesh

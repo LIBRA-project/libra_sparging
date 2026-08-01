@@ -16,6 +16,12 @@ import networkx as nx
 logger = logging.getLogger(__name__)
 
 
+def _ppl_factor(Pi: float) -> float:
+    """Pi / (1 - exp(-Pi)): correction of the SPP extraction time for the partial
+    pressure building up in the bubbles. Tends to 1 for Pi << 1 and to Pi for Pi >> 1."""
+    return 1.0 if abs(Pi) < 1e-12 else -Pi / np.expm1(-Pi)
+
+
 @dataclass
 class ColumnGeometry:
     area: pint.Quantity
@@ -168,10 +174,6 @@ class SimulationInput:
     def get_S_T(self) -> pint.Quantity:
         return (self.Q_T / self.volume).to("molT/m**3/s")
 
-    def get_tau(self) -> pint.Quantity:
-        """characteristic time of the sparger under the small partial pressure (SPP) approximation"""
-        return (self.eps_l0 / (self.h_l0 * self.a_0)).to("seconds")
-
     def _height_integral(
         self, profile: Callable[[pint.Quantity], pint.Quantity], unit: str
     ) -> pint.Quantity:
@@ -184,18 +186,9 @@ class SimulationInput:
         height_m = self.height.to("m").magnitude
         return quad(integrand, 0, height_m)[0] * ureg(unit) * ureg.m
 
-    def get_tau_ave(self) -> pint.Quantity:
-        """characteristic time computed from a, h_l and eps_l profiles integrated
-        over the tank height, instead of evaluated at the bottom (z=0)."""
-        int_eps_l = self._height_integral(lambda z: 1 - self.eps_g(z), "dimensionless")
-        int_a_h_l = self._height_integral(lambda z: self.a(z) * self.h_l(z), "1/s")
-        return (int_eps_l / int_a_h_l).to("seconds")
-
-    def get_c_T2_SS(self) -> pint.Quantity:
-        return (self.get_S_T() * 1 / (self.h_l0 * self.a_0)).to("molT2/m^3")
-
-    def get_Pi_number(self) -> pint.Quantity:
-        """Partial pressure number,
+    def get_Pi(self, z: pint.Quantity) -> pint.Quantity:
+        """Partial pressure number for the hydrodynamic conditions found at height z:
+        ratio of the bubble residence time to its saturation time constant.
         If Pi < ~0.1, then gas partial pressure can be neglected in front of liquid concentration, we are in the small partial pressure (SPP) regime,
         If Pi > ~0.1, then partial pressure starts limiting the interfacial mass transfer (PPL regime)
         """
@@ -203,33 +196,51 @@ class SimulationInput:
             self.K_s
             * (const_R * self.temperature)
             * self.height
-            * self.h_l0
-            * self.a_0
-            / (self.eps_g0 * self.graph.nodes["v_g0"]["value"])
+            * self.a(z)
+            * self.h_l(z)
+            / self.u_g(z)
         ).to("dimensionless")
 
+    def get_Pi0(self) -> pint.Quantity:
+        """Partial pressure number evaluated at the tank bottom (z=0)."""
+        return self.get_Pi(0 * ureg.m)
+
     def get_Pi_ave(self) -> pint.Quantity:
-        """Partial pressure number computed from a, h_l and u_g profiles integrated
-        over the tank height, instead of evaluated at the bottom (z=0). Consistent
-        with get_tau_ave() (same height-averaged a*h_l)."""
+        """Partial pressure number averaged over the tank height. Equals the exponent
+        K_s*R*T*int_0^H a*h_l/u_g dz that sets the bubble saturation at the outlet."""
+        return (self._height_integral(self.get_Pi, "dimensionless") / self.height).to(
+            "dimensionless"
+        )
+
+    def get_tau0(self) -> pint.Quantity:
+        """extraction time under the small partial pressure (SPP) approximation, with
+        the closure relations evaluated at the tank bottom (z=0) instead of averaged
+        over the tank height."""
+        return (self.eps_l0 / (self.h_l0 * self.a_0)).to("seconds")
+
+    def get_tau_SPP(self) -> pint.Quantity:
+        """extraction time under the small partial pressure (SPP) approximation,
+        from the eps_l and a*h_l profiles averaged over the tank height."""
+        int_eps_l = self._height_integral(lambda z: 1 - self.eps_g(z), "dimensionless")
         int_a_h_l = self._height_integral(lambda z: self.a(z) * self.h_l(z), "1/s")
-        int_u_g = self._height_integral(self.u_g, "m/s")
-        a_h_l_ave = int_a_h_l / self.height
-        u_g_ave = int_u_g / self.height
+        return (int_eps_l / int_a_h_l).to("seconds")
+
+    def get_tau(self) -> pint.Quantity:
+        """extraction time valid in any partial pressure regime: the SPP time scaled
+        by the saturation correction Pi/(1-exp(-Pi)), with Pi averaged over the height."""
         return (
-            self.K_s
-            * (const_R * self.temperature)
-            * self.height
-            * a_h_l_ave
-            / u_g_ave
-        ).to("dimensionless")
+            self.get_tau_SPP() * _ppl_factor(self.get_Pi_ave().magnitude)
+        ).to("seconds")
+
+    def get_c_T2_SS(self) -> pint.Quantity:
+        return (self.get_S_T() * 1 / (self.h_l0 * self.a_0)).to("molT2/m^3")
 
     def get_G_mix_pred(self) -> pint.Quantity:
         """Predicted mixing number: ratio of the liquid dispersive mixing time
-        scale (H^2/E_l) to the height-averaged extraction time tau_pred_ave.
-        Governs the "perfectly mixed liquid" assumption. "Predicted" since it
-        uses the analytical tau_pred_ave rather than a simulated/fitted tau."""
-        return ((self.height**2 / self.E_l) / self.get_tau_ave()).to("dimensionless")
+        scale (H^2/E_l) to the extraction time tau. Governs the "perfectly mixed
+        liquid" assumption. "Predicted" since it uses the analytical tau rather
+        than a simulated/fitted one."""
+        return ((self.height**2 / self.E_l) / self.get_tau()).to("dimensionless")
 
     def get_G_P(self) -> pint.Quantity:
         """Relative hydrostatic pressure variation along the tank height

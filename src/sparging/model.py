@@ -179,9 +179,9 @@ class SimulationResults:
         # each entry wrapped so one failing property doesn't kill the whole export
         candidates = {
             "tau_predicted": si.get_tau,
-            "tau_predicted_ave": si.get_tau_ave,
+            "tau_predicted_SPP": si.get_tau_SPP,
             "c_T2_steady_state": si.get_c_T2_SS,
-            "Pi_number": si.get_Pi_number,
+            "Pi": si.get_Pi_ave,
             "Bodenstein_number": si.get_Bo,
             "S_T": si.get_S_T,
             "dP_dx_over_c": si.get_dP_dx,
@@ -236,7 +236,7 @@ class SimulationResults:
             "n0_fitted_mol": _si(fit["n0_fitted"], "molT2"),
             "residual_fraction": float(fit["residual_fraction"].magnitude),
             # governing groups (interpretation)
-            "Pi": _try(si.get_Pi_number),
+            "Pi": _try(si.get_Pi_ave),
             "Bo": _try(si.get_Bo),
             "K_s_mol_m3_Pa": _si(si.K_s, "mol/m**3/Pa"),
         }
@@ -257,16 +257,18 @@ class SimulationResults:
         t_end = t_end if t_end is not None else self.times[-1]
         si = self.sim_input
 
-        tau_pred_bot = si.get_tau()
-        tau_pred_ave = si.get_tau_ave()
+        tau_pred = si.get_tau()
+        tau_pred_bot = si.get_tau0()
+        tau_pred_ave = si.get_tau_SPP()
 
         (tau_fitted, n0_fitted), _ = fit_exp(
-            self.n_T2_salt_series, self.times, t_0, t_end, "decay", tau_guess=tau_pred_ave
+            self.n_T2_salt_series, self.times, t_0, t_end, "decay", tau_guess=tau_pred
         )
         rmse_norm = get_exp_fit_rmse(
             self.n_T2_salt_series, self.times, t_0, t_end, tau_fitted, n0_fitted
         )
 
+        e_pred = ((tau_fitted - tau_pred) / tau_pred).to("dimensionless")
         e_bot = ((tau_fitted - tau_pred_bot) / tau_pred_bot).to("dimensionless")
         e_ave = ((tau_fitted - tau_pred_ave) / tau_pred_ave).to("dimensionless")
         G_mix_actual = ((si.height**2 / si.E_l) / tau_fitted).to("dimensionless")
@@ -284,13 +286,15 @@ class SimulationResults:
             "tau_fitted_s": _si(tau_fitted, "s"),
             "fit_rmse_norm": _si(rmse_norm, "dimensionless"),
             # analytical predictions and signed relative errors
+            "tau_pred_s": _si(tau_pred, "s"),
             "tau_pred_bot_s": _si(tau_pred_bot, "s"),
             "tau_pred_ave_s": _si(tau_pred_ave, "s"),
+            "e_pred": _si(e_pred, "dimensionless"),
             "e_bot": _si(e_bot, "dimensionless"),
             "e_ave": _si(e_ave, "dimensionless"),
             # governing dimensionless groups
             "Pi": _si(si.get_Pi_ave(), "dimensionless"),
-            "Pi_bot": _si(si.get_Pi_number(), "dimensionless"),
+            "Pi_bot": _si(si.get_Pi0(), "dimensionless"),
             "G_mix_pred": _si(si.get_G_mix_pred(), "dimensionless"),
             "G_mix": _si(G_mix_actual, "dimensionless"),
             "G_P": _si(si.get_G_P(), "dimensionless"),
