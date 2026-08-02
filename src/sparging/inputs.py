@@ -225,12 +225,27 @@ class SimulationInput:
         int_a_h_l = self._height_integral(lambda z: self.a(z) * self.h_l(z), "1/s")
         return (int_eps_l / int_a_h_l).to("seconds")
 
+    def get_tau_PPL(self) -> pint.Quantity:
+        """extraction time in the partial pressure limited (PPL) asymptote Pi >> 1, i.e. the
+        limit of get_tau() since Pi/(1-exp(-Pi)) -> Pi. Bubbles leave saturated, so the
+        extraction is throttled by the gas throughput rather than by the mass transfer."""
+        return (self.get_tau_SPP() * self.get_Pi_ave()).to("seconds")
+
+    def get_tau_PPL_outlet(self) -> pint.Quantity:
+        """PPL extraction time written directly from the outlet balance,
+        <eps_l>*H*R*T*K_s/u_g(H). Equals get_tau_PPL() when the hydrodynamic parameters are
+        uniform; the two differ by the hydrostatic variation alone (a factor ~7 at G_P = 15)."""
+        int_eps_l = self._height_integral(lambda z: 1 - self.eps_g(z), "dimensionless")
+        return (
+            int_eps_l * (const_R * self.temperature) * self.K_s / self.u_g(self.height)
+        ).to("seconds")
+
     def get_tau(self) -> pint.Quantity:
         """extraction time valid in any partial pressure regime: the SPP time scaled
         by the saturation correction Pi/(1-exp(-Pi)), with Pi averaged over the height."""
-        return (
-            self.get_tau_SPP() * _ppl_factor(self.get_Pi_ave().magnitude)
-        ).to("seconds")
+        return (self.get_tau_SPP() * _ppl_factor(self.get_Pi_ave().magnitude)).to(
+            "seconds"
+        )
 
     def get_c_T2_SS(self) -> pint.Quantity:
         return (self.get_S_T() * 1 / (self.h_l0 * self.a_0)).to("molT2/m^3")
@@ -265,7 +280,8 @@ class SimulationInput:
         returns Bodenstein number = ratio of convective to dispersive transport for the gas phase
         corresponds to Peclet number at the scale of the tank
         """
-        return (self.u_g0 * self.height / self.E_g).to("dimensionless")
+        v_g0 = self.u_g0 / self.eps_g0
+        return (v_g0 * self.height / self.E_g).to("dimensionless")
 
     def dx_from_Pe(self, Pe: float) -> pint.Quantity:
         """
