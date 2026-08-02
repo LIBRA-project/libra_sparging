@@ -112,7 +112,7 @@ def get_sim_input_LIBRA_Pi() -> SimulationInput:
         area=0.13 * ureg.m**2,
         height=0.93 * ureg.m,
         nozzle_diameter=0.002 * ureg.m,
-        nb_nozzle=3 * ureg.dimensionless,
+        nb_nozzle=4 * ureg.dimensionless,
     )
 
     flibe = BreederMaterial(
