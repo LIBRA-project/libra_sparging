@@ -260,6 +260,8 @@ class SimulationResults:
         tau_pred = si.get_tau()
         tau_pred_bot = si.get_tau0()
         tau_pred_ave = si.get_tau_SPP()
+        tau_pred_PPL = si.get_tau_PPL()
+        tau_pred_PPL_outlet = si.get_tau_PPL_outlet()
 
         (tau_fitted, n0_fitted), _ = fit_exp(
             self.n_T2_salt_series, self.times, t_0, t_end, "decay", tau_guess=tau_pred
@@ -276,6 +278,12 @@ class SimulationResults:
         def _si(q, unit):
             return float(q.to(unit).magnitude)
 
+        def _try_si(getter, unit):  # closures the user may have overridden are optional
+            try:
+                return float(getter().to(unit).magnitude)
+            except Exception:
+                return None
+
         record = {
             # discretisation
             "dt_s": _si(self.dt, "s"),
@@ -289,6 +297,8 @@ class SimulationResults:
             "tau_pred_s": _si(tau_pred, "s"),
             "tau_pred_bot_s": _si(tau_pred_bot, "s"),
             "tau_pred_ave_s": _si(tau_pred_ave, "s"),
+            "tau_pred_PPL_s": _si(tau_pred_PPL, "s"),
+            "tau_pred_PPL_outlet_s": _si(tau_pred_PPL_outlet, "s"),
             "e_pred": _si(e_pred, "dimensionless"),
             "e_bot": _si(e_bot, "dimensionless"),
             "e_ave": _si(e_ave, "dimensionless"),
@@ -306,7 +316,12 @@ class SimulationResults:
             "h_l0_m_s": _si(si.h_l0, "m/s"),
             "a_0_1_m": _si(si.a_0, "1/m"),
             "eps_g0": _si(si.eps_g0, "dimensionless"),
+            # gas fraction at the top: the gas expands on the way up by ~(1 + G_P), so this is
+            # the one that can break the "no bubble coalescence" assumption (limit ~1%)
+            "eps_gH": _si(si.eps_g(si.height), "dimensionless"),
             "u_g0_m_s": _si(si.u_g0, "m/s"),
+            "d_b0_m": _try_si(lambda: si.graph.nodes["d_b"]["value"](0 * ureg.m), "m"),
+            "P_top_Pa": _si(si.P_l(si.height), "Pa"),
             "E_l_m2_s": _si(si.E_l, "m**2/s"),
             "E_g_m2_s": _si(si.E_g, "m**2/s"),
         }

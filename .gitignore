@@ -223,3 +223,5 @@ figures/
 *.pdf
 *.md
 !paper_plots.ipynb
+!thesis_plots.ipynb
+*.tex
