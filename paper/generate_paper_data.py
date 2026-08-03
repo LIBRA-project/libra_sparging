@@ -217,8 +217,8 @@ T_FINAL_IN_TAU = 2  # simulated duration in units of tau_pred
 DT_FRACTION_OF_TAU = 0.01  # dt = tau_pred * this
 MESH_PE = 2  # mesh Peclet number setting dx
 MIN_CELLS = 20  # floor on n_cells
-OTHER_GROUP_THRESHOLD = 0.1  # plot highlighting rule: other groups < this
-RMSE_FLAG_THRESHOLD = 1e-5  # normalized-RMSE above this flags non-exponential decay
+# NB: the non-exponential (fit RMSE) flag and the "other groups are small" rule are
+# postprocessing choices, not run conditions -- they live in the notebook CONTROLS cell.
 
 
 def _solve_and_record(
@@ -359,8 +359,6 @@ def generate_validity_data(
                 "t_final_in_tau": T_FINAL_IN_TAU,
                 "dt_fraction_of_tau": DT_FRACTION_OF_TAU,
                 "mesh_Pe": MESH_PE,
-                "other_group_threshold": OTHER_GROUP_THRESHOLD,
-                "rmse_flag_threshold": RMSE_FLAG_THRESHOLD,
             },
             f,
             indent=2,
@@ -486,8 +484,6 @@ def factorial_study(n_workers: int = 6, out_dir: Path = OUT_DIR_FACT) -> Path:
                 "cells_per_scale": FACT_CELLS_PER_SCALE,
                 "min_cells": FACT_MIN_CELLS,
                 "max_cells": FACT_MAX_CELLS,
-                "other_group_threshold": OTHER_GROUP_THRESHOLD,
-                "rmse_flag_threshold": RMSE_FLAG_THRESHOLD,
                 "elapsed_s": elapsed,
             },
             f,
@@ -643,8 +639,6 @@ def analytical_validity2(
                     "n_cells = max(H/dx_from_Pe(mesh_Pe), min_cells, "
                     "cells_per_scale*Pi, cells_per_scale*sqrt(G_mix)), capped at max_cells"
                 ),
-                "other_group_threshold": OTHER_GROUP_THRESHOLD,
-                "rmse_flag_threshold": RMSE_FLAG_THRESHOLD,
                 "no_coalescence_eps_g_limit": 0.01,
                 "elapsed_s": elapsed,
             },
