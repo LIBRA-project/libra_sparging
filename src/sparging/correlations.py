@@ -9,7 +9,7 @@ import numpy as np
 import scipy.constants as const
 import warnings
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import enum
 
 PROFILE = "profile"
@@ -214,12 +214,28 @@ D_l_oishi = Correlation(
 )
 all_correlations.append(D_l_oishi)
 
-D_l = D_l_calderoni  # default diffusivity correlation, can be overridden by user defined correlation
-D_l.identifier = "D_l"
+D_l_fukada = Correlation(
+    identifier="D_l_fukada",
+    function=lambda temperature: (
+        8.7e-6
+        * ureg("m**2/s")
+        * np.exp(-50e3 * ureg("J/mol") / (const_R * temperature.to("kelvin")))
+    ),
+    corr_type=CorrelationType.DIFFUSIVITY,
+    source="Fukada and Morisaki 2006",
+    description="diffusivity of H2 in liquid FLiNaK as a function of temperature",
+    input_units=["kelvin"],
+    output_units="m**2/s",
+)
+all_correlations.append(D_l_fukada)
+
+D_l = replace(
+    D_l_calderoni, identifier="D_l"
+)  # default diffusivity correlation, can be overridden by user defined correlation
 all_correlations.append(D_l)
 
-K_s = Correlation(
-    identifier="K_s",
+K_s_calderoni = Correlation(
+    identifier="K_s_calderoni",
     function=lambda temperature: (
         7.9e-2
         * ureg("mol/m**3/Pa")
@@ -231,6 +247,26 @@ K_s = Correlation(
     input_units=["kelvin"],
     output_units="mol/m**3/Pa",
 )
+all_correlations.append(K_s_calderoni)
+
+K_s_malinauskas = Correlation(
+    identifier="K_s_malinauskas",
+    function=lambda temperature: (
+        1.6e-5
+        * ureg("mol/m**3/Pa")
+        * np.exp(-28e3 * ureg("J/mol") / (const_R * temperature.to("kelvin")))
+    ),
+    corr_type=CorrelationType.SOLUBILITY,
+    source="Malinauskas 1974",
+    description="solubility of D2 in liquid FLiBe as a function of temperature",
+    input_units=["kelvin"],
+    output_units="mol/m**3/Pa",
+)
+all_correlations.append(K_s_malinauskas)
+
+K_s = replace(
+    K_s_calderoni, identifier="K_s"
+)  # default solubility correlation, can be overridden by user defined correlation
 all_correlations.append(K_s)
 
 d_b0 = Correlation(
