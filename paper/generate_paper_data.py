@@ -19,6 +19,7 @@ for _v in (
 ):
     os.environ.setdefault(_v, "1")
 
+import hashlib
 import json
 import logging
 import multiprocessing as mp
@@ -41,6 +42,15 @@ OUT_DIR = Path("paper/runs/convergence_study_2")
 # study configuration
 # ---------------------------------------------------------------------------
 C_T2_INIT = 3e-11 * ureg.molT2 / ureg.m**3  # initial concentration
+
+# transport-parameter scenarios bracketing the tritium properties of the salt, shared by the
+# Sobol study and libra_pi_scenarios(). No correlation exists for ClLiF, so the two available
+# sets of measurements are used as bounds: high solubility + low diffusivity (the salt retains
+# tritium and releases it slowly) against low solubility + high diffusivity.
+SCEN_CORRELATIONS = {
+    "pessimistic": {"K_s": "K_s_calderoni", "D_l": "D_l_calderoni"},
+    "optimistic": {"K_s": "K_s_malinauskas", "D_l": "D_l_fukada"},
+}
 
 CONV_T_FINAL_IN_TAU = 4  # simulated duration in units of tau
 
@@ -229,10 +239,19 @@ def _solve_and_record(
     t_final_in_tau: float,
     mesh_pe: float,
     min_cells: int,
+    extraction_levels: tuple[float, ...] = (),
+    extra_fit_in_tau: tuple[float, ...] = (),
 ) -> dict:
     """Solve once with dt = dt_fraction*tau, t_final = t_final_in_tau*tau
     and dx from mesh Peclet `mesh_pe` (>= `min_cells` cells); return one
-    validity_record row. Shared by the analytical-validity and Sobol studies."""
+    validity_record row. Shared by the analytical-validity and Sobol studies.
+
+    `extraction_levels` adds one `t_extract_<pct>_s` column per extracted fraction, measured on
+    the inventory curve. `extra_fit_in_tau` adds `tau_fitted_<w>tau_s` / `fit_rmse_norm_<w>tau`
+    for each shorter fit window, to check the fit is insensitive to it. Both default to empty,
+    so the studies that do not ask for them are unaffected."""
+    from sparging.postprocess import fit_exp, get_exp_fit_rmse, get_time_to_fraction
+
     tau = inp.get_tau()
     dt = (tau * dt_fraction).to("s")
     t_final = (t_final_in_tau * tau).to("s")
@@ -244,7 +263,25 @@ def _solve_and_record(
 
     sim = Simulation(inp, t_final=t_final, dispersion_on=True, constant_profiles=False)
     out = sim.solve(dt=dt, dx=dx)
-    return out.validity_record(sample=sample, t_0=0 * ureg.s, t_end=t_final)
+    rec = out.validity_record(sample=sample, t_0=0 * ureg.s, t_end=t_final)
+
+    for level in extraction_levels:
+        t_x = get_time_to_fraction(
+            out.n_T2_salt_series, out.times, 1.0 - level, t_0=0 * ureg.s
+        )
+        rec[f"t_extract_{round(level * 100)}_s"] = float(t_x.to("s").magnitude)
+    for window in extra_fit_in_tau:
+        t_w = (window * tau).to("s")
+        (tau_w, n0_w), _ = fit_exp(
+            out.n_T2_salt_series, out.times, 0 * ureg.s, t_w, "decay", tau_guess=tau
+        )
+        rec[f"tau_fitted_{window:g}tau_s"] = float(tau_w.to("s").magnitude)
+        rec[f"fit_rmse_norm_{window:g}tau"] = float(
+            get_exp_fit_rmse(
+                out.n_T2_salt_series, out.times, 0 * ureg.s, t_w, tau_w, n0_w
+            ).magnitude
+        )
+    return rec
 
 
 def _set_scaled(inp, name: str, value):
@@ -861,40 +898,53 @@ def verification_case(out_dir: Path = OUT_DIR_VERIF) -> Path:
 # Sobol sensitivity study (operating / design inputs -> fitted tau)
 # ---------------------------------------------------------------------------
 """
-Total-order Sobol sensitivity of tau_fitted to the four controllable inputs
-(temperature, gas flow, top pressure, nozzle diameter) over the LIBRA-Pi design
-envelope, via the Saltelli scheme (scipy.stats.sobol_indices). This module only
-generates the design and evaluates the 1D ARD model (spawn-parallel), writing one
-CSV row per run (validity_record schema + design tags); the indices are computed
-downstream in paper_plots.ipynb. Height/area fixed; the rest follows from the
-sampled inputs through the correlation graph.
+Total-order Sobol sensitivity of the extraction time to the four controllable inputs
+(temperature, gas flow, top pressure, nozzle diameter) over the LIBRA-Pi operating range,
+via the Saltelli scheme (scipy.stats.sobol_indices). The same design is run once per
+transport-parameter scenario (SCEN_CORRELATIONS), so the two datasets are paired row by row.
+This module only generates the design and evaluates the 1D ARD model (spawn-parallel),
+writing one CSV row per run (validity_record schema + design tags + the extraction times);
+the indices and the operating map are computed downstream in the notebooks. Height, area and
+number of nozzles are fixed; the rest follows from the sampled inputs through the correlation
+graph.
 
 Run with::
 
-    python -c "from paper.generate_paper_data import sobol_study; sobol_study()"
+    python -c "from paper.generate_paper_data import sobol_scenario_studies; sobol_scenario_studies()"
 
-Output is written to ``paper/runs/sobol_input_params/``.
+Output is written to ``paper/runs/sobol_<scenario>/``. The historical single-scenario runs in
+``paper/runs/sobol_input_params{,_2,_3}/`` are left untouched; they were produced with an older
+PARAM_SPACE and an older tau, are no longer reproducible from HEAD, and each records its own
+git commit and param_space in its metadata.json.
 """
 
-OUT_DIR_SOBOL = Path("paper/runs/sobol_input_params")
+OUT_DIR_SOBOL = Path("paper/runs/sobol_input_params")  # legacy single-scenario default
+SOBOL_SCEN_DIR = {s: Path(f"paper/runs/sobol_{s}") for s in SCEN_CORRELATIONS}
 
-SOBOL_N_BASE = 512  # base samples N (power of 2); total runs = N * (d + 2)
-SOBOL_SEED = 2024
+SOBOL_N_BASE = 256  # base samples N (power of 2); total runs = N * (d + 2)
+SOBOL_SEED = 2024  # same seed for both scenarios -> identical, paired design
 SOBOL_DT_FRACTION = 0.02  # dt = tau_pred * this
-SOBOL_T_FINAL_IN_TAU = 2  # simulated duration in units of tau_pred
+SOBOL_T_FINAL_IN_TAU = 5  # simulated duration in units of tau_pred; t99 needs 4.66 tau
+SOBOL_EXTRACTION_LEVELS = (0.50, 0.90, 0.99)  # extracted fractions timed on the inventory curve
+SOBOL_FIT_WINDOWS_IN_TAU = (2.0,)  # extra fit windows, for comparability with the older studies
+SOBOL_CELLS_PER_PI = 20  # cells across the gas saturation length H/Pi
 SOBOL_CONV_SUBSETS = [8, 16, 32, 64, 128, 256, 512]  # prefix sizes for the convergence check
+KANAI_RANGE_CM3_S = (3.0, 10.0)  # validated nozzle flow range of the d_b0 correlation
 
 # sampled inputs in Sobol-column order; each mapped from u in [0,1] by _transform.
-# temperature sampled uniformly in KELVIN (723.15-923.15 = 450-650 degC)
+# ranges are the attainable operating range of tab:model_input; temperature sampled uniformly
+# in KELVIN (723.15-923.15 = 450-650 degC). Only the gas flow gets a log measure: it alone spans
+# a decade and tau goes roughly as its inverse. A Sobol index is defined relative to the input
+# measure, but log vs uniform over the *same* range was checked to leave it unchanged (report.md).
 PARAM_SPACE = [
     {"name": "temperature", "csv": "temperature_K", "unit": "K",
      "min": 723.15, "max": 923.15, "scale": "uniform"},
     {"name": "gas_flow", "csv": "gas_flow_sccm", "unit": "sccm",
-     "min": 50.0, "max": 1000.0, "scale": "log"},
+     "min": 100.0, "max": 1000.0, "scale": "log"},
     {"name": "top_pressure", "csv": "top_pressure_atm", "unit": "atm",
      "min": 1.0, "max": 2.0, "scale": "uniform"},
     {"name": "nozzle_diameter", "csv": "nozzle_diameter_mm", "unit": "mm",
-     "min": 0.5, "max": 5.0, "scale": "log"},
+     "min": 1.0, "max": 4.0, "scale": "uniform"},
 ]
 
 
@@ -918,9 +968,13 @@ def param_space_with(**overrides) -> list[dict]:
     return out
 
 
-def _saltelli_design(n_base: int, seed: int, param_space: list[dict]) -> list[dict]:
+def _saltelli_design(
+    n_base: int, seed: int, param_space: list[dict], scenario: str | None = None
+) -> list[dict]:
     """Build the Saltelli sample (matrices A, B and the d hybrids AB_i) from a
-    scrambled Sobol sequence. Returns one picklable, role-tagged spec per run."""
+    scrambled Sobol sequence. Returns one picklable, role-tagged spec per run.
+    The scenario travels as a plain string: Correlation objects hold lambdas and would not
+    pickle to the spawned workers, which resolve them by identifier instead."""
     from scipy.stats import qmc
 
     d = len(param_space)
@@ -936,6 +990,7 @@ def _saltelli_design(n_base: int, seed: int, param_space: list[dict]) -> list[di
             "design_role": role,   # "A", "B" or "AB"
             "base_index": base_j,  # which base sample j (for A/B/AB_i pairing)
             "var_index": var_i,    # AB: column swapped from B; A/B: -1
+            "scenario": scenario,
             **params,
         })
 
@@ -952,24 +1007,29 @@ def _saltelli_design(n_base: int, seed: int, param_space: list[dict]) -> list[di
 
 
 def _make_sobol_input(spec: dict):
-    """LIBRA-Pi input with the four sampled inputs from `spec` applied."""
+    """LIBRA-Pi input with the four sampled inputs from `spec` applied, and the (K_s, D_l)
+    correlations of its scenario. A spec without a scenario keeps the nominal material."""
     from sparging import (
         SimulationInput,
         LIBRA_PI_GEOM,
         LIBRA_PI_MAT,
         LIBRA_PI_OPERATING_PARAMS,
         LIBRA_PI_SPARGING_PARAMS,
+        all_correlations,
     )
 
     geom = LIBRA_PI_GEOM.copy()
     geom.nozzle_diameter = spec["nozzle_diameter_mm"] * ureg.mm
+    mat = LIBRA_PI_MAT.copy()
+    for name, identifier in SCEN_CORRELATIONS.get(spec.get("scenario"), {}).items():
+        setattr(mat, name, all_correlations(identifier))
     op = LIBRA_PI_OPERATING_PARAMS.copy()
     op.temperature = spec["temperature_K"] * ureg.K
     op.ndot_g0 = spec["gas_flow_sccm"] * ureg.sccm
     op.P_top = spec["top_pressure_atm"] * ureg.atm
 
     inp = SimulationInput.from_parameters(
-        geom, LIBRA_PI_MAT.copy(), op, LIBRA_PI_SPARGING_PARAMS.copy()
+        geom, mat, op, LIBRA_PI_SPARGING_PARAMS.copy()
     )
     inp.c_T2_init = C_T2_INIT
     return inp
@@ -977,8 +1037,8 @@ def _make_sobol_input(spec: dict):
 
 def _run_one_sample_sobol(spec: dict) -> dict:
     """Rebuild the input from `spec`, solve once; return one CSV row
-    (validity_record + design tags + solve time)."""
-    warnings.filterwarnings("ignore")
+    (validity_record + extraction times + design tags + solve time)."""
+    warnings.filterwarnings("ignore")  # the Kanai range is flagged in the record, not warned about
     t0 = time.time()
     inp = _make_sobol_input(spec)
     rec = _solve_and_record(
@@ -987,53 +1047,107 @@ def _run_one_sample_sobol(spec: dict) -> dict:
         dt_fraction=SOBOL_DT_FRACTION,
         t_final_in_tau=SOBOL_T_FINAL_IN_TAU,
         mesh_pe=MESH_PE,
-        min_cells=MIN_CELLS,
+        min_cells=spec["n_cells"],
+        extraction_levels=SOBOL_EXTRACTION_LEVELS,
+        extra_fit_in_tau=SOBOL_FIT_WINDOWS_IN_TAU,
     )
+    # backward Euler gives tau_num = tau + dt/2 (measured 0.501 in the convergence study)
+    rec["tau_fit_nodisc_s"] = rec["tau_fitted_s"] - rec["dt_s"] / 2
+    # read back from the graph rather than from SCEN_CORRELATIONS: catches a silent fallback
+    # to the default correlation if a name is ever wrong
+    rec["K_s_correlation"] = inp.graph.nodes["K_s"]["origin"]
+    rec["D_l_correlation"] = inp.graph.nodes["D_l"]["origin"]
+    lo, hi = KANAI_RANGE_CM3_S
+    flow = rec["nozzle_flow_cm3_s"]
+    rec["kanai_in_range"] = bool(flow is not None and lo <= flow <= hi)
     rec["solve_time_s"] = time.time() - t0
     return rec
+
+
+def _sobol_n_cells(param_space: list[dict], scenario: str | None) -> tuple[int, float]:
+    """Cell count for the whole design, sized on the Pi-maximising corner of the box.
+    Pi grows with T and P_top and decreases with the gas flow and the nozzle diameter, so the
+    corner is known analytically. A per-sample rule would make n_cells a step function of the
+    sampled inputs and leak that discontinuity into the Sobol indices."""
+    bounds = {sp["name"]: sp for sp in param_space}
+    corner = {
+        "temperature_K": bounds["temperature"]["max"],
+        "gas_flow_sccm": bounds["gas_flow"]["min"],
+        "top_pressure_atm": bounds["top_pressure"]["max"],
+        "nozzle_diameter_mm": bounds["nozzle_diameter"]["min"],
+        "scenario": scenario,
+    }
+    pi_max = float(_make_sobol_input(corner).get_Pi_ave().magnitude)
+    n_cells = min(
+        FACT_MAX_CELLS,
+        max(MIN_CELLS, int(np.ceil(SOBOL_CELLS_PER_PI * pi_max))),
+    )
+    return n_cells, pi_max
 
 
 def sobol_study(
     n_base: int = SOBOL_N_BASE,
     seed: int = SOBOL_SEED,
     n_workers: int = 8,
-    out_dir: Path = OUT_DIR_SOBOL,
+    out_dir: Path | None = None,
     param_space: list[dict] = PARAM_SPACE,
+    scenario: str | None = None,
+    resume: bool = True,
 ) -> Path:
     """Generate the Saltelli design and evaluate the 1D ARD model at every point
     (spawn-parallel), writing sobol_data.csv + metadata.json and logging per-sample
     time + ETA. Pass a `param_space` (see `param_space_with`) and a distinct
-    `out_dir` for a sampling-space variant."""
+    `out_dir` for a sampling-space variant, a `scenario` (see SCEN_CORRELATIONS) to
+    override the (K_s, D_l) correlations. With `resume`, runs already present in the
+    CSV are skipped, so an interrupted study can be continued and a design can be
+    extended to a larger n_base (the scrambled Sobol prefixes are nested)."""
     import scipy
 
+    out_dir = out_dir or (SOBOL_SCEN_DIR[scenario] if scenario else OUT_DIR_SOBOL)
     out_dir.mkdir(parents=True, exist_ok=True)
-    specs = _saltelli_design(n_base, seed, param_space)
+    specs = _saltelli_design(n_base, seed, param_space, scenario=scenario)
     n_total = len(specs)
     d = len(param_space)
     conv_subsets = [s for s in SOBOL_CONV_SUBSETS if s <= n_base]
+    n_cells, pi_max = _sobol_n_cells(param_space, scenario)
+    for spec in specs:
+        spec["n_cells"] = n_cells
+
+    rows = []
+    csv_path = out_dir / "sobol_data.csv"
+    if resume and csv_path.exists():
+        done = pd.read_csv(csv_path)
+        rows = done.to_dict("records")
+        keys = set(zip(done.design_role, done.base_index, done.var_index))
+        specs = [
+            s for s in specs
+            if (s["design_role"], s["base_index"], s["var_index"]) not in keys
+        ]
+        logger.info("resuming: %d runs already in %s, %d to go", len(rows), csv_path, len(specs))
+
     logger.info(
-        "Sobol study: d=%d inputs, N_base=%d -> %d runs on %d workers",
-        d, n_base, n_total, n_workers,
+        "Sobol study [%s]: d=%d inputs, N_base=%d -> %d runs on %d workers, "
+        "n_cells=%d (Pi_max=%.3g)",
+        scenario, d, n_base, n_total, n_workers, n_cells, pi_max,
     )
 
-    rows, times = [], []
+    times = []
     t_start = time.time()
     with mp.get_context("spawn").Pool(n_workers) as pool:
         for k, rec in enumerate(pool.imap_unordered(_run_one_sample_sobol, specs), 1):
             rows.append(rec)
             times.append(rec["solve_time_s"])
             avg = float(np.mean(times))
-            eta_min = (n_total - k) * avg / n_workers / 60
+            eta_min = (len(specs) - k) * avg / n_workers / 60
             logger.info(
                 "[%4d/%d] id=%4d %-2s var=%+d : %5.1fs  (avg %.1fs, ETA %.0f min)",
-                k, n_total, rec["sample_id"], rec["design_role"],
+                k, len(specs), rec["sample_id"], rec["design_role"],
                 rec["var_index"], rec["solve_time_s"], avg, eta_min,
             )
     elapsed = time.time() - t_start
-    logger.info("Sobol study: %d runs in %.0f s (%.1f min)", n_total, elapsed, elapsed / 60)
+    logger.info("Sobol study: %d runs in %.0f s (%.1f min)", len(specs), elapsed, elapsed / 60)
 
     df = pd.DataFrame(rows).sort_values("sample_id").reset_index(drop=True)
-    csv_path = out_dir / "sobol_data.csv"
     df.to_csv(csv_path, index=False)
 
     from sparging import LIBRA_PI_GEOM
@@ -1045,33 +1159,68 @@ def sobol_study(
                 "git_commit": helpers.get_git_hash(),
                 "date": datetime.now().isoformat(),
                 "description": (
-                    "Total-order Sobol sensitivity of tau_fitted to 4 operating/"
+                    "Total-order Sobol sensitivity of the extraction time to 4 operating/"
                     "design inputs; Saltelli design, scipy.stats.sobol_indices."
                 ),
-                "qoi": "tau_fitted_s",
+                "scenario": scenario,
+                "correlations": SCEN_CORRELATIONS.get(scenario, {}),
+                "qoi": "tau_fit_nodisc_s",
+                "qoi_note": (
+                    "tau_fitted_s minus the backward-Euler bias dt/2; the bias is a purely "
+                    "multiplicative dt_fraction/2 here, so it leaves the indices unchanged"
+                ),
+                "qoi_alternatives": ["tau_fitted_s", "tau_fitted_2tau_s", "t_extract_99_s"],
                 "estimator": "scipy.stats.sobol_indices (saltelli_2010)",
                 "scipy_version": scipy.__version__,
                 "n_base_samples": n_base,
                 "d": d,
                 "n_total_runs": n_total,
                 "seed": seed,
+                "design_hash": hashlib.sha256(
+                    json.dumps(
+                        {"n_base": n_base, "seed": seed, "param_space": param_space},
+                        sort_keys=True,
+                    ).encode()
+                ).hexdigest()[:12],
                 "convergence_subsets": conv_subsets,
                 "param_space": [{**sp, "sobol_column": i} for i, sp in enumerate(param_space)],
+                "sampling_measure": (
+                    "uniform in temperature, top pressure and nozzle diameter; "
+                    "log-uniform in gas flow"
+                ),
                 "fixed_params": {
                     "height_m": float(base.height.to("m").magnitude),
                     "area_m2": float(base.area.to("m**2").magnitude),
                     "nb_nozzle": float(LIBRA_PI_GEOM.nb_nozzle.magnitude),
+                    "c_T2_init_mol_m3": float(C_T2_INIT.magnitude),
                 },
                 "discretization": {
                     "dt_fraction_of_tau": SOBOL_DT_FRACTION,
                     "t_final_in_tau": SOBOL_T_FINAL_IN_TAU,
                     "mesh_Pe": MESH_PE,
                     "min_cells": MIN_CELLS,
+                    "n_cells": n_cells,
+                    "n_cells_rule": (
+                        "max(MIN_CELLS, ceil(SOBOL_CELLS_PER_PI * Pi at the Pi-maximising "
+                        "corner of the box); fixed over the design so the mesh is not a "
+                        "function of the sampled inputs"
+                    ),
+                    "cells_per_Pi": SOBOL_CELLS_PER_PI,
+                    "Pi_max_corner": pi_max,
                 },
+                "extraction_levels": list(SOBOL_EXTRACTION_LEVELS),
+                "extra_fit_windows_in_tau": list(SOBOL_FIT_WINDOWS_IN_TAU),
+                "kanai_validated_range_cm3_s": list(KANAI_RANGE_CM3_S),
                 "design_note": (
                     "rows tagged design_role in {A,B,AB} + base_index + var_index; "
                     "f_AB[i] = A with column i replaced by B's column i"
                 ),
+                "n_workers": n_workers,
+                "solve_time_s": {
+                    "median": float(np.median(df.solve_time_s)),
+                    "max": float(df.solve_time_s.max()),
+                    "total": float(df.solve_time_s.sum()),
+                },
                 "elapsed_s": elapsed,
             },
             f,
@@ -1079,6 +1228,166 @@ def sobol_study(
         )
     logger.info("wrote %s and metadata.json", csv_path)
     return csv_path
+
+
+def sobol_scenario_studies(
+    n_base: int = SOBOL_N_BASE,
+    seed: int = SOBOL_SEED,
+    n_workers: int = 8,
+    scenarios: tuple[str, ...] = tuple(SCEN_CORRELATIONS),
+) -> dict[str, Path]:
+    """Run the same Saltelli design once per transport-parameter scenario. Same seed, so the
+    two datasets are paired row by row and can be differenced directly."""
+    return {
+        s: sobol_study(n_base=n_base, seed=seed, n_workers=n_workers, scenario=s)
+        for s in scenarios
+    }
+
+
+# ---------------------------------------------------------------------------
+# LIBRA-Pi transport-parameter scenarios (bounds on Pi)
+# ---------------------------------------------------------------------------
+"""
+Bounds on the LIBRA-Pi extraction time under the uncertainty on the tritium transport
+properties of the salt. Two scenarios bracket the available correlations:
+
+    pessimistic : K_s and D_l both from Calderoni 2008 (T2 in FLiBe)
+                  -> high solubility (the salt retains tritium) and low diffusivity
+    optimistic  : K_s from Malinauskas 1974 (D2 in FLiBe), D_l from Fukada 2006 (H2 in FLiNaK)
+                  -> low solubility and high diffusivity
+
+Each scenario is run at the two corners of the attainable operating range that maximise and
+minimise Pi (temperature, gas flow, headspace pressure and nozzle diameter each set to the end
+of their range that pushes Pi in the wanted direction; checked one input at a time on the
+resolved closures). G_P and G_mix stay within a factor ~2 and ~30 over the whole box, so Pi
+alone carries the spread. All fields are exported.
+
+Run with::
+
+    python -c "from paper.generate_paper_data import libra_pi_scenarios; libra_pi_scenarios()"
+
+Output is written to ``paper/runs/<scenario>_<corner>/``.
+"""
+
+OUT_DIR_SCEN = Path("paper/runs")
+
+# corners of the attainable operating range (tab:model_input): Pi grows with T, with P_top and
+# with 1/ndot_g, and decreases with the nozzle diameter (both through the bubble diameter).
+SCEN_CORNERS = {
+    "high_Pi": {
+        "temperature_degC": 650.0,
+        "gas_flow_sccm": 100.0,
+        "top_pressure_atm": 2.0,
+        "nozzle_diameter_mm": 1.0,
+    },
+    "low_Pi": {
+        "temperature_degC": 450.0,
+        "gas_flow_sccm": 1000.0,
+        "top_pressure_atm": 1.0,
+        "nozzle_diameter_mm": 4.0,
+    },
+}
+
+SCEN_DT_FRACTION = 0.01  # dt = tau * this
+SCEN_T_FINAL_IN_TAU = 5
+
+
+def _make_scenario_input(scenario: str, corner: str):
+    """LIBRA-Pi input with the scenario's (K_s, D_l) correlations and the corner's
+    operating point applied; geometry and tritium source stay nominal."""
+    from sparging import (
+        SimulationInput,
+        LIBRA_PI_GEOM,
+        LIBRA_PI_MAT,
+        LIBRA_PI_OPERATING_PARAMS,
+        LIBRA_PI_SPARGING_PARAMS,
+        all_correlations,
+    )
+
+    spec = SCEN_CORNERS[corner]
+    geom = LIBRA_PI_GEOM.copy()
+    geom.nozzle_diameter = spec["nozzle_diameter_mm"] * ureg.mm
+    mat = LIBRA_PI_MAT.copy()
+    for name, identifier in SCEN_CORRELATIONS[scenario].items():
+        setattr(mat, name, all_correlations(identifier))
+    op = LIBRA_PI_OPERATING_PARAMS.copy()
+    op.temperature = spec["temperature_degC"] * ureg.celsius
+    op.ndot_g0 = spec["gas_flow_sccm"] * ureg.sccm
+    op.P_top = spec["top_pressure_atm"] * ureg.atm
+
+    inp = SimulationInput.from_parameters(
+        geom, mat, op, LIBRA_PI_SPARGING_PARAMS.copy()
+    )
+    inp.c_T2_init = C_T2_INIT
+    return inp
+
+
+def libra_pi_scenarios(out_dir: Path = OUT_DIR_SCEN) -> Path:
+    """Run the four (scenario, corner) combinations and export every field, the parameter
+    summary and the ARD inputs table for each."""
+    warnings.filterwarnings("ignore")
+
+    for scenario in SCEN_CORRELATIONS:
+        for corner in SCEN_CORNERS:
+            inp = _make_scenario_input(scenario, corner)
+            tau = inp.get_tau()
+            dt = (tau * SCEN_DT_FRACTION).to("s")
+            t_final = (SCEN_T_FINAL_IN_TAU * tau).to("s")
+            n_cells = min(
+                FACT_MAX_CELLS,
+                max(
+                    FACT_MIN_CELLS,
+                    int(round((inp.height / inp.dx_from_Pe(FACT_MESH_PE)).to("").magnitude)),
+                    int(np.ceil(FACT_CELLS_PER_SCALE * inp.get_Pi_ave().magnitude)),
+                ),
+            )
+            dx = (inp.height / n_cells).to("m")
+
+            logger.info(
+                "=== %s / %s: Pi=%.3g, G_P=%.3g, G_mix=%.3g, tau=%.2f h, n_cells=%d ===",
+                scenario, corner, inp.get_Pi_ave().magnitude, inp.get_G_P().magnitude,
+                inp.get_G_mix_pred().magnitude, tau.to("hour").magnitude, n_cells,
+            )
+            sim = Simulation(inp, t_final=t_final, dispersion_on=True, constant_profiles=False)
+            sim.exports = VERIF_EXPORTS
+            out = sim.solve(dt=dt, dx=dx, verbose=False)
+
+            run_dir = out_dir / f"{scenario}_{corner}"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            out.exports_to_csv(run_dir)
+            out.to_json(
+                run_dir / "summary.json",
+                ["analytical_quantities", "fit_summary", "intermediate_params"],
+            )
+            record = out.validity_record(
+                sample={"scenario": scenario, "corner": corner, **SCEN_CORNERS[corner]}
+            )
+            _ard_inputs_table(inp, dt, dx, out.n_cells, out.n_steps).to_csv(
+                run_dir / "ard_inputs.csv", index=False
+            )
+            with open(run_dir / "metadata.json", "w") as f:
+                json.dump(
+                    {
+                        "git_commit": helpers.get_git_hash(),
+                        "date": datetime.now().isoformat(),
+                        "scenario": scenario,
+                        "corner": corner,
+                        "correlations": SCEN_CORRELATIONS[scenario],
+                        "operating_point": SCEN_CORNERS[corner],
+                        "c_T2_init_mol_m3": float(C_T2_INIT.magnitude),
+                        "dt_fraction_of_tau": SCEN_DT_FRACTION,
+                        "t_final_in_tau": SCEN_T_FINAL_IN_TAU,
+                        "record": record,
+                    },
+                    f,
+                    indent=2,
+                )
+            logger.info(
+                "    tau_fitted = %.4f h (analytical %.4f h), fit RMSE = %.3e",
+                record["tau_fitted_s"] / 3600, record["tau_pred_s"] / 3600,
+                record["fit_rmse_norm"],
+            )
+    return out_dir
 
 
 if __name__ == "__main__":

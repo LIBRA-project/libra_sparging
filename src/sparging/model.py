@@ -313,6 +313,14 @@ class SimulationResults:
             "area_m2": _si(si.area, "m**2"),
             "temperature_C": _si(si.temperature, "degC"),
             "K_s_mol_m3_Pa": _si(si.K_s, "mol/m**3/Pa"),
+            "D_l_m2_s": _try_si(lambda: si.graph.nodes["D_l"]["value"], "m**2/s"),
+            "Bo": _try_si(si.get_Bo, "dimensionless"),
+            # volumetric gas flow per nozzle: the Kanai d_b0 correlation is validated for 3-10 cm3/s
+            "nozzle_flow_cm3_s": _try_si(
+                lambda: si.graph.nodes["Vdot_g0"]["value"]
+                / si.graph.nodes["nb_nozzle"]["value"],
+                "cm**3/s",
+            ),
             "h_l0_m_s": _si(si.h_l0, "m/s"),
             "a_0_1_m": _si(si.a_0, "1/m"),
             "eps_g0": _si(si.eps_g0, "dimensionless"),

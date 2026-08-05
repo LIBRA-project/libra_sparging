@@ -158,6 +158,36 @@ def get_tau_real(
     return tau
 
 
+def get_time_to_fraction(
+    vec: np.ndarray[pint.Quantity],
+    times: np.ndarray[pint.Quantity],
+    fraction: float,
+    t_0: pint.Quantity | None = None,
+) -> pint.Quantity:
+    """
+    Time elapsed from t_0 until vec first falls to `fraction` of its value at t_0, by linear
+    interpolation between the two bracketing samples. Returns NaN if the level is never reached
+    within the simulated window, so the caller can flag an under-resolved horizon instead of
+    silently getting the last sample.
+    Generalizes get_tau_real (nearest sample, fixed at 1/e): here the level is free and the
+    crossing is interpolated. For an exponential decay the chord bias is (dt/tau)^2/8.
+    """
+    if not 0 < fraction < 1:
+        raise ValueError(f"fraction must be in (0, 1), got {fraction}")
+    idx_0 = 0 if t_0 is None else idx_from_t(times, t_0)
+    v = vec[idx_0:]
+    t = times[idx_0:]
+    target = v[0] * fraction
+    below = v <= target
+    if v[0].magnitude <= 0 or not np.any(below):
+        return np.nan * times.units
+    k = int(np.argmax(below))
+    if k == 0:
+        return 0 * times.units
+    w = ((v[k - 1] - target) / (v[k - 1] - v[k])).to("dimensionless").magnitude
+    return (t[k - 1] + w * (t[k] - t[k - 1]) - t[0]).to(times.units)
+
+
 def summarize_decay(
     results: SimulationResults,
     t_0: pint.Quantity | None = None,
