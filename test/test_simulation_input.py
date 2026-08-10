@@ -1,7 +1,7 @@
 import sparging
 from sparging.config import ureg
 from sparging import all_correlations, CorrelationGroup, Correlation
-from sparging.inputs import (
+from sparging.simulation_input import (
     ColumnGeometry,
     BreederMaterial,
     OperatingParameters,

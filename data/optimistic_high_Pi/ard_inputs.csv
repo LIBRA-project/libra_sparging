@@ -1,0 +1,26 @@
+key,latex_symbol,description,value,unit
+H,$H$,tank height,0.93,m
+A,$A$,tank base area,0.13,m**2
+T,$T$,temperature,650.0,degC
+K_s,$K_s$,solubility constant,4.167020103037291e-07,mol/m**3/Pa
+rho_l,$\rho_l$,liquid density,1969.4,kg/m**3
+E_l,$E_l$,liquid dispersion coeff.,0.007484445239530454,m**2/s
+E_g,$E_g$,gas dispersion coeff.,6.591614070941192e-07,m**2/s
+c_T2_init,$c_{T_2}(t=0)$,initial concentration,3e-11,molT2/m**3
+P_l0,$P_l(0)$,liquid pressure at bottom,220611.2913543,Pa
+P_g0,$P_g(0)$,gas pressure at bottom,220846.99150610657,Pa
+eps_g0,$\varepsilon_g(0)$,gas fraction at bottom,0.0001053208258621068,dimensionless
+a_0,$a(0)$,specific area at bottom,0.2045945162974716,1/m
+u_g0,$u_g(0)$,gas velocity at bottom,1.991169840439227e-05,m/s
+h_l0,$h_l(0)$,mass transfer coeff. at bottom,8.113284250261303e-05,m/s
+Pi_ave,$\langle\Pi\rangle$,partial pressure number,0.002434915126453631,dimensionless
+Pi_0,$\Pi(0)$,partial pressure number at bottom,0.0024796899324627227,dimensionless
+G_P,$G_P$,relative hydrostatic variation,0.08863208168911911,dimensionless
+G_mix,$G_\mathrm{mix}$,mixing number,0.0019619382457078103,dimensionless
+Bo,$\mathrm{Bo}$,gas Bodenstein number,266738.206070229,dimensionless
+tau,$\tau$,extraction time,16.361324107198957,hour
+tau_SPP,$\tau_\mathrm{SPP}$,SPP extraction time,16.341421046785147,hour
+dt,$\Delta t$,time step,589.0076678591624,s
+dx,$\Delta x$,mesh size,0.01660714285714286,m
+n_cells,$N_x$,mesh cells,56.0,-
+n_steps,$N_t$,time steps,500.0,-

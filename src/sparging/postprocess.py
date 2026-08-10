@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import pint
-    from sparging.model import SimulationResults
+    from sparging.ard_model import SimulationResults
     import matplotlib.pyplot as plt
 
 

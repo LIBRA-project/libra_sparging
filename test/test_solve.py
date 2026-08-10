@@ -1,7 +1,7 @@
-from sparging.model import Simulation
-from sparging.inputs import SimulationInput
+from sparging.ard_model import Simulation
+from sparging.simulation_input import SimulationInput
 from sparging.config import ureg
-from sparging.input_examples import get_sim_input_standard
+from sparging.example_cases import get_sim_input_standard
 import pytest
 import dataclasses
 from pint import DimensionalityError

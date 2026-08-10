@@ -1,33 +1,91 @@
 # libra_sparging
 
-To run the model:
+A 1D advection–reaction–dispersion model of gas sparging for tritium extraction from a static
+molten salt. Bubbles of inert gas rise through the salt, tritium transfers across the
+gas–liquid interface and is carried out of the tank; the model predicts how fast the salt is
+stripped, and under which conditions a closed-form solution is enough.
 
-1. Create the right conda environment
+Developed for the LIBRA Pi tritium breeding experiment, but not specific to it: the species,
+the salt and the column geometry are all inputs.
 
-> [!NOTE]
-> Requires and conda to be installed
+## Install
 
-> [!NOTE]
-> This uses `dolfinx` which doesn't run on Linux. For windows users, consider using Windows Subsystem for Linux (WSL)
-
-To simply use the library, use the libra_sparging environment:
-```
+```bash
 conda env create -f environment.yml
 conda activate libra_sparging
+pip install -e .
 ```
 
-To also train a surrogate model (for sensitivity analysis, for example), you need autoemulate, use the autoemulate environment:
-```
-conda env create -f autoemulate_env.yml
-conda activate autoemulate_env
+The finite element discretisation uses [FEniCSx/DOLFINx](https://fenicsproject.org/), the
+closure-relation resolution [NetworkX](https://networkx.org/), and every quantity carries its
+units through [Pint](https://pint.readthedocs.io/).
+
+## A first run
+
+```python
+from sparging import get_sim_input_LIBRA_Pi, Simulation, ureg
+
+sim_input = get_sim_input_LIBRA_Pi()          # a ready-made case
+print(sim_input.get_tau().to("hour"))          # analytical extraction time
+print(sim_input.get_Pi_ave())                  # saturation number
+
+results = Simulation(sim_input, t_final=5 * sim_input.get_tau()).solve()
 ```
 
-```
-python -m pip install -e .[dev]
+`examples/sparging101.py` walks through the same thing more slowly.
+
+## Layout
+
+| path | what it is |
+|---|---|
+| `src/sparging/` | the package |
+| `data/` | one directory per study, each with its `metadata.json` |
+| `generate_data.py` | one function per dataset in `data/`, reruns it from scratch |
+| `make_plots.ipynb` | turns `data/` into the thesis figures |
+| `make_*.py` | the three figures whose plotting is heavy enough to live outside the notebook |
+| `examples/` | short standalone scripts |
+| `test/` | `pytest` suite: input resolution, solver against known solutions, serialisation |
+
+Inside the package:
+
+| module | responsibility |
+|---|---|
+| `simulation_input.py` | `SimulationInput`, and the graph search that resolves the closure relations |
+| `ard_model.py` | `Simulation`, the finite element solver, and `SimulationResults` |
+| `correlations.py` | every closure relation, each carrying its source and validity range |
+| `example_cases.py` | pre-built cases (LIBRA Pi, LIBRA 1L, a generic standard case) |
+| `postprocess.py` | exponential fits, extraction times, decay diagnostics |
+| `config.py` | unit registry, physical constants, provenance helpers |
+
+## Datasets
+
+Each directory in `data/` records the git commit it was produced at. A `-dirty` suffix means
+the working tree had uncommitted changes at the time, so the run is not reproducible from that
+commit alone.
+
+| dataset | what it supports |
+|---|---|
+| `verification_case/` | the numerical solution against the analytical one, in both partial pressure regimes |
+| `convergence_study_2/` | mesh and time step convergence, Richardson extrapolation |
+| `analytical_validity2/` | 300 samples over the three governing dimensionless groups: where the analytical solution holds |
+| `non_exponential2/` | the sample whose inventory decay is super-exponential |
+| `sobol_optimistic/`, `sobol_pessimistic/` | 1536-sample Saltelli designs over the four operating parameters, one per transport-property scenario |
+| `optimistic_*/`, `pessimistic_*/` | four independent corner runs, used to check the surrogate |
+
+The two scenarios bracket the tritium transport properties of ClLiF, which have not been
+measured: `pessimistic` uses the Calderoni solubility and diffusivity, `optimistic` the
+Malinauskas solubility and the Fukada diffusivity.
+
+## Reproducing
+
+```bash
+python generate_data.py          # regenerates data/ (hours, parallel over 6 workers)
+jupyter lab make_plots.ipynb     # data/ -> figures
+python make_sobol_figure.py      # the three heavier figures
+python make_design_map_figures.py
+python make_operating_map.py
 ```
 
-## How to run tests
+## License
 
-```
-python -m pytest test
-```
+MIT, see `LICENSE`.

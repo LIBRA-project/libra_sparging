@@ -1,3 +1,6 @@
+import subprocess
+import yaml
+import numpy as np
 from pint import UnitRegistry
 import scipy.constants as const
 import logging
@@ -50,3 +53,40 @@ def verbose(self, message, *args, **kws):
 
 
 logging.Logger.verbose = verbose
+
+
+# --- provenance and I/O helpers ---------------------------------------------
+
+
+def get_input(yaml_input_path) -> dict:
+    """Load a YAML input file, unwrapping a top level `input:` key if present."""
+    with open(yaml_input_path, "r") as file:
+        params = yaml.safe_load(file)
+        if "input" in params:
+            params = params["input"]
+    return params
+
+
+def setup_yaml():
+    """Tell PyYAML to represent numpy scalars in a human readable way."""
+
+    def numpy_representer(dumper, data):
+        return dumper.represent_data(data.item())
+
+    yaml.add_representer(np.float64, numpy_representer)
+
+
+def get_git_hash() -> str:
+    """Short commit hash of the working tree, suffixed `-dirty` when it has
+    uncommitted changes. Datasets record this, so the suffix is what tells a
+    reader whether a run is actually reproducible from that commit."""
+    try:
+        commit = (
+            subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
+            .decode("ascii")
+            .strip()
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "no-git"
+    dirty = subprocess.run(["git", "diff", "--quiet", "HEAD"]).returncode != 0
+    return f"{commit}-dirty" if dirty else commit

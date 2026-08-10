@@ -209,13 +209,17 @@ __marimo__/
 misc_scripts/
 datasets/
 figures/
+paper/
 *.yaml
 *.csv
 *.json
-!standard_input.json
 *.ipynb
-!sensitivity.ipynb
-!LL_sensitivity.ipynb
+# published artefacts: the datasets behind every thesis figure, and the notebook
+# that turns them into those figures. Without these the repo ships code and no data.
+!data/**/*.csv
+!data/**/*.json
+!make_plots.ipynb
+!test/standard_input.json
 *.code-workspace
 *.pkl
 *.html

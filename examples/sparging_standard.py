@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.WARNING)
 
-FOLDER = Path("paper/runs/reference")
+FOLDER = Path("data/verification_case/spp")
 FOLDER.mkdir(exist_ok=True, parents=True)
 
 

@@ -1,0 +1,226 @@
+{
+   "metadata": {
+      "git_commit": "2e4aa2d",
+      "date": "2026-08-01T14:06:14.043695"
+   },
+   "analytical_quantities": {
+      "tau_predicted": {
+         "value": 3369099.9725787644,
+         "units": "s"
+      },
+      "tau_predicted_SPP": {
+         "value": 208331.58038032823,
+         "units": "s"
+      },
+      "c_T2_steady_state": {
+         "value": 2.887285801910047e-10,
+         "units": "molT2 / m ** 3"
+      },
+      "Pi": {
+         "value": 16.171814408257422,
+         "units": ""
+      },
+      "Bodenstein_number": {
+         "value": 28.09308815229335,
+         "units": ""
+      },
+      "S_T": {
+         "value": 2.7469628902793158e-15,
+         "units": "molT / m ** 3 / s"
+      },
+      "dP_dx_over_c": {
+         "value": 5973468.972928048,
+         "units": "m ** 2 * Pa / mol"
+      }
+   },
+   "fit_summary": {
+      "tau_fitted": {
+         "value": 2009288.1233146207,
+         "units": "s"
+      },
+      "tau_fitted_std": {
+         "value": 20349.06871991664,
+         "units": "s"
+      },
+      "tau_predicted": {
+         "value": 3369099.9725787644,
+         "units": "s"
+      },
+      "tau_predicted_SPP": {
+         "value": 208331.58038032823,
+         "units": "s"
+      },
+      "tau_real_1e": {
+         "value": 2290987.98135356,
+         "units": "s"
+      },
+      "n0_fitted": {
+         "value": 3.9649278329497095e-12,
+         "units": "molT2"
+      },
+      "n0_fitted_std": {
+         "value": 2.7654986450590113e-14,
+         "units": "molT2"
+      },
+      "residual_fraction": {
+         "value": 0.016972116133202802,
+         "units": ""
+      },
+      "tau_rel_error": {
+         "value": -0.4036127928324197,
+         "units": ""
+      },
+      "tau_SPP_rel_error": {
+         "value": 8.64466414379655,
+         "units": ""
+      },
+      "fit_window": [
+         {
+            "value": 0.0,
+            "units": "s"
+         },
+         {
+            "value": 6738199.945157536,
+            "units": "s"
+         }
+      ]
+   },
+   "intermediate_params": {
+      "height": {
+         "value": "9.300e-01 m",
+         "origin": "input"
+      },
+      "area": {
+         "value": "1.300e-01 m ** 2",
+         "origin": "input"
+      },
+      "temperature": {
+         "value": "5.500e+02 \u00b0C",
+         "origin": "input"
+      },
+      "K_s": {
+         "value": "1.781e-02 mol / m ** 3 / Pa",
+         "origin": "K_s"
+      },
+      "rho_l": {
+         "value": "2.012e+03 kg / m ** 3",
+         "origin": "rho_l"
+      },
+      "E_g": {
+         "value": "1.096e-06 m ** 2 / s",
+         "origin": "E_g"
+      },
+      "tank_diameter": {
+         "value": "4.068e-01 m",
+         "origin": "input"
+      },
+      "u_g_0": {
+         "value": "3.312e-05 m / s",
+         "origin": "u_g"
+      },
+      "Vdot_g0": {
+         "value": "4.305e-06 m ** 3 / s",
+         "origin": "Vdot_g0"
+      },
+      "ndot_g0": {
+         "value": "5.000e+02 sccm",
+         "origin": "input"
+      },
+      "P_l_0": {
+         "value": "5.914e+05 Pa",
+         "origin": "P_l"
+      },
+      "P_top": {
+         "value": "5.655e+00 atm",
+         "origin": "input"
+      },
+      "P_g_0": {
+         "value": "5.916e+05 Pa",
+         "origin": "P_g"
+      },
+      "d_b_0": {
+         "value": "3.955e-03 m",
+         "origin": "d_b"
+      },
+      "d_b0": {
+         "value": "3.955e-03 m",
+         "origin": "d_b0"
+      },
+      "nozzle_diameter": {
+         "value": "2.000e+00 mm",
+         "origin": "input"
+      },
+      "nb_nozzle": {
+         "value": "4.000e+00",
+         "origin": "input"
+      },
+      "sigma_l": {
+         "value": "1.940e-01 kg / s ** 2",
+         "origin": "sigma_l"
+      },
+      "E_l": {
+         "value": "1.726e-08 m ** 2 / s",
+         "origin": "E_l"
+      },
+      "Q_T": {
+         "value": "3.321e-16 molT / s",
+         "origin": "Q_T"
+      },
+      "tbr": {
+         "value": "1.000e-01 T / n",
+         "origin": "input"
+      },
+      "n_gen_rate": {
+         "value": "2.000e+09 n / s",
+         "origin": "input"
+      },
+      "eps_g_0": {
+         "value": "1.646e-04",
+         "origin": "eps_g"
+      },
+      "v_g0": {
+         "value": "2.012e-01 m / s",
+         "origin": "v_g0"
+      },
+      "Eo": {
+         "value": "1.590e+00",
+         "origin": "Eo"
+      },
+      "drho": {
+         "value": "2.011e+03 kg / m ** 3",
+         "origin": "drho"
+      },
+      "rho_g": {
+         "value": "3.459e-01 kg / m ** 3",
+         "origin": "rho_g"
+      },
+      "Mo": {
+         "value": "1.016e-08",
+         "origin": "Mo"
+      },
+      "mu_l": {
+         "value": "1.111e-02 kg / m / s",
+         "origin": "mu_l"
+      },
+      "a_0": {
+         "value": "2.497e-01 / m",
+         "origin": "a"
+      },
+      "h_l_0": {
+         "value": "1.905e-05 m / s",
+         "origin": "h_l_briggs"
+      },
+      "Sc": {
+         "value": "2.746e+03",
+         "origin": "Sc"
+      },
+      "nu_l": {
+         "value": "5.521e-06 m ** 2 / s",
+         "origin": "nu_l"
+      },
+      "D_l": {
+         "value": "2.011e-09 m ** 2 / s",
+         "origin": "D_l"
+      }
+   }
+}

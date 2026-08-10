@@ -1,0 +1,43 @@
+{
+  "git_commit": "9809cd9",
+  "date": "2026-08-10T01:33:07.115353",
+  "description": "Random log-uniform sampling from the nominal LIBRA-Pi input, one independent knob per dimensionless group, at fixed geometry and fixed molar gas flow.",
+  "n_samples": 300,
+  "seed": 7,
+  "sampling": {
+    "K_s": {
+      "law": "K_s_nominal * 10**U(a, b)",
+      "decades": [
+        -2.0,
+        2.0
+      ],
+      "targets": "Pi (exactly linear in K_s)"
+    },
+    "P_top": {
+      "law": "P_top_nominal * 10**U(a, b)",
+      "decades": [
+        -2.0,
+        2.0
+      ],
+      "targets": "G_P = rho*g*H/P_top; also rescales eps_g, u_g, d_b, a"
+    },
+    "E_l": {
+      "law": "E_l_nominal * 10**U(a, b)",
+      "decades": [
+        -6.0,
+        0.0
+      ],
+      "targets": "G_mix (E_l enters neither Pi, G_P nor tau)"
+    }
+  },
+  "fixed": "tank geometry (H, A), temperature, molar gas flow, nozzle diameter",
+  "t_final_in_tau": 2,
+  "dt_fraction_of_tau": 0.01,
+  "mesh_Pe": 0.5,
+  "cells_per_scale": 20,
+  "min_cells": 40,
+  "max_cells": 2000,
+  "mesh_rule": "n_cells = max(H/dx_from_Pe(mesh_Pe), min_cells, cells_per_scale*Pi, cells_per_scale*sqrt(G_mix)), capped at max_cells",
+  "no_coalescence_eps_g_limit": 0.01,
+  "elapsed_s": 885.7746376991272
+}

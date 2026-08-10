@@ -3,7 +3,7 @@ from sparging.config import ureg, const_R, const_g
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from sparging.model import SimulationInput
+    from sparging.ard_model import SimulationInput
     import pint
 import numpy as np
 import scipy.constants as const

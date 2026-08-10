@@ -1,0 +1,107 @@
+{
+  "git_commit": "708cf94",
+  "date": "2026-08-04T23:33:58.962741",
+  "description": "Total-order Sobol sensitivity of the extraction time to 4 operating/design inputs; Saltelli design, scipy.stats.sobol_indices.",
+  "scenario": "optimistic",
+  "correlations": {
+    "K_s": "K_s_malinauskas",
+    "D_l": "D_l_fukada"
+  },
+  "qoi": "tau_fit_nodisc_s",
+  "qoi_note": "tau_fitted_s minus the backward-Euler bias dt/2; the bias is a purely multiplicative dt_fraction/2 here, so it leaves the indices unchanged",
+  "qoi_alternatives": [
+    "tau_fitted_s",
+    "tau_fitted_2tau_s",
+    "t_extract_99_s"
+  ],
+  "estimator": "scipy.stats.sobol_indices (saltelli_2010)",
+  "scipy_version": "1.17.1",
+  "n_base_samples": 256,
+  "d": 4,
+  "n_total_runs": 1536,
+  "seed": 2024,
+  "design_hash": "2c2112b2a43c",
+  "convergence_subsets": [
+    8,
+    16,
+    32,
+    64,
+    128,
+    256
+  ],
+  "param_space": [
+    {
+      "name": "temperature",
+      "csv": "temperature_K",
+      "unit": "K",
+      "min": 723.15,
+      "max": 923.15,
+      "scale": "uniform",
+      "sobol_column": 0
+    },
+    {
+      "name": "gas_flow",
+      "csv": "gas_flow_sccm",
+      "unit": "sccm",
+      "min": 100.0,
+      "max": 1000.0,
+      "scale": "log",
+      "sobol_column": 1
+    },
+    {
+      "name": "top_pressure",
+      "csv": "top_pressure_atm",
+      "unit": "atm",
+      "min": 1.0,
+      "max": 2.0,
+      "scale": "uniform",
+      "sobol_column": 2
+    },
+    {
+      "name": "nozzle_diameter",
+      "csv": "nozzle_diameter_mm",
+      "unit": "mm",
+      "min": 1.0,
+      "max": 4.0,
+      "scale": "uniform",
+      "sobol_column": 3
+    }
+  ],
+  "sampling_measure": "uniform in temperature, top pressure and nozzle diameter; log-uniform in gas flow",
+  "fixed_params": {
+    "height_m": 0.93,
+    "area_m2": 0.13,
+    "nb_nozzle": 4.0,
+    "c_T2_init_mol_m3": 3e-11
+  },
+  "discretization": {
+    "dt_fraction_of_tau": 0.02,
+    "t_final_in_tau": 5,
+    "mesh_Pe": 2,
+    "min_cells": 20,
+    "n_cells": 20,
+    "n_cells_rule": "max(MIN_CELLS, ceil(SOBOL_CELLS_PER_PI * Pi at the Pi-maximising corner of the box); fixed over the design so the mesh is not a function of the sampled inputs",
+    "cells_per_Pi": 20,
+    "Pi_max_corner": 0.002434915126453631
+  },
+  "extraction_levels": [
+    0.5,
+    0.9,
+    0.99
+  ],
+  "extra_fit_windows_in_tau": [
+    2.0
+  ],
+  "kanai_validated_range_cm3_s": [
+    3.0,
+    10.0
+  ],
+  "design_note": "rows tagged design_role in {A,B,AB} + base_index + var_index; f_AB[i] = A with column i replaced by B's column i",
+  "n_workers": 8,
+  "solve_time_s": {
+    "median": 25.451217889785767,
+    "max": 50.8253390789032,
+    "total": 41833.43206501007
+  },
+  "elapsed_s": 2767.6058785915375
+}
