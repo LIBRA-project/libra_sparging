@@ -36,7 +36,7 @@ from sparging import config as helpers
 
 logger = logging.getLogger(__name__)
 
-OUT_DIR = Path("data/convergence_study_2")
+OUT_DIR = Path("data/discretisation_convergence")
 
 # ---------------------------------------------------------------------------
 # study configuration
@@ -555,10 +555,10 @@ Run with::
 
     python -c "from paper.generate_paper_data import analytical_validity2; analytical_validity2()"
 
-Output is written to ``data/analytical_validity2/``.
+Output is written to ``data/design_space/``.
 """
 
-OUT_DIR_AV2 = Path("data/analytical_validity2")
+OUT_DIR_AV2 = Path("data/design_space")
 
 AV2_N_SAMPLES = 300
 AV2_SEED = 7
@@ -623,7 +623,7 @@ def analytical_validity2(
     n_workers: int = 6,
     out_dir: Path = OUT_DIR_AV2,
 ) -> Path:
-    """Run the second validity design and write analytical_validity2_data.csv + metadata.json."""
+    """Run the second validity design and write design_space_data.csv + metadata.json."""
     out_dir.mkdir(parents=True, exist_ok=True)
     specs = _av2_specs(n_samples, seed)
 
@@ -634,7 +634,7 @@ def analytical_validity2(
     logger.info("analytical validity 2: %d samples in %.1f s", len(rows), elapsed)
 
     df = pd.DataFrame(rows).sort_values("sample_id").reset_index(drop=True)
-    csv_path = out_dir / "analytical_validity2_data.csv"
+    csv_path = out_dir / "design_space_data.csv"
     df.to_csv(csv_path, index=False)
 
     with open(out_dir / "metadata.json", "w") as f:
@@ -701,14 +701,14 @@ Run with::
 Output is written to ``data/non_exponential/``.
 """
 
-OUT_DIR_NONEXP = Path("data/non_exponential")
+OUT_DIR_NONEXP = Path("data/non_exponential_sample")
 NONEXP_SAMPLE_ID = 139  # highest fit RMSE among the flagged samples with Pi < 0.1 and G_P < 0.1
 
 
 def non_exponential_case(
     sample_id: int = NONEXP_SAMPLE_ID,
     out_dir: Path = OUT_DIR_NONEXP,
-    av2_csv: Path = OUT_DIR_AV2 / "analytical_validity2_data.csv",
+    av2_csv: Path = OUT_DIR_AV2 / "design_space_data.csv",
 ) -> Path:
     """Re-run one analytical_validity2 sample with every field exported, same discretisation as
     the study so the fit diagnostics reproduce."""
@@ -788,10 +788,10 @@ Run with::
 
     python -c "from paper.generate_paper_data import verification_case; verification_case()"
 
-Output is written to ``data/verification_case/<variant>/``.
+Output is written to ``data/verification/<variant>/``.
 """
 
-OUT_DIR_VERIF = Path("data/verification_case")
+OUT_DIR_VERIF = Path("data/verification")
 
 VERIF_HEIGHT_SCALE = 0.1  # short column -> G_P ~ 1.5e-2, G_mix ~ 7e-6
 VERIF_VARIANTS = {"spp": 1.0, "ppl": 45.0}  # K_s scalings -> Pi ~ 0.02 and ~1
@@ -918,7 +918,7 @@ git commit and param_space in its metadata.json.
 """
 
 OUT_DIR_SOBOL = Path("data/sobol_input_params")  # legacy single-scenario default
-SOBOL_SCEN_DIR = {s: Path(f"data/sobol_{s}") for s in SCEN_CORRELATIONS}
+SOBOL_SCEN_DIR = {s: Path(f"data/libra_pi_sobol_{s}") for s in SCEN_CORRELATIONS}
 
 SOBOL_N_BASE = 256  # base samples N (power of 2); total runs = N * (d + 2)
 SOBOL_SEED = 2024  # same seed for both scenarios -> identical, paired design
@@ -1351,7 +1351,7 @@ def libra_pi_scenarios(out_dir: Path = OUT_DIR_SCEN) -> Path:
             sim.exports = VERIF_EXPORTS
             out = sim.solve(dt=dt, dx=dx, verbose=False)
 
-            run_dir = out_dir / f"{scenario}_{corner}"
+            run_dir = out_dir / f"libra_pi_corner_{scenario}_{corner}"
             run_dir.mkdir(parents=True, exist_ok=True)
             out.exports_to_csv(run_dir)
             out.to_json(

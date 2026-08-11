@@ -65,12 +65,12 @@ commit alone.
 
 | dataset | what it supports |
 |---|---|
-| `verification_case/` | the numerical solution against the analytical one, in both partial pressure regimes |
-| `convergence_study_2/` | mesh and time step convergence, Richardson extrapolation |
-| `analytical_validity2/` | 300 samples over the three governing dimensionless groups: where the analytical solution holds |
-| `non_exponential2/` | the sample whose inventory decay is super-exponential |
-| `sobol_optimistic/`, `sobol_pessimistic/` | 1536-sample Saltelli designs over the four operating parameters, one per transport-property scenario |
-| `optimistic_*/`, `pessimistic_*/` | four independent corner runs, used to check the surrogate |
+| `verification/` | the numerical solution against the analytical one, in both partial pressure regimes |
+| `discretisation_convergence/` | mesh and time step convergence, Richardson extrapolation |
+| `design_space/` | 300 samples over the three governing dimensionless groups: where the analytical solution holds |
+| `non_exponential_sample/` | the sample whose inventory decay is super-exponential |
+| `libra_pi_sobol_optimistic/`, `libra_pi_sobol_pessimistic/` | 1536-sample Saltelli designs over the four operating parameters, one per transport-property scenario |
+| `libra_pi_corner_*/` | four independent corner runs, used to check the surrogate |
 
 The two scenarios bracket the tritium transport properties of ClLiF, which have not been
 measured: `pessimistic` uses the Calderoni solubility and diffusivity, `optimistic` the
