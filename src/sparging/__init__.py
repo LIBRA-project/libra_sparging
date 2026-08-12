@@ -13,8 +13,8 @@ from .simulation_input import (
 )
 from .ard_model import Simulation
 from .animation import ConcentrationAnimator
-from .correlations import (
-    all_correlations,
+from .closure import (
+    all_closures,
     CorrelationGroup,
     Correlation,
     CorrelationType,

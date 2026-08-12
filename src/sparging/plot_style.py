@@ -12,6 +12,8 @@ Usage::
     categorical_axis(ax, "x")   # for bar/violin axes, where minor ticks are meaningless
 """
 
+import os
+
 import matplotlib.pyplot as plt
 
 SERIF = ["STIXGeneral", "Times New Roman", "Times", "DejaVu Serif"]
@@ -64,7 +66,13 @@ RC = {
 
 
 def apply(theme: str = "minimal", **overrides) -> None:
-    """Set the theme, then the thesis style on top of it."""
+    """Set the theme, then the thesis style on top of it.
+
+    Also pins SOURCE_DATE_EPOCH, which matplotlib uses as the PDF creation date. Without it
+    every regenerated figure differs from the last one in its metadata alone, so a rerun shows
+    up as a change to every figure in git even when nothing was redrawn.
+    """
+    os.environ.setdefault("SOURCE_DATE_EPOCH", "0")
     try:
         import morethemes as mt
 

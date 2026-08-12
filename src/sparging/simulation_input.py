@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime
 from sparging import config as helpers
-from sparging.correlations import Correlation, all_correlations
+from sparging.closure import Correlation, all_closures
 import pint
 from typing import List
 import inspect
@@ -399,8 +399,8 @@ def find_in_graph(
     # then check if the required node is given as input (either as a pint.Quantity or as a Correlation)
     if (result := check_input(required_node, input_objs)) is None:
         # if it's not, look for default correlation
-        if required_node in all_correlations:
-            result = all_correlations(required_node)
+        if required_node in all_closures:
+            result = all_closures(required_node)
             logger.verbose(
                 f"Found default correlation for required node '{required_node}': {result.identifier}"
             )

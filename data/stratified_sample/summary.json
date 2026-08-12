@@ -1,27 +1,27 @@
 {
    "metadata": {
       "git_commit": "187cb02-dirty",
-      "date": "2026-08-12T01:28:21.908734"
+      "date": "2026-08-12T01:22:17.283297"
    },
    "analytical_quantities": {
       "tau_predicted": {
-         "value": 3369099.9725787644,
+         "value": 16015.784403906144,
          "units": "s"
       },
       "tau_predicted_SPP": {
-         "value": 208331.58038032823,
+         "value": 15883.76260395509,
          "units": "s"
       },
       "c_T2_steady_state": {
-         "value": 2.887285801910047e-10,
+         "value": 3.750445186003026e-11,
          "units": "molT2 / m ** 3"
       },
       "Pi": {
-         "value": 16.171814408257422,
+         "value": 0.016577688872593303,
          "units": ""
       },
       "Bodenstein_number": {
-         "value": 170694.45528923697,
+         "value": 7226.0985367411595,
          "units": ""
       },
       "S_T": {
@@ -29,49 +29,49 @@
          "units": "molT / m ** 3 / s"
       },
       "dP_dx_over_c": {
-         "value": 5973468.972928048,
+         "value": 64563.17477681495,
          "units": "m ** 2 * Pa / mol"
       }
    },
    "fit_summary": {
       "tau_fitted": {
-         "value": 2009288.1233146207,
+         "value": 17994.43891399135,
          "units": "s"
       },
       "tau_fitted_std": {
-         "value": 20349.06871991664,
+         "value": 43.48255525488869,
          "units": "s"
       },
       "tau_predicted": {
-         "value": 3369099.9725787644,
+         "value": 16015.784403906144,
          "units": "s"
       },
       "tau_predicted_SPP": {
-         "value": 208331.58038032823,
+         "value": 15883.76260395509,
          "units": "s"
       },
       "tau_real_1e": {
-         "value": 2290987.98135356,
+         "value": 17457.205000257734,
          "units": "s"
       },
       "n0_fitted": {
-         "value": 3.9649278329497095e-12,
+         "value": 3.554526579071496e-12,
          "units": "molT2"
       },
       "n0_fitted_std": {
-         "value": 2.7654986450590113e-14,
+         "value": 5.100777477963966e-15,
          "units": "molT2"
       },
       "residual_fraction": {
-         "value": 0.016972116133202802,
+         "value": 0.17592261106341778,
          "units": ""
       },
       "tau_rel_error": {
-         "value": -0.4036127928324197,
+         "value": 0.12354402757835742,
          "units": ""
       },
       "tau_SPP_rel_error": {
-         "value": 8.64466414379655,
+         "value": 0.13288264013154524,
          "units": ""
       },
       "fit_window": [
@@ -80,7 +80,7 @@
             "units": "s"
          },
          {
-            "value": 6738199.945157536,
+            "value": 32031.568807812393,
             "units": "s"
          }
       ]
@@ -99,7 +99,7 @@
          "origin": "input"
       },
       "K_s": {
-         "value": "1.781e-02 mol / m ** 3 / Pa",
+         "value": "9.734e-05 mol / m ** 3 / Pa",
          "origin": "K_s"
       },
       "rho_l": {
@@ -107,7 +107,7 @@
          "origin": "rho_l"
       },
       "E_g": {
-         "value": "1.096e-06 m ** 2 / s",
+         "value": "3.306e-05 m ** 2 / s",
          "origin": "E_g"
       },
       "tank_diameter": {
@@ -115,11 +115,11 @@
          "origin": "input"
       },
       "u_g_0": {
-         "value": "3.312e-05 m / s",
+         "value": "9.986e-04 m / s",
          "origin": "u_g"
       },
       "Vdot_g0": {
-         "value": "4.305e-06 m ** 3 / s",
+         "value": "1.298e-04 m ** 3 / s",
          "origin": "Vdot_g0"
       },
       "ndot_g0": {
@@ -127,23 +127,23 @@
          "origin": "input"
       },
       "P_l_0": {
-         "value": "5.914e+05 Pa",
+         "value": "1.961e+04 Pa",
          "origin": "P_l"
       },
       "P_top": {
-         "value": "5.655e+00 atm",
+         "value": "1.248e-02 atm",
          "origin": "input"
       },
       "P_g_0": {
-         "value": "5.916e+05 Pa",
+         "value": "1.969e+04 Pa",
          "origin": "P_g"
       },
       "d_b_0": {
-         "value": "3.955e-03 m",
+         "value": "1.058e-02 m",
          "origin": "d_b"
       },
       "d_b0": {
-         "value": "3.955e-03 m",
+         "value": "1.058e-02 m",
          "origin": "d_b0"
       },
       "nozzle_diameter": {
@@ -159,7 +159,7 @@
          "origin": "sigma_l"
       },
       "E_l": {
-         "value": "1.726e-08 m ** 2 / s",
+         "value": "3.941e-08 m ** 2 / s",
          "origin": "E_l"
       },
       "Q_T": {
@@ -175,23 +175,23 @@
          "origin": "input"
       },
       "eps_g_0": {
-         "value": "1.646e-04",
+         "value": "3.888e-03",
          "origin": "eps_g"
       },
       "v_g0": {
-         "value": "2.012e-01 m / s",
+         "value": "2.568e-01 m / s",
          "origin": "v_g0"
       },
       "Eo": {
-         "value": "1.590e+00",
+         "value": "1.139e+01",
          "origin": "Eo"
       },
       "drho": {
-         "value": "2.011e+03 kg / m ** 3",
+         "value": "2.012e+03 kg / m ** 3",
          "origin": "drho"
       },
       "rho_g": {
-         "value": "3.459e-01 kg / m ** 3",
+         "value": "1.147e-02 kg / m ** 3",
          "origin": "rho_g"
       },
       "Mo": {
@@ -203,11 +203,11 @@
          "origin": "mu_l"
       },
       "a_0": {
-         "value": "2.497e-01 / m",
+         "value": "2.204e+00 / m",
          "origin": "a"
       },
       "h_l_0": {
-         "value": "1.905e-05 m / s",
+         "value": "1.662e-05 m / s",
          "origin": "h_l_briggs"
       },
       "Sc": {

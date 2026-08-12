@@ -6,7 +6,7 @@ from sparging import (
     LIBRA_PI_OPERATING_PARAMS,
     SpargingParameters,
     SimulationInput,
-    all_correlations,
+    all_closures,
     VERBOSE_LEVEL,
 )
 import networkx as nx
@@ -26,7 +26,7 @@ flibe = BreederMaterial(
 operating_params = LIBRA_PI_OPERATING_PARAMS
 
 sparging_params = SpargingParameters(
-    h_l=all_correlations("h_l_briggs"),
+    h_l=all_closures("h_l_briggs"),
 )
 
 # construct input from helper objects

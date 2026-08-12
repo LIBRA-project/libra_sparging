@@ -131,7 +131,7 @@ class CorrelationGroup(list[Correlation]):
         return [corr for corr in self if corr.corr_type == corr_type]
 
 
-all_correlations = CorrelationGroup([])
+all_closures = CorrelationGroup([])
 
 
 rho_l = Correlation(
@@ -144,7 +144,7 @@ rho_l = Correlation(
     description="density of Li2BeF4 as a function of temperature",
     input_units=["kelvin"],
 )
-all_correlations.append(rho_l)
+all_closures.append(rho_l)
 
 mu_l = Correlation(
     identifier="mu_l",
@@ -156,7 +156,7 @@ mu_l = Correlation(
     description="dynamic viscosity of Li2BeF4 as a function of temperature",
     input_units=["kelvin"],
 )
-all_correlations.append(mu_l)
+all_closures.append(mu_l)
 
 nu_l = Correlation(
     identifier="nu_l",
@@ -169,7 +169,7 @@ nu_l = Correlation(
     input_units=["Pa*s", "kg/m**3"],
     output_units="m**2/s",
 )
-all_correlations.append(nu_l)
+all_closures.append(nu_l)
 
 sigma_l = Correlation(
     identifier="sigma_l",
@@ -181,7 +181,7 @@ sigma_l = Correlation(
     description="surface tension of Li2BeF4 as a function of temperature",
     input_units=["kelvin"],
 )
-all_correlations.append(sigma_l)
+all_closures.append(sigma_l)
 
 # TODO this could leverage HTM
 D_l_calderoni = Correlation(
@@ -197,7 +197,7 @@ D_l_calderoni = Correlation(
     input_units=["kelvin"],
     output_units="m**2/s",
 )
-all_correlations.append(D_l_calderoni)
+all_closures.append(D_l_calderoni)
 
 D_l_oishi = Correlation(
     identifier="D_l_oishi",
@@ -212,7 +212,7 @@ D_l_oishi = Correlation(
     input_units=["kelvin"],
     output_units="m**2/s",
 )
-all_correlations.append(D_l_oishi)
+all_closures.append(D_l_oishi)
 
 D_l_fukada = Correlation(
     identifier="D_l_fukada",
@@ -227,12 +227,12 @@ D_l_fukada = Correlation(
     input_units=["kelvin"],
     output_units="m**2/s",
 )
-all_correlations.append(D_l_fukada)
+all_closures.append(D_l_fukada)
 
 D_l = replace(
     D_l_calderoni, identifier="D_l"
 )  # default diffusivity correlation, can be overridden by user defined correlation
-all_correlations.append(D_l)
+all_closures.append(D_l)
 
 K_s_calderoni = Correlation(
     identifier="K_s_calderoni",
@@ -247,7 +247,7 @@ K_s_calderoni = Correlation(
     input_units=["kelvin"],
     output_units="mol/m**3/Pa",
 )
-all_correlations.append(K_s_calderoni)
+all_closures.append(K_s_calderoni)
 
 K_s_malinauskas = Correlation(
     identifier="K_s_malinauskas",
@@ -262,12 +262,12 @@ K_s_malinauskas = Correlation(
     input_units=["kelvin"],
     output_units="mol/m**3/Pa",
 )
-all_correlations.append(K_s_malinauskas)
+all_closures.append(K_s_malinauskas)
 
 K_s = replace(
     K_s_calderoni, identifier="K_s"
 )  # default solubility correlation, can be overridden by user defined correlation
-all_correlations.append(K_s)
+all_closures.append(K_s)
 
 d_b0 = Correlation(
     identifier="d_b0",
@@ -280,7 +280,7 @@ d_b0 = Correlation(
     source="Kanai 2017 (https://doi.org/10.1252/jcej.15we307); report by Evans 2026 (https://doi.org/10.1016/j.nucengdes.2025.114624)",
     description="Mean bubble diameter, validated for nitrogen sparging in NaNO3 molten salt at 643K and gas flow rates of 3-10 cm3/s. Author suggests it may be applicable to FLiNaK and FLiBe.",
 )
-all_correlations.append(d_b0)
+all_closures.append(d_b0)
 
 Eo = Correlation(
     identifier="Eo",
@@ -291,7 +291,7 @@ Eo = Correlation(
     input_units=["kg/m**3", "m", "N/m"],
     output_units="dimensionless",
 )
-all_correlations.append(Eo)
+all_closures.append(Eo)
 
 Mo = Correlation(
     identifier="Mo",
@@ -302,7 +302,7 @@ Mo = Correlation(
     input_units=["kg/m**3", "Pa*s", "kg/m**3", "N/m"],
     output_units="dimensionless",
 )
-all_correlations.append(Mo)
+all_closures.append(Mo)
 
 Sc = Correlation(
     identifier="Sc",
@@ -311,7 +311,7 @@ Sc = Correlation(
     input_units=["m**2/s", "m**2/s"],
     output_units="dimensionless",
 )
-all_correlations.append(Sc)
+all_closures.append(Sc)
 
 # Bubble Reynolds number
 Re = Correlation(
@@ -323,7 +323,7 @@ Re = Correlation(
     input_units=["kg/m**3", "m/s", "m", "Pa*s"],
     output_units="dimensionless",
 )
-all_correlations.append(Re)
+all_closures.append(Re)
 
 v_g0 = Correlation(
     identifier="v_g0",
@@ -342,7 +342,7 @@ v_g0 = Correlation(
     source="Chavez 2021: https://doi.org/10.1016/j.ijheatfluidflow.2021.108875",
     description="Clift 1978 correlation for terminal velocity, validated for single He bubble rising in steady FLiNaK. Likely to be applicable to FLiBe (similar surface tensions, density and viscosity).",
 )
-all_correlations.append(v_g0)
+all_closures.append(v_g0)
 
 
 h_l_higbie = Profile(
@@ -356,7 +356,7 @@ h_l_higbie = Profile(
     input_units=["m**2/s", "m/s", PROFILE],
     output_units="m/s",
 )
-all_correlations.append(h_l_higbie)
+all_closures.append(h_l_higbie)
 
 
 h_l_briggs = Profile(
@@ -375,7 +375,7 @@ h_l_briggs = Profile(
     input_units=["kg/m**3", "m/s", "Pa*s", "dimensionless", "m**2/s", PROFILE],
     output_units="m/s",
 )
-all_correlations.append(h_l_briggs)
+all_closures.append(h_l_briggs)
 
 # liquid phase axial dispersion coefficient
 E_l = Correlation(
@@ -390,7 +390,7 @@ E_l = Correlation(
     input_units=["m", PROFILE],
     output_units="m**2/s",
 )
-all_correlations.append(E_l)
+all_closures.append(E_l)
 
 # gas phase axial dispersion coefficient
 E_g = Correlation(
@@ -404,7 +404,7 @@ E_g = Correlation(
     input_units=["m", PROFILE],
     output_units="m**2/s",
 )
-all_correlations.append(E_g)
+all_closures.append(E_g)
 
 drho = Correlation(
     identifier="drho",
@@ -414,7 +414,7 @@ drho = Correlation(
     corr_type=CorrelationType.DENSITY,
     input_units=["kg/m**3", "kg/m**3"],
 )
-all_correlations.append(drho)
+all_closures.append(drho)
 
 
 he_molar_mass = ureg("4.003e-3 kg/mol")
@@ -429,7 +429,7 @@ rho_g = Correlation(
     description="density of gas phase calculated using ideal gas law",
     input_units=["kelvin", PROFILE],
 )
-all_correlations.append(rho_g)
+all_closures.append(rho_g)
 
 
 Vdot_g0 = Correlation(
@@ -442,7 +442,7 @@ Vdot_g0 = Correlation(
     input_units=["mol/s", "kelvin", PROFILE],
     output_units="m**3/s",
 )
-all_correlations.append(Vdot_g0)
+all_closures.append(Vdot_g0)
 
 
 source_T_integral = Correlation(
@@ -454,7 +454,7 @@ source_T_integral = Correlation(
     input_units=["triton/neutron", "neutron/s"],
     output_units="molT/s",
 )
-all_correlations.append(source_T_integral)
+all_closures.append(source_T_integral)
 
 
 def get_d_b0(
@@ -531,7 +531,7 @@ P_l = Profile(
     output_units="Pa",
     description="hydrostatic pressure profile along tank height",
 )
-all_correlations.append(P_l)
+all_closures.append(P_l)
 
 
 P_g = Profile(
@@ -542,7 +542,7 @@ P_g = Profile(
     output_units="Pa",
     description="pressure in a mechanically stable bubble immerged in a liquid",
 )
-all_correlations.append(P_g)
+all_closures.append(P_g)
 
 
 d_b = Profile(
@@ -553,7 +553,7 @@ d_b = Profile(
     output_units="m",
     description="Bubble diameter profile from hydrostatic expansion",
 )
-all_correlations.append(d_b)
+all_closures.append(d_b)
 
 
 eps_g = Profile(
@@ -564,7 +564,7 @@ eps_g = Profile(
     output_units="dimensionless",
     description="gas void fraction profile (local P and d_b)",
 )
-all_correlations.append(eps_g)
+all_closures.append(eps_g)
 
 a = Profile(
     identifier="a",
@@ -574,7 +574,7 @@ a = Profile(
     output_units="1/m",
     description="specific interfacial area profile",
 )
-all_correlations.append(a)
+all_closures.append(a)
 
 u_g = Profile(
     identifier="u_g",
@@ -586,4 +586,4 @@ u_g = Profile(
     output_units="m/s",
     description="superficial gas velocity profile",
 )
-all_correlations.append(u_g)
+all_closures.append(u_g)

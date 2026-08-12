@@ -686,32 +686,50 @@ def analytical_validity2(
 
 
 # ---------------------------------------------------------------------------
-# Non-exponential case (poor mixing, but Pi and G_P small)
+# Single design-space samples re-run with every field exported
 # ---------------------------------------------------------------------------
 """
-Re-run of a single analytical_validity2 sample chosen for being flagged as non-exponential while
-Pi and G_P are both small: the liquid is badly mixed (G_mix >> 1) but the extraction rate is
-almost uniform along z. It is the case where the decay stops being a single exponential although
-the value of tau is still right, so it is worth looking at the fields.
+Re-run of individual design_space samples, each chosen in a corner of the assumption space where
+the analytical solution breaks down in a distinct way, with every field exported so the profiles
+can be looked at:
+
+* ``non_exponential_sample``: G_mix >> 1 and Pi >> 1 with G_P small (case 6 of the design map).
+  The liquid is badly mixed but the extraction rate is almost uniform along z, so the decay stops
+  being a single exponential.
+* ``stratified_sample``: G_mix >> 1 *and* G_P >> 1, Pi still small (case 7 of the design map). The
+  extraction rate now varies along z as well, the liquid stratifies and the extraction is slower
+  than the analytical solution predicts.
 
 Run with::
 
-    python -c "from paper.generate_paper_data import non_exponential_case; non_exponential_case()"
-
-Output is written to ``data/non_exponential/``.
+    python -c "import generate_data as g; g.non_exponential_case(); g.stratified_case()"
 """
 
 OUT_DIR_NONEXP = Path("data/non_exponential_sample")
-NONEXP_SAMPLE_ID = 139  # highest fit RMSE among the flagged samples with Pi < 0.1 and G_P < 0.1
+NONEXP_SAMPLE_ID = 191  # highest fit RMSE of the whole study
+OUT_DIR_STRAT = Path("data/stratified_sample")
+STRAT_SAMPLE_ID = 288  # largest tau excess among the samples with G_mix, G_P >= 0.1 and Pi < 0.1
+
+NONEXP_WHY = (
+    "highest fit RMSE of the study (case 6 of the design map: Pi >= 0.1 and G_mix >= 0.1 with "
+    "G_P < 0.1): saturated bubbles over a badly mixed liquid, with an extraction rate that is "
+    "still almost uniform along z"
+)
+STRAT_WHY = (
+    "case 7 of the design map (G_mix >= 0.1, G_P >= 0.1, Pi < 0.1), with the largest excess of "
+    "the fitted tau over the analytical one: poor mixing combined with a z-dependent extraction "
+    "rate, so the liquid stratifies"
+)
 
 
 def non_exponential_case(
     sample_id: int = NONEXP_SAMPLE_ID,
     out_dir: Path = OUT_DIR_NONEXP,
     av2_csv: Path = OUT_DIR_AV2 / "design_space_data.csv",
+    selected_because: str = NONEXP_WHY,
 ) -> Path:
-    """Re-run one analytical_validity2 sample with every field exported, same discretisation as
-    the study so the fit diagnostics reproduce."""
+    """Re-run one design_space sample with every field exported, same discretisation as the study
+    so the fit diagnostics reproduce."""
     warnings.filterwarnings("ignore")
     row = pd.read_csv(av2_csv).set_index("sample_id").loc[sample_id]
     spec = {
@@ -754,10 +772,7 @@ def non_exponential_case(
                 "date": datetime.now().isoformat(),
                 "source_study": str(av2_csv.parent),
                 "sample_id": int(sample_id),
-                "selected_because": (
-                    "flagged non-exponential (fit RMSE > threshold) while Pi < 0.1 and G_P < 0.1: "
-                    "poor mixing alone, with an almost uniform extraction rate along z"
-                ),
+                "selected_because": selected_because,
                 "spec": spec,
                 "dt_fraction_of_tau": AV2_DT_FRACTION,
                 "t_final_in_tau": AV2_T_FINAL_IN_TAU,
@@ -771,6 +786,11 @@ def non_exponential_case(
         record["fit_rmse_norm"], record["tau_fitted_s"] / 3600, record["tau_pred_s"] / 3600,
     )
     return out_dir
+
+
+def stratified_case() -> Path:
+    """Case 7 of the design map: mixing and hydrostatic assumptions both violated at low Pi."""
+    return non_exponential_case(STRAT_SAMPLE_ID, OUT_DIR_STRAT, selected_because=STRAT_WHY)
 
 
 # ---------------------------------------------------------------------------
@@ -1014,14 +1034,14 @@ def _make_sobol_input(spec: dict):
         LIBRA_PI_MAT,
         LIBRA_PI_OPERATING_PARAMS,
         LIBRA_PI_SPARGING_PARAMS,
-        all_correlations,
+        all_closures,
     )
 
     geom = LIBRA_PI_GEOM.copy()
     geom.nozzle_diameter = spec["nozzle_diameter_mm"] * ureg.mm
     mat = LIBRA_PI_MAT.copy()
     for name, identifier in SCEN_CORRELATIONS.get(spec.get("scenario"), {}).items():
-        setattr(mat, name, all_correlations(identifier))
+        setattr(mat, name, all_closures(identifier))
     op = LIBRA_PI_OPERATING_PARAMS.copy()
     op.temperature = spec["temperature_K"] * ureg.K
     op.ndot_g0 = spec["gas_flow_sccm"] * ureg.sccm
@@ -1300,7 +1320,7 @@ def _make_scenario_input(scenario: str, corner: str):
         LIBRA_PI_MAT,
         LIBRA_PI_OPERATING_PARAMS,
         LIBRA_PI_SPARGING_PARAMS,
-        all_correlations,
+        all_closures,
     )
 
     spec = SCEN_CORNERS[corner]
@@ -1308,7 +1328,7 @@ def _make_scenario_input(scenario: str, corner: str):
     geom.nozzle_diameter = spec["nozzle_diameter_mm"] * ureg.mm
     mat = LIBRA_PI_MAT.copy()
     for name, identifier in SCEN_CORRELATIONS[scenario].items():
-        setattr(mat, name, all_correlations(identifier))
+        setattr(mat, name, all_closures(identifier))
     op = LIBRA_PI_OPERATING_PARAMS.copy()
     op.temperature = spec["temperature_degC"] * ureg.celsius
     op.ndot_g0 = spec["gas_flow_sccm"] * ureg.sccm

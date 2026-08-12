@@ -52,7 +52,7 @@ Inside the package:
 |---|---|
 | `simulation_input.py` | `SimulationInput`, and the graph search that resolves the closure relations |
 | `ard_model.py` | `Simulation`, the finite element solver, and `SimulationResults` |
-| `correlations.py` | every closure relation, each carrying its source and validity range |
+| `closure.py` | every closure relation, each carrying its source and validity range |
 | `example_cases.py` | pre-built cases (LIBRA Pi, LIBRA 1L, a generic standard case) |
 | `postprocess.py` | exponential fits, extraction times, decay diagnostics |
 | `config.py` | unit registry, physical constants, provenance helpers |

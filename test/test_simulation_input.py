@@ -1,6 +1,6 @@
 import sparging
 from sparging.config import ureg
-from sparging import all_correlations, CorrelationGroup, Correlation
+from sparging import all_closures, CorrelationGroup, Correlation
 from sparging.simulation_input import (
     ColumnGeometry,
     BreederMaterial,
@@ -39,7 +39,7 @@ operating_params = OperatingParameters(
 )
 
 sparging_params = SpargingParameters(
-    h_l=all_correlations("h_l_briggs"),
+    h_l=all_closures("h_l_briggs"),
 )
 
 
@@ -150,7 +150,7 @@ def test_find_in_graph_result(in_discovered: bool):
     # TEST
     assert "d_b0" in discovered_graph, "Expected to find d_b0 in graph"
 
-    correlation = sparging.all_correlations("d_b0")
+    correlation = sparging.all_closures("d_b0")
 
     Vdot_g0 = discovered_graph.nodes["Vdot_g0"]["value"]
     expected_value = correlation(

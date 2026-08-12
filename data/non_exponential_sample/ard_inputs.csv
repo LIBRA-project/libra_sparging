@@ -17,7 +17,7 @@ Pi_ave,$\langle\Pi\rangle$,partial pressure number,16.171814408257422,dimensionl
 Pi_0,$\Pi(0)$,partial pressure number at bottom,16.282761796982317,dimensionless
 G_P,$G_P$,relative hydrostatic variation,0.0320186279773181,dimensionless
 G_mix,$G_\mathrm{mix}$,mixing number,14.870620772216546,dimensionless
-Bo,$\mathrm{Bo}$,gas Bodenstein number,28.09308815229335,dimensionless
+Bo,$\mathrm{Bo}$,gas Bodenstein number,170694.45528923697,dimensionless
 tau,$\tau$,extraction time,935.8611034941013,hour
 tau_SPP,$\tau_\mathrm{SPP}$,SPP extraction time,57.86988343898007,hour
 dt,$\Delta t$,time step,33690.999725787646,s

@@ -7,7 +7,7 @@ from sparging.simulation_input import (
     SimulationInput,
 )
 from sparging.config import ureg
-from sparging.correlations import all_correlations
+from sparging.closure import all_closures
 import logging
 from typing import TYPE_CHECKING
 import networkx as nx
@@ -41,7 +41,7 @@ def get_sim_input_LIBRA1L() -> tuple[SimulationInput, pint.Quantity]:
     )
 
     sparging_params = SpargingParameters(
-        h_l=all_correlations("h_l_briggs"),
+        h_l=all_closures("h_l_briggs"),
     )
 
     libra_1L = SimulationInput.from_parameters(
@@ -81,7 +81,7 @@ def get_sim_input_standard() -> SimulationInput:
     )
 
     sparging_params = SpargingParameters(
-        h_l=all_correlations("h_l_briggs"),
+        h_l=all_closures("h_l_briggs"),
     )
 
     my_input = SimulationInput.from_parameters(
@@ -128,7 +128,7 @@ def get_sim_input_LIBRA_Pi() -> SimulationInput:
     )
 
     sparging_params = SpargingParameters(
-        h_l=all_correlations("h_l_briggs"),
+        h_l=all_closures("h_l_briggs"),
     )
 
     my_input = SimulationInput.from_parameters(
@@ -162,7 +162,7 @@ def get_sim_input_malara() -> SimulationInput:
     )
 
     sparging_params = SpargingParameters(
-        h_l=all_correlations("h_l_briggs"),
+        h_l=all_closures("h_l_briggs"),
     )
     graph = nx.Graph()
     graph.add_node(
@@ -195,5 +195,5 @@ LIBRA_PI_OPERATING_PARAMS = OperatingParameters(
 )
 
 LIBRA_PI_SPARGING_PARAMS = SpargingParameters(
-    h_l=all_correlations("h_l_briggs"),
+    h_l=all_closures("h_l_briggs"),
 )

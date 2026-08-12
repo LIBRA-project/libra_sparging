@@ -1,7 +1,7 @@
 {
    "metadata": {
-      "git_commit": "2e4aa2d",
-      "date": "2026-08-01T14:05:55.715046"
+      "git_commit": "187cb02-dirty",
+      "date": "2026-08-12T01:57:08.022018"
    },
    "analytical_quantities": {
       "tau_predicted": {
@@ -21,7 +21,7 @@
          "units": ""
       },
       "Bodenstein_number": {
-         "value": 2.8093088152293353,
+         "value": 4702.281244953399,
          "units": ""
       },
       "S_T": {
